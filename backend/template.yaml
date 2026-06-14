@@ -1,0 +1,182 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Realtime AI Translator — API Gateway + Lambda backend
+
+# ──────────────────────────────────────────────────────────
+# Parameters — override via `sam deploy --parameter-overrides`
+# ──────────────────────────────────────────────────────────
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues: [prod, dev, staging]
+
+  UserPoolId:
+    Type: String
+    Description: Cognito User Pool ID for JWT authorizer
+
+  UserPoolClientId:
+    Type: String
+    Description: Cognito User Pool Client ID
+
+  TranslationsTable:
+    Type: String
+    Default: conversation_history
+
+  SettingsTable:
+    Type: String
+    Default: user_settings
+
+# ──────────────────────────────────────────────────────────
+# Globals — applied to every Lambda function
+# ──────────────────────────────────────────────────────────
+Globals:
+  Function:
+    Runtime:      nodejs20.x
+    Handler:      src/index.handler
+    Architectures: [x86_64]
+    MemorySize:   256
+    Timeout:      15
+    Environment:
+      Variables:
+        TRANSLATIONS_TABLE: !Ref TranslationsTable
+        SETTINGS_TABLE:     !Ref SettingsTable
+        NODE_OPTIONS:       "--enable-source-maps"
+
+# ──────────────────────────────────────────────────────────
+# Resources
+# ──────────────────────────────────────────────────────────
+Resources:
+
+  # ── REST API ────────────────────────────────────────────
+  TranslatorApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Stage
+      Cors:
+        AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin:  "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoJwtAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          CognitoJwtAuthorizer:
+            UserPoolArn: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}"
+            Identity:
+              Header: Authorization
+
+  # ── Lambda Function ─────────────────────────────────────
+  TranslatorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "ai-translator-${Stage}"
+      CodeUri:      ./
+      Policies:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref DynamoDBPolicy
+      Events:
+        # Catch-all proxy — routes every path+method to the single handler
+        ProxyRoot:
+          Type:       Api
+          Properties:
+            RestApiId: !Ref TranslatorApi
+            Path:      /v1/{proxy+}
+            Method:    ANY
+        # CORS preflight
+        OptionsRoot:
+          Type:       Api
+          Properties:
+            RestApiId: !Ref TranslatorApi
+            Path:      /v1/{proxy+}
+            Method:    OPTIONS
+            Auth:
+              Authorizer: NONE
+
+  # ── DynamoDB Tables ─────────────────────────────────────
+  ConversationHistoryTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName:            !Ref TranslationsTable
+      BillingMode:          PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: source_language
+          AttributeType: S
+        - AttributeName: target_language
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType:        HASH
+        - AttributeName: timestamp
+          KeyType:        RANGE
+      # GSI-1: query by language pair for a user
+      GlobalSecondaryIndexes:
+        - IndexName:            ByLanguagePair
+          KeySchema:
+            - AttributeName: source_language
+              KeyType:        HASH
+            - AttributeName: target_language
+              KeyType:        RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  UserSettingsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName:   !Ref SettingsTable
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType:        HASH
+
+  # ── IAM policy for Lambda → DynamoDB ───────────────────
+  DynamoDBPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "ai-translator-dynamo-${Stage}"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect:   Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+              - dynamodb:DeleteItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:BatchWriteItem
+            Resource:
+              - !GetAtt ConversationHistoryTable.Arn
+              - !Sub "${ConversationHistoryTable.Arn}/index/*"
+              - !GetAtt UserSettingsTable.Arn
+
+# ──────────────────────────────────────────────────────────
+# Outputs
+# ──────────────────────────────────────────────────────────
+Outputs:
+  ApiBaseUrl:
+    Description: "API Gateway base URL — set as EXPO_PUBLIC_API_BASE_URL in .env"
+    Value:        !Sub "https://${TranslatorApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+
+  FunctionArn:
+    Description: "Lambda function ARN"
+    Value:        !GetAtt TranslatorFunction.Arn

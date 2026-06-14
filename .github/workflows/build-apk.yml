@@ -1,0 +1,66 @@
+name: Build APK
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      # Expose all EXPO_PUBLIC_* vars at job level so Metro bundler
+      # picks them up during eas build --local (process.env injection)
+      EXPO_PUBLIC_OPENAI_API_KEY: ${{ secrets.EXPO_PUBLIC_OPENAI_API_KEY }}
+      EXPO_PUBLIC_ELEVENLABS_API_KEY: ${{ secrets.EXPO_PUBLIC_ELEVENLABS_API_KEY }}
+      EXPO_PUBLIC_AWS_REGION: ${{ secrets.EXPO_PUBLIC_AWS_REGION }}
+      EXPO_PUBLIC_AWS_USER_POOL_ID: ${{ secrets.EXPO_PUBLIC_AWS_USER_POOL_ID }}
+      EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID }}
+      EXPO_PUBLIC_AWS_IDENTITY_POOL_ID: ${{ secrets.EXPO_PUBLIC_AWS_IDENTITY_POOL_ID }}
+      EXPO_PUBLIC_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_API_BASE_URL }}
+
+    steps:
+      - name: 🏗 Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Install Dependencies
+        run: npm ci
+
+      - name: 🔑 Create .env file from secrets
+        run: |
+          echo "EXPO_PUBLIC_OPENAI_API_KEY=$EXPO_PUBLIC_OPENAI_API_KEY" > .env
+          echo "EXPO_PUBLIC_ELEVENLABS_API_KEY=$EXPO_PUBLIC_ELEVENLABS_API_KEY" >> .env
+          echo "EXPO_PUBLIC_AWS_REGION=$EXPO_PUBLIC_AWS_REGION" >> .env
+          echo "EXPO_PUBLIC_AWS_USER_POOL_ID=$EXPO_PUBLIC_AWS_USER_POOL_ID" >> .env
+          echo "EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID=$EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID" >> .env
+          echo "EXPO_PUBLIC_AWS_IDENTITY_POOL_ID=$EXPO_PUBLIC_AWS_IDENTITY_POOL_ID" >> .env
+          echo "EXPO_PUBLIC_API_BASE_URL=$EXPO_PUBLIC_API_BASE_URL" >> .env
+          echo "✅ .env created:"
+          # Print keys only (not values) to confirm file is correct
+          cut -d'=' -f1 .env
+
+      - name: 🏗 Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: 🚀 Build APK locally
+        run: |
+          npm install -g eas-cli
+          eas build --platform android --profile preview --non-interactive --local --output=app-release.apk
+
+      - name: 📂 Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Realtime-Translator-APK-${{ github.ref_name }}
+          path: app-release.apk
+          retention-days: 7

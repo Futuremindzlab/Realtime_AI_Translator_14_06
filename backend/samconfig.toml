@@ -1,0 +1,16 @@
+version = 0.1
+
+# ── Local developer deployments only (sam build && sam deploy) ────────────
+# GitHub Actions uses --no-config-file so this file is ignored in CI.
+# resolve_s3 tells SAM to auto-create/manage the S3 artifact bucket locally.
+[default.deploy.parameters]
+stack_name = "ai-translator-stack"
+s3_prefix  = "ai-translator-stack"
+region            = "us-east-1"
+confirm_changeset = false
+capabilities      = "CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND"
+parameter_overrides = "Stage=\"prod\" UserPoolId=\"us-east-1_ZcvBPWVo2\" UserPoolClientId=\"79uencj6m0muovsb7cci96nsns\" TranslationsTable=\"conversation_history\" SettingsTable=\"user_settings\""
+image_repositories = []
+
+[default.global.parameters]
+region = "us-east-1"
