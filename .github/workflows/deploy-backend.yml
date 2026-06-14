@@ -16,7 +16,7 @@ on:
         options: [prod, dev, staging]
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_REGION: ${{ secrets.EXPO_PUBLIC_AWS_REGION }}
   STAGE:      ${{ github.event.inputs.stage || 'prod' }}
 
 jobs:
@@ -33,7 +33,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ secrets.EXPO_PUBLIC_AWS_REGION }}
 
       - name: Set up SAM CLI
         uses: aws-actions/setup-sam@v2
