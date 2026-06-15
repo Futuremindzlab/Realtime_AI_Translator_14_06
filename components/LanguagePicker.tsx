@@ -28,13 +28,6 @@ export const LanguagePicker: React.FC<LanguagePickerProps> = ({
     (lang) => lang.code !== excludeLanguage && (allowAuto || lang.code !== 'auto')
   );
 
-  React.useEffect(() => {
-    if (modalVisible) {
-      console.log('LanguagePicker modal opened');
-      console.log('Available languages count:', availableLanguages.length);
-      console.log('Selected language:', selectedLanguage);
-    }
-  }, [modalVisible]);
 
   return (
     <View style={styles.container}>
@@ -44,7 +37,11 @@ export const LanguagePicker: React.FC<LanguagePickerProps> = ({
         onPress={() => { if (!disabled) setModalVisible(true); }}
         activeOpacity={disabled ? 1 : 0.7}>
         <Text style={styles.selectedText}>
-          {selectedLang ? `${selectedLang.nativeName} (${selectedLang.name})` : 'Select Language'}
+          {selectedLang
+            ? selectedLang.nativeName === selectedLang.name
+              ? selectedLang.name
+              : `${selectedLang.nativeName} (${selectedLang.name})`
+            : 'Select Language'}
         </Text>
         <ChevronDown size={20} color="#6b7280" />
       </TouchableOpacity>
@@ -78,7 +75,6 @@ export const LanguagePicker: React.FC<LanguagePickerProps> = ({
                       selectedLanguage === language.code && styles.languageItemSelected,
                     ]}
                     onPress={() => {
-                      console.log('Language selected:', language.code, language.name);
                       onSelectLanguage(language.code);
                       setModalVisible(false);
                     }}>

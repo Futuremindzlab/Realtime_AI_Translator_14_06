@@ -4,7 +4,6 @@ import { ttsService, TTSProvider } from './ttsService';
 import { getCachedTranslation, cacheTranslation } from './translationCache';
 import { dynamoService } from './dynamoService';
 import { resolveLanguage } from '@/lib/constants';
-import { Platform, Alert } from 'react-native';
 
 export interface TranslationProgress {
   stage:
@@ -37,8 +36,12 @@ export class RealtimeTranslationService {
   private originalSourceLanguage = '';
   private originalTargetLanguage = '';
 
-  setProgressCallback(callback: (progress: TranslationProgress) => void) {
+  setProgressCallback(callback: ((progress: TranslationProgress) => void) | null) {
     this.onProgressCallback = callback;
+  }
+
+  getIsActive(): boolean {
+    return this.isActive;
   }
 
   private updateProgress(progress: TranslationProgress) {

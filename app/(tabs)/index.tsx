@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Platform,
 } from 'react-native';
 import { Mic, Square, Users, User } from 'lucide-react-native';
+import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { LanguagePicker } from '@/components/LanguagePicker';
 import {
@@ -23,46 +24,67 @@ import { ttsService } from '@/services/ttsService';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-// Cap content width so it doesn't stretch uncomfortably on tablets/landscape
 const CONTENT_MAX_WIDTH = Math.min(SCREEN_WIDTH, 600);
 
 export default function HomeScreen() {
   const { user, settings } = useAuth();
 
   const [sourceLanguage, setSourceLanguage] = useState('auto');
-  const [targetLanguage, setTargetLanguage] = useState('ta');
+  const [targetLanguage, setTargetLanguage] = useState('es');
   const [conversationMode, setConversationMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isConversationRunning, setIsConversationRunning] = useState(false);
   const [progress, setProgress] = useState<TranslationProgress | null>(null);
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
 
-  // 1. Initialise Services
+  // ── 1. Initialise API keys + sync settings from backend ──
   useEffect(() => {
     const openaiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY?.trim();
     if (openaiKey) {
       openaiService.initialize(openaiKey);
       ttsService.initializeOpenAI(openaiKey);
     }
-
     const elevenlabsKey = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY?.trim();
     if (elevenlabsKey) ttsService.initializeElevenLabs(elevenlabsKey);
 
     if (settings) {
       setSourceLanguage(settings.default_source_language || 'auto');
-      setTargetLanguage(settings.default_target_language || 'ta');
-      setConversationMode(settings.conversation_mode_default);
+      setTargetLanguage(settings.default_target_language || 'es');
+      setConversationMode(settings.conversation_mode_default ?? false);
     }
   }, [settings]);
 
-  // 2. Permission check + progress callback
+  // ── 2. Register progress callback once on mount ──
   useEffect(() => {
-    realtimeTranslationService.setProgressCallback(setProgress);
-
     audioService.requestPermissions().catch(() => {});
-
-    return () => { realtimeTranslationService.cleanup(); };
+    realtimeTranslationService.setProgressCallback(setProgress);
+    return () => {
+      realtimeTranslationService.setProgressCallback(null);
+      realtimeTranslationService.cleanup();
+    };
   }, []);
+
+  // ── 3. Tab focus/blur — Expo Router tabs never unmount ──
+  // When the user switches away from this tab while recording, stop everything
+  // so they don't return to a stale "Listening…" state with a locked UI.
+  useFocusEffect(
+    useCallback(() => {
+      // Re-register callback in case it was cleared
+      realtimeTranslationService.setProgressCallback(setProgress);
+
+      return () => {
+        // Leaving the tab: abort any active session
+        const wasActive = realtimeTranslationService.getIsActive();
+        if (wasActive) {
+          realtimeTranslationService.stopConversation();
+          audioService.forceCleanup().catch(() => {});
+          setIsRecording(false);
+          setIsConversationRunning(false);
+          setProgress(null);
+        }
+      };
+    }, [])
+  );
 
   const handleToggleRecording = async () => {
     if (isButtonDisabled) return;
@@ -71,9 +93,17 @@ export default function HomeScreen() {
 
     try {
       if (conversationMode) {
-        isConversationRunning ? await handleStopConversation() : await handleStartConversation();
+        if (isConversationRunning) {
+          await handleStopConversation();
+        } else {
+          handleStartConversation();
+        }
       } else {
-        isRecording ? await handleStopRecording() : await handleStartRecording();
+        if (isRecording) {
+          await handleStopRecording();
+        } else {
+          await handleStartRecording();
+        }
       }
     } finally {
       setTimeout(() => setIsButtonDisabled(false), 800);
@@ -82,16 +112,17 @@ export default function HomeScreen() {
 
   // ── Single Translation Mode ──
   const handleStartRecording = async () => {
+    setIsRecording(true); // Optimistic: show stop button immediately while audio system starts
     try {
       await realtimeTranslationService.startRealtimeRecording(
         sourceLanguage, targetLanguage,
         settings?.tts_provider || 'device',
         user?.id,
       );
-      setIsRecording(true);
-    } catch (error: any) {
+    } catch {
       setIsRecording(false);
-      await realtimeTranslationService.forceReset();
+      setProgress(null);
+      realtimeTranslationService.cleanup().catch(() => {});
     }
   };
 
@@ -100,7 +131,8 @@ export default function HomeScreen() {
     try {
       await realtimeTranslationService.stopRealtimeRecording();
     } catch {
-      await realtimeTranslationService.forceReset();
+      setProgress(null);
+      realtimeTranslationService.cleanup().catch(() => {});
     }
   };
 
@@ -111,11 +143,13 @@ export default function HomeScreen() {
       sourceLanguage, targetLanguage,
       settings?.tts_provider || 'device',
       user?.id,
-    ).then(() => setIsConversationRunning(false))
-     .catch((error: any) => {
-       setIsConversationRunning(false);
-       realtimeTranslationService.forceReset();
-     });
+    ).then(() => {
+      setIsConversationRunning(false);
+    }).catch(() => {
+      setIsConversationRunning(false);
+      setProgress(null);
+      realtimeTranslationService.cleanup().catch(() => {});
+    });
   };
 
   const handleStopConversation = async () => {
@@ -136,10 +170,10 @@ export default function HomeScreen() {
           ? `Person ${progress.currentPerson}: Listening… (${from} → ${to})`
           : `Listening… (${from} → ${to})`;
       }
-      case 'transcribing':     return 'Transcribing speech…';
-      case 'translating':      return 'Translating…';
-      case 'generating_speech':return 'Generating speech…';
-      case 'playing':          return 'Playing translation…';
+      case 'transcribing':      return 'Transcribing speech…';
+      case 'translating':       return 'Translating…';
+      case 'generating_speech': return 'Generating speech…';
+      case 'playing':           return 'Playing translation…';
       case 'waiting':
         return conversationMode
           ? `Ready for Person ${progress.currentPerson === 'A' ? 'B' : 'A'}…`
@@ -147,9 +181,11 @@ export default function HomeScreen() {
       case 'complete':
         return conversationMode && isConversationRunning
           ? 'Turn complete'
-          : 'Translation complete';
-      case 'error':            return `Error: ${progress.error}`;
-      default:                 return String(progress.stage).replace('_', ' ');
+          : 'Translation complete ✓';
+      case 'error':
+        return `Error: ${progress.error}`;
+      default:
+        return String(progress.stage).replace(/_/g, ' ');
     }
   };
 
@@ -169,13 +205,14 @@ export default function HomeScreen() {
           <Text style={styles.subtitle}>Real-time voice translation</Text>
         </View>
 
-        {/* ── Language Pickers (card) ── */}
+        {/* ── Language Pickers ── */}
         <View style={styles.card}>
           <View style={styles.pickerSection}>
             <LanguagePicker
               label="Source Language"
               selectedLanguage={sourceLanguage}
               onSelectLanguage={setSourceLanguage}
+              allowAuto
               disabled={isActive}
             />
             <View style={styles.pickerDivider} />
@@ -183,12 +220,13 @@ export default function HomeScreen() {
               label="Target Language"
               selectedLanguage={targetLanguage}
               onSelectLanguage={setTargetLanguage}
+              excludeLanguage="auto"
               disabled={isActive}
             />
           </View>
         </View>
 
-        {/* ── Mode Toggle (card) ── */}
+        {/* ── Mode Toggle ── */}
         <View style={[styles.card, styles.modeCard, conversationMode && styles.modeCardActive]}>
           <View style={styles.modeLeft}>
             {conversationMode
@@ -237,7 +275,15 @@ export default function HomeScreen() {
           </TouchableOpacity>
           <Text style={[
             styles.statusText,
-            { color: isActive ? '#ef4444' : progress?.stage === 'error' ? '#dc2626' : '#6b7280' },
+            {
+              color: isActive
+                ? '#ef4444'
+                : progress?.stage === 'error'
+                ? '#dc2626'
+                : progress?.stage === 'complete'
+                ? '#16a34a'
+                : '#6b7280',
+            },
           ]}>
             {getStatusText()}
           </Text>
@@ -276,7 +322,6 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Bottom breathing room */}
         <View style={{ height: 32 }} />
       </ScrollView>
     </View>
@@ -298,8 +343,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
   },
-
-  // Header
   header: {
     alignItems: 'center',
     marginBottom: 24,
@@ -317,8 +360,6 @@ const styles = StyleSheet.create({
     color: '#64748b',
     marginTop: 4,
   },
-
-  // Card container shared by pickers and mode toggle
   card: {
     width: '100%',
     maxWidth: CONTENT_MAX_WIDTH,
@@ -341,8 +382,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f1f5f9',
     marginHorizontal: 12,
   },
-
-  // Mode toggle card
   modeCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -376,8 +415,6 @@ const styles = StyleSheet.create({
     color: '#64748b',
     lineHeight: 16,
   },
-
-  // Hint
   hintBox: {
     width: '100%',
     maxWidth: CONTENT_MAX_WIDTH,
@@ -395,8 +432,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     lineHeight: 18,
   },
-
-  // Mic
   micSection: {
     alignItems: 'center',
     marginVertical: 20,
@@ -427,8 +462,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 20,
   },
-
-  // Results
   results: {
     width: '100%',
     maxWidth: CONTENT_MAX_WIDTH,
