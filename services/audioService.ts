@@ -272,18 +272,22 @@ export class AudioService {
           }
         });
 
-        // Safety timeout: resolve after expected duration + 2 seconds
-        const duration = status.isLoaded ? (status.durationMillis || 5000) : 5000;
+        // Safety timeout: on Android, durationMillis is often 0 immediately after
+        // load (decoded asynchronously). Use at least 90 seconds so long TTS
+        // audio (Tamil/Malayalam paragraphs) is never cut off prematurely.
+        const reportedMs = (status.isLoaded && status.durationMillis && status.durationMillis > 0)
+          ? status.durationMillis : 0;
+        const timeoutMs = Math.max(reportedMs + 10000, 90000);
         setTimeout(() => {
           if (!resolved) {
             resolved = true;
-            console.warn(`⚠️ Audio timeout after ${duration + 2000}ms, continuing...`);
+            console.warn(`⚠️ Audio safety timeout after ${timeoutMs}ms, continuing...`);
             try { sound.unloadAsync(); } catch (e) {}
             this.sound = null;
             this.audioMode = 'idle';
             resolve();
           }
-        }, duration + 2000);
+        }, timeoutMs);
       });
 
     } catch (error) {

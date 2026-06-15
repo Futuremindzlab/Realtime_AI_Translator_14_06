@@ -198,17 +198,17 @@ export class TTSService {
       return null;
     }
 
-    // Offline safety net: if no API keys are configured for any cloud provider,
-    // fall back to device TTS automatically so the app stays functional offline.
-    const hasCloudKey = this.openaiApiKey || (this.elevenlabsApiKey && this.elevenlabsKeyValid) || this.inworldApiKey;
+    // No cloud keys at all → device TTS fallback
+    const hasCloudKey = this.openaiApiKey || (this.elevenlabsApiKey && this.elevenlabsKeyValid);
     if (!hasCloudKey) {
-      console.log('🔊 No cloud TTS API key configured — falling back to device TTS');
+      console.log('🔊 No cloud TTS key configured — using device TTS');
       await this.generateWithDevice(processedText, language);
       return null;
     }
 
-    // Auto-upgrade to ElevenLabs for languages where OpenAI TTS is poor
-    // Skip if key was already rejected (401) to avoid repeated failures + latency
+    // Auto-upgrade to ElevenLabs for languages where OpenAI TTS pronunciation is poor.
+    // eleven_v3 auto-detects Tamil/Malayalam/Hindi etc. from Unicode script — no language
+    // code needed. Skip auto-switch if ElevenLabs key was already rejected (401).
     let effectiveProvider = provider;
     if (
       provider === 'openai' &&
@@ -216,32 +216,38 @@ export class TTSService {
       this.elevenlabsKeyValid &&
       TTSService.ELEVENLABS_PREFERRED_LANGUAGES.has(language)
     ) {
-      console.log(`🔊 Auto-switching TTS to ElevenLabs for ${language} (better pronunciation)`);
+      console.log(`🔊 Auto-switching TTS → ElevenLabs for ${language} (better pronunciation)`);
       effectiveProvider = 'elevenlabs';
     }
 
-    console.log(`🔊 TTS: provider=${effectiveProvider}, lang=${language}, len=${processedText.length}`);
+    console.log(`🔊 TTS: provider=${effectiveProvider}, lang=${language}, chars=${processedText.length}`);
 
     try {
       switch (effectiveProvider) {
-        case 'inworld':
-          return await this.generateWithInworld(processedText, language);
         case 'elevenlabs':
           return await this.generateWithElevenLabs(processedText, language);
         case 'openai':
           return await this.generateWithOpenAI(processedText, language);
         default:
-          throw new Error(`Unknown TTS provider: ${effectiveProvider}`);
+          return await this.generateWithOpenAI(processedText, language);
       }
-    } catch (error) {
-      console.error(`Failed with ${effectiveProvider}, falling back to OpenAI TTS:`, error);
+    } catch (primaryError) {
+      console.error(`❌ TTS failed with ${effectiveProvider}:`, primaryError);
 
-      if (effectiveProvider !== 'openai') {
-        console.log('Attempting fallback to OpenAI TTS...');
-        return await this.generateWithOpenAI(processedText, language);
+      // ElevenLabs failed → try OpenAI TTS
+      if (effectiveProvider !== 'openai' && this.openaiApiKey) {
+        try {
+          console.log('🔊 Fallback: OpenAI TTS...');
+          return await this.generateWithOpenAI(processedText, language);
+        } catch (openaiErr) {
+          console.error('❌ OpenAI TTS fallback also failed:', openaiErr);
+        }
       }
 
-      throw error;
+      // Final fallback: device TTS — always works, zero latency, zero cost
+      console.log('🔊 Final fallback: device TTS');
+      await this.generateWithDevice(processedText, language);
+      return null;
     }
   }
 
@@ -295,7 +301,7 @@ export class TTSService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'tts-1',
+          model: 'tts-1-hd',  // HD model: better pronunciation for all languages
           voice,
           input: text,
           speed: 1.0,
@@ -369,22 +375,22 @@ export class TTSService {
     const body: Record<string, any> = { text, model_id: model };
 
     if (useFlash) {
-      // eleven_flash_v2_5: accepts arbitrary float voice_settings + language_code (ISO 639-1)
+      // eleven_flash_v2_5 accepts extended voice_settings + language_code (ISO 639-1)
       body.voice_settings = {
-        stability: 0.45,
-        similarity_boost: 0.78,
-        style: 0.35,
+        stability: 0.5,
+        similarity_boost: 0.75,
+        style: 0.3,
         use_speaker_boost: true,
       };
       body.language_code = language;
     } else {
-      // eleven_v3: stability MUST be exactly 0.0, 0.5, or 1.0 (TTD presets)
-      // Do NOT send language_code — v3 auto-detects language from the Unicode script
+      // eleven_v3 (TTD model for Indian/Arabic/Thai languages):
+      // - Only accepts stability (0.0 | 0.5 | 1.0) and similarity_boost
+      // - Do NOT send style, use_speaker_boost, or language_code
+      //   (v3 auto-detects language from the Unicode script of the input text)
       body.voice_settings = {
-        stability: 0.5,           // 0.5 = Natural (valid values: 0.0, 0.5, 1.0)
-        similarity_boost: 0.78,
-        style: 0.35,
-        use_speaker_boost: true,
+        stability: 0.5,
+        similarity_boost: 0.75,
       };
     }
 
