@@ -235,7 +235,10 @@ export default function HomeScreen() {
               ? <Square color="white" size={36} fill="white" />
               : <Mic    color="white" size={36} />}
           </TouchableOpacity>
-          <Text style={[styles.statusText, { color: isActive ? '#ef4444' : '#6b7280' }]}>
+          <Text style={[
+            styles.statusText,
+            { color: isActive ? '#ef4444' : progress?.stage === 'error' ? '#dc2626' : '#6b7280' },
+          ]}>
             {getStatusText()}
           </Text>
         </View>

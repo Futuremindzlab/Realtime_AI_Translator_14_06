@@ -413,7 +413,10 @@ export default function SettingsScreen() {
                     <View style={[styles.radio, ttsProvider === 'openai' && styles.radioSelected]}>
                       {ttsProvider === 'openai' && <View style={styles.radioDot} />}
                     </View>
-                    <Text style={styles.radioLabel}>OpenAI TTS</Text>
+                    <View>
+                      <Text style={styles.radioLabel}>OpenAI TTS</Text>
+                      <Text style={styles.voiceDesc}>Cloud · High quality · Requires API key</Text>
+                    </View>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -422,7 +425,22 @@ export default function SettingsScreen() {
                     <View style={[styles.radio, ttsProvider === 'elevenlabs' && styles.radioSelected]}>
                       {ttsProvider === 'elevenlabs' && <View style={styles.radioDot} />}
                     </View>
-                    <Text style={styles.radioLabel}>ElevenLabs</Text>
+                    <View>
+                      <Text style={styles.radioLabel}>ElevenLabs</Text>
+                      <Text style={styles.voiceDesc}>Cloud · Best for Indian & Arabic · Requires API key</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.radioOption}
+                    onPress={() => setTtsProvider('device')}>
+                    <View style={[styles.radio, ttsProvider === 'device' && styles.radioSelected]}>
+                      {ttsProvider === 'device' && <View style={styles.radioDot} />}
+                    </View>
+                    <View>
+                      <Text style={styles.radioLabel}>Device TTS</Text>
+                      <Text style={styles.voiceDesc}>Free · Offline · Uses phone's built-in voice</Text>
+                    </View>
                   </TouchableOpacity>
                 </View>
               </>
@@ -465,12 +483,8 @@ export default function SettingsScreen() {
                 ))}
               </View>
             )}
-            {(ttsProvider === 'device' || ttsProvider === 'inworld') && (
-              <Text style={styles.voiceHint}>
-                {ttsProvider === 'device'
-                  ? 'Voice selection is managed by your device\'s built-in TTS engine.'
-                  : 'Voice selection not available for this provider.'}
-              </Text>
+            {ttsProvider === 'inworld' && (
+              <Text style={styles.voiceHint}>Voice selection not available for this provider.</Text>
             )}
 
             <View style={styles.switchRow}>

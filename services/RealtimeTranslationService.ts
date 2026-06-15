@@ -158,6 +158,9 @@ export class RealtimeTranslationService {
   }
 
   async stopRealtimeRecording(): Promise<void> {
+    let lastSourceText = '';
+    let lastTranslatedText = '';
+
     try {
       console.log('=== SINGLE TRANSLATION FLOW ===');
       const audioUri = await audioService.stopRecording();
@@ -188,10 +191,12 @@ export class RealtimeTranslationService {
 
       const actualText = (typeof sourceText === 'string' ? sourceText : '').trim();
       if (!actualText || actualText.length < 3) {
-        this.updateProgress({ stage: 'error', error: 'No speech detected' });
+        this.updateProgress({ stage: 'error', error: 'No speech detected — please speak clearly and try again' });
         this.isActive = false;
         return;
       }
+
+      lastSourceText = actualText;
 
       // Translate
       const srcLang = resolveLanguage(this.currentSourceLanguage);
@@ -222,6 +227,8 @@ export class RealtimeTranslationService {
       if (!translatedText.trim()) {
         throw new Error('Translation returned empty result');
       }
+
+      lastTranslatedText = translatedText;
 
       console.log(`📝 Source text: "${actualText}"`);
       console.log(`📝 Translated to ${tgtLang.name}: "${translatedText}"`);
@@ -280,6 +287,8 @@ export class RealtimeTranslationService {
       this.updateProgress({
         stage: 'error',
         error: error instanceof Error ? error.message : 'Translation failed',
+        sourceText: lastSourceText || undefined,
+        translatedText: lastTranslatedText || undefined,
       });
       await audioService.cleanup();
     }
