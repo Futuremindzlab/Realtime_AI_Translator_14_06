@@ -138,31 +138,22 @@ export class TTSService {
     this.openaiApiKey = apiKey;
   }
 
-  // Languages where OpenAI TTS-1 has poor pronunciation — auto-switch to ElevenLabs
+  // Languages where OpenAI TTS has poor pronunciation — auto-switch to ElevenLabs
   private static readonly ELEVENLABS_PREFERRED_LANGUAGES = new Set([
     'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ur',
     'ar', 'fa', 'he', 'th',
   ]);
 
   /**
-   * Languages confirmed to work with eleven_flash_v2_5 + language_code.
-   * These get the fast model (~75ms latency, 0.5 credits/char).
+   * Languages supported by eleven_flash_v2_5 + language_code (ISO 639-1).
+   * Fast model (~75ms latency, 0.5 credits/char).
+   * Includes Hindi (hi), Tamil (ta), Arabic (ar) — verified supported.
    */
   private static readonly FLASH_SUPPORTED_LANGUAGES = new Set([
     'en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh',
-    'tr', 'pl', 'nl', 'sv', 'da', 'fi', 'el', 'cs', 'hu',
-    'ro', 'bg', 'sk', 'hr', 'id', 'ms', 'fil', 'uk',
-  ]);
-
-  /**
-   * Languages supported by eleven_v3 (70+ languages, 1 credit/char).
-   * eleven_v3 is the ONLY ElevenLabs model that supports Indian languages,
-   * Arabic, Farsi, Hebrew, Thai etc. with correct pronunciation.
-   * All use ISO 639-1 codes (same format as the rest of the app).
-   */
-  private static readonly V3_SUPPORTED_LANGUAGES = new Set([
-    'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ur',
-    'ar', 'fa', 'he', 'th', 'vi', 'sw', 'ne', 'si',
+    'tr', 'pl', 'nl', 'sv', 'da', 'no', 'fi', 'el', 'cs', 'hu',
+    'ro', 'bg', 'sk', 'hr', 'id', 'ms', 'fil', 'uk', 'ca',
+    'hi', 'ta', 'ar',  // Indian/Arabic supported by flash v2.5
   ]);
 
   /**
@@ -207,8 +198,7 @@ export class TTSService {
     }
 
     // Auto-upgrade to ElevenLabs for languages where OpenAI TTS pronunciation is poor.
-    // eleven_v3 auto-detects Tamil/Malayalam/Hindi etc. from Unicode script — no language
-    // code needed. Skip auto-switch if ElevenLabs key was already rejected (401).
+    // Skip if ElevenLabs key was already rejected (401).
     let effectiveProvider = provider;
     if (
       provider === 'openai' &&
@@ -367,15 +357,17 @@ export class TTSService {
     const voiceId = this.customVoiceId || this.getElevenLabsVoiceForLanguage(language);
 
     // Two-tier model selection:
-    // 1. eleven_flash_v2_5 — Western/CJK languages (~75ms, 0.5 credits/char)
-    // 2. eleven_v3 — Indian, Arabic, Thai, etc. (70+ languages, 1 credit/char)
+    // 1. eleven_flash_v2_5  — fast model (32 languages incl. Tamil, Hindi, Arabic)
+    // 2. eleven_multilingual_v2 — high-quality model (29 languages) for the rest
+    //    of ELEVENLABS_PREFERRED_LANGUAGES (Malayalam, Kannada, Telugu, etc.)
+    //    Language auto-detected from Unicode script; do NOT send language_code.
     const useFlash = TTSService.FLASH_SUPPORTED_LANGUAGES.has(language);
-    const model = useFlash ? 'eleven_flash_v2_5' : 'eleven_v3';
+    const model = useFlash ? 'eleven_flash_v2_5' : 'eleven_multilingual_v2';
 
     const body: Record<string, any> = { text, model_id: model };
 
     if (useFlash) {
-      // eleven_flash_v2_5 accepts extended voice_settings + language_code (ISO 639-1)
+      // eleven_flash_v2_5: extended voice_settings + language_code hint (ISO 639-1)
       body.voice_settings = {
         stability: 0.5,
         similarity_boost: 0.75,
@@ -384,14 +376,14 @@ export class TTSService {
       };
       body.language_code = language;
     } else {
-      // eleven_v3 (TTD model for Indian/Arabic/Thai languages):
-      // - Only accepts stability (0.0 | 0.5 | 1.0) and similarity_boost
-      // - Do NOT send style, use_speaker_boost, or language_code
-      //   (v3 auto-detects language from the Unicode script of the input text)
+      // eleven_multilingual_v2: supports style/boost, auto-detects language from text
       body.voice_settings = {
         stability: 0.5,
         similarity_boost: 0.75,
+        style: 0.15,
+        use_speaker_boost: true,
       };
+      // language_code not supported by multilingual_v2; model detects from Unicode script
     }
 
     console.log(`🔊 ElevenLabs TTS: model=${model}, voice=${voiceId}, lang=${language}, gender=${this.voiceGender}`);
