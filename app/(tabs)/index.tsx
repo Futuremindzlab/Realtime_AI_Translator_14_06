@@ -9,6 +9,8 @@ import {
   Switch,
   Dimensions,
   Platform,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { Mic, Square, Users, User } from 'lucide-react-native';
 import { useFocusEffect } from 'expo-router';
@@ -34,6 +36,7 @@ export default function HomeScreen() {
   const [conversationMode, setConversationMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isConversationRunning, setIsConversationRunning] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // true while transcribe/translate/TTS runs
   const [progress, setProgress] = useState<TranslationProgress | null>(null);
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
 
@@ -54,32 +57,62 @@ export default function HomeScreen() {
     }
   }, [settings]);
 
-  // ── 2. Register progress callback once on mount ──
+  // ── 2. Permissions + AppState (handles Android Home-button backgrounding) ──
   useEffect(() => {
     audioService.requestPermissions().catch(() => {});
-    realtimeTranslationService.setProgressCallback(setProgress);
-    return () => {
+
+    const resetAll = () => {
       realtimeTranslationService.setProgressCallback(null);
-      realtimeTranslationService.cleanup();
+      realtimeTranslationService.stopConversation();
+      audioService.forceCleanup().catch(() => {});
+      setIsRecording(false);
+      setIsConversationRunning(false);
+      setIsProcessing(false);
+      setProgress(null);
+    };
+
+    const handleAppState = (next: AppStateStatus) => {
+      // When the app goes to background the OS stops the microphone.
+      // Stop the service so we don't show a stuck "Listening" on resume.
+      if (next === 'background' || next === 'inactive') {
+        if (realtimeTranslationService.getIsActive()) {
+          resetAll();
+        }
+      }
+    };
+
+    const sub = AppState.addEventListener('change', handleAppState);
+
+    return () => {
+      sub.remove();
+      realtimeTranslationService.setProgressCallback(null);
+      realtimeTranslationService.cleanup().catch(() => {});
     };
   }, []);
 
-  // ── 3. Tab focus/blur — Expo Router tabs never unmount ──
-  // When the user switches away from this tab while recording, stop everything
-  // so they don't return to a stale "Listening…" state with a locked UI.
+  // ── 3. Tab focus/blur (Expo Router tabs never unmount) ──
   useFocusEffect(
     useCallback(() => {
-      // Re-register callback in case it was cleared
+      // ARRIVING at tab: reconcile React state with service truth.
+      // If the service stopped (e.g., OS killed the mic on background)
+      // but React state still shows "recording", reset to idle.
+      if (!realtimeTranslationService.getIsActive()) {
+        setIsRecording(false);
+        setIsConversationRunning(false);
+        setIsProcessing(false);
+      }
       realtimeTranslationService.setProgressCallback(setProgress);
 
       return () => {
-        // Leaving the tab: abort any active session
-        const wasActive = realtimeTranslationService.getIsActive();
-        if (wasActive) {
+        // LEAVING tab: clear callback FIRST (prevents stale update race),
+        // then stop any active session.
+        realtimeTranslationService.setProgressCallback(null);
+        if (realtimeTranslationService.getIsActive()) {
           realtimeTranslationService.stopConversation();
           audioService.forceCleanup().catch(() => {});
           setIsRecording(false);
           setIsConversationRunning(false);
+          setIsProcessing(false);
           setProgress(null);
         }
       };
@@ -87,7 +120,7 @@ export default function HomeScreen() {
   );
 
   const handleToggleRecording = async () => {
-    if (isButtonDisabled) return;
+    if (isButtonDisabled || isProcessing) return;
     setIsButtonDisabled(true);
     Keyboard.dismiss();
 
@@ -128,11 +161,14 @@ export default function HomeScreen() {
 
   const handleStopRecording = async () => {
     setIsRecording(false);
+    setIsProcessing(true); // disable mic button during transcribe→translate→TTS
     try {
       await realtimeTranslationService.stopRealtimeRecording();
     } catch {
       setProgress(null);
       realtimeTranslationService.cleanup().catch(() => {});
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -190,6 +226,7 @@ export default function HomeScreen() {
   };
 
   const isActive = isRecording || isConversationRunning;
+  const isBusy  = isActive || isProcessing; // processing after stop: keep button locked
 
   return (
     <View style={styles.container}>
@@ -264,9 +301,13 @@ export default function HomeScreen() {
         {/* ── Mic Button ── */}
         <View style={styles.micSection}>
           <TouchableOpacity
-            style={[styles.micButton, isActive && styles.micButtonActive]}
+            style={[
+              styles.micButton,
+              isActive      && styles.micButtonActive,
+              isProcessing  && styles.micButtonProcessing,
+            ]}
             onPress={handleToggleRecording}
-            disabled={isButtonDisabled}
+            disabled={isButtonDisabled || isBusy}
             activeOpacity={0.8}
           >
             {isActive
@@ -276,7 +317,7 @@ export default function HomeScreen() {
           <Text style={[
             styles.statusText,
             {
-              color: isActive
+              color: isActive || isProcessing
                 ? '#ef4444'
                 : progress?.stage === 'error'
                 ? '#dc2626'
@@ -454,6 +495,11 @@ const styles = StyleSheet.create({
   micButtonActive: {
     backgroundColor: '#ef4444',
     shadowColor: '#ef4444',
+  },
+  micButtonProcessing: {
+    backgroundColor: '#f97316', // orange = busy processing
+    shadowColor: '#f97316',
+    opacity: 0.85,
   },
   statusText: {
     marginTop: 14,
