@@ -138,7 +138,7 @@ export class TTSService {
     this.openaiApiKey = apiKey;
   }
 
-  // Languages where OpenAI TTS has poor pronunciation — auto-switch to ElevenLabs
+  // Languages where device TTS and OpenAI TTS are unreliable — prefer ElevenLabs
   private static readonly ELEVENLABS_PREFERRED_LANGUAGES = new Set([
     'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ur',
     'ar', 'fa', 'he', 'th',
@@ -147,13 +147,21 @@ export class TTSService {
   /**
    * Languages supported by eleven_flash_v2_5 + language_code (ISO 639-1).
    * Fast model (~75ms latency, 0.5 credits/char).
-   * Includes Hindi (hi), Tamil (ta), Arabic (ar) — verified supported.
    */
   private static readonly FLASH_SUPPORTED_LANGUAGES = new Set([
     'en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh',
     'tr', 'pl', 'nl', 'sv', 'da', 'no', 'fi', 'el', 'cs', 'hu',
     'ro', 'bg', 'sk', 'hr', 'id', 'ms', 'fil', 'uk', 'ca',
-    'hi', 'ta', 'ar',  // Indian/Arabic supported by flash v2.5
+    'hi', 'ta', 'ar',
+  ]);
+
+  /**
+   * Languages handled by eleven_v3 — 70+ languages including all Indian scripts.
+   * eleven_v3 auto-detects language from Unicode script; do NOT send language_code.
+   */
+  private static readonly V3_SUPPORTED_LANGUAGES = new Set([
+    'ml', 'te', 'kn', 'mr', 'bn', 'gu', 'pa', 'ur',
+    'fa', 'he', 'th', 'vi', 'sw', 'ne', 'si',
   ]);
 
   /**
@@ -175,39 +183,48 @@ export class TTSService {
       throw new Error('Cannot generate speech: text is empty');
     }
 
-    const MAX_CHARS = 4000; // OpenAI limit is 4096, leaving buffer
+    const MAX_CHARS = 4000;
     let processedText = text.trim();
 
     if (processedText.length > MAX_CHARS) {
-      console.warn(`Text too long (${processedText.length} chars), truncating to ${MAX_CHARS} chars`);
       processedText = processedText.substring(0, MAX_CHARS) + '...';
     }
 
-    // Device TTS: speak inline via expo-speech, return null (no file URI produced)
-    if (provider === 'device') {
-      await this.generateWithDevice(processedText, language);
-      return null;
-    }
+    const needsBetterTTS = TTSService.ELEVENLABS_PREFERRED_LANGUAGES.has(language);
+    const hasElevenLabs = !!(this.elevenlabsApiKey && this.elevenlabsKeyValid);
+    const hasOpenAI = !!this.openaiApiKey;
 
-    // No cloud keys at all → device TTS fallback
-    const hasCloudKey = this.openaiApiKey || (this.elevenlabsApiKey && this.elevenlabsKeyValid);
-    if (!hasCloudKey) {
-      console.log('🔊 No cloud TTS key configured — using device TTS');
-      await this.generateWithDevice(processedText, language);
-      return null;
-    }
-
-    // Auto-upgrade to ElevenLabs for languages where OpenAI TTS pronunciation is poor.
-    // Skip if ElevenLabs key was already rejected (401).
+    // Determine effective provider.
+    // CRITICAL: auto-upgrade BEFORE the 'device' short-circuit so that Indian/Arabic
+    // languages are never sent to device TTS (Android falls back to system language
+    // — e.g. Spanish — when the target language pack is not installed).
     let effectiveProvider = provider;
-    if (
-      provider === 'openai' &&
-      this.elevenlabsApiKey &&
-      this.elevenlabsKeyValid &&
-      TTSService.ELEVENLABS_PREFERRED_LANGUAGES.has(language)
-    ) {
-      console.log(`🔊 Auto-switching TTS → ElevenLabs for ${language} (better pronunciation)`);
+
+    if (provider === 'device' && needsBetterTTS) {
+      if (hasElevenLabs) {
+        effectiveProvider = 'elevenlabs';
+        console.log(`🔊 Auto-switching device → ElevenLabs for ${language}`);
+      } else if (hasOpenAI) {
+        effectiveProvider = 'openai';
+        console.log(`🔊 Auto-switching device → OpenAI for ${language}`);
+      }
+      // No cloud keys: fall through to device TTS (user's explicit choice, best we can do)
+    } else if (provider === 'openai' && needsBetterTTS && hasElevenLabs) {
       effectiveProvider = 'elevenlabs';
+      console.log(`🔊 Auto-switching openai → ElevenLabs for ${language} (better pronunciation)`);
+    }
+
+    // Device TTS: only reached when still 'device' after auto-upgrade
+    if (effectiveProvider === 'device') {
+      await this.generateWithDevice(processedText, language);
+      return null;
+    }
+
+    // No cloud keys → device TTS fallback
+    if (!hasOpenAI && !hasElevenLabs) {
+      console.log('🔊 No cloud TTS key — using device TTS');
+      await this.generateWithDevice(processedText, language);
+      return null;
     }
 
     console.log(`🔊 TTS: provider=${effectiveProvider}, lang=${language}, chars=${processedText.length}`);
@@ -224,8 +241,7 @@ export class TTSService {
     } catch (primaryError) {
       console.error(`❌ TTS failed with ${effectiveProvider}:`, primaryError);
 
-      // ElevenLabs failed → try OpenAI TTS
-      if (effectiveProvider !== 'openai' && this.openaiApiKey) {
+      if (effectiveProvider !== 'openai' && hasOpenAI) {
         try {
           console.log('🔊 Fallback: OpenAI TTS...');
           return await this.generateWithOpenAI(processedText, language);
@@ -234,7 +250,7 @@ export class TTSService {
         }
       }
 
-      // Final fallback: device TTS — always works, zero latency, zero cost
+      // Final fallback: device TTS
       console.log('🔊 Final fallback: device TTS');
       await this.generateWithDevice(processedText, language);
       return null;
@@ -356,63 +372,80 @@ export class TTSService {
     // Use custom cloned voice if available, otherwise pick by language + gender
     const voiceId = this.customVoiceId || this.getElevenLabsVoiceForLanguage(language);
 
-    // Two-tier model selection:
-    // 1. eleven_flash_v2_5  — fast model (32 languages incl. Tamil, Hindi, Arabic)
-    // 2. eleven_multilingual_v2 — high-quality model (29 languages) for the rest
-    //    of ELEVENLABS_PREFERRED_LANGUAGES (Malayalam, Kannada, Telugu, etc.)
-    //    Language auto-detected from Unicode script; do NOT send language_code.
+    // Three-tier model selection:
+    // 1. eleven_flash_v2_5  — fast (32 languages incl. Hindi, Tamil, Arabic)
+    // 2. eleven_v3          — 70+ languages, best for Indian scripts (Malayalam, Telugu, etc.)
+    // 3. eleven_multilingual_v2 — fallback if v3 is unavailable on this plan
     const useFlash = TTSService.FLASH_SUPPORTED_LANGUAGES.has(language);
-    const model = useFlash ? 'eleven_flash_v2_5' : 'eleven_multilingual_v2';
+    const useV3    = !useFlash && TTSService.V3_SUPPORTED_LANGUAGES.has(language);
+    const model    = useFlash ? 'eleven_flash_v2_5' : useV3 ? 'eleven_v3' : 'eleven_multilingual_v2';
 
     const body: Record<string, any> = { text, model_id: model };
 
     if (useFlash) {
-      // eleven_flash_v2_5: extended voice_settings + language_code hint (ISO 639-1)
+      // flash v2_5: accepts language_code hint + extended voice_settings
       body.voice_settings = {
-        stability: 0.5,
-        similarity_boost: 0.75,
-        style: 0.3,
+        stability: 0.45,
+        similarity_boost: 0.78,
+        style: 0.35,
         use_speaker_boost: true,
       };
       body.language_code = language;
     } else {
-      // eleven_multilingual_v2: supports style/boost, auto-detects language from text
+      // v3 and multilingual_v2: auto-detect language from Unicode script; do NOT send language_code
+      // v3 stability must be 0.0, 0.5, or 1.0 (TTD presets)
       body.voice_settings = {
         stability: 0.5,
-        similarity_boost: 0.75,
-        style: 0.15,
+        similarity_boost: 0.78,
+        style: 0.35,
         use_speaker_boost: true,
       };
-      // language_code not supported by multilingual_v2; model detects from Unicode script
     }
 
-    console.log(`🔊 ElevenLabs TTS: model=${model}, voice=${voiceId}, lang=${language}, gender=${this.voiceGender}`);
+    console.log(`🔊 ElevenLabs TTS: model=${model}, voice=${voiceId}, lang=${language}`);
 
-    try {
+    const callAPI = async (requestBody: Record<string, any>) => {
       const response = await fetch(
         `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
         {
           method: 'POST',
           headers: {
-            'xi-api-key': this.elevenlabsApiKey,
+            'xi-api-key': this.elevenlabsApiKey!,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(body),
+          body: JSON.stringify(requestBody),
         }
       );
 
       if (!response.ok) {
         if (response.status === 401) {
-          console.error('❌ ElevenLabs API key is invalid (401). Disabling auto-switch.');
           this.elevenlabsKeyValid = false;
+          console.error('❌ ElevenLabs 401 — key invalid, disabling auto-switch');
         }
         const errBody = await response.text().catch(() => '');
         console.error(`❌ ElevenLabs ${response.status}: ${errBody.substring(0, 200)}`);
-        throw new Error(`ElevenLabs TTS failed with status ${response.status}`);
+        throw new Error(`ElevenLabs TTS failed (${response.status})`);
       }
 
-      const fileUri = await this.saveAudioResponseToFile(response, 'elevenlabs_tts');
-      return fileUri;
+      return response;
+    };
+
+    try {
+      let response: Response;
+      try {
+        response = await callAPI(body);
+      } catch (err) {
+        // eleven_v3 may not be on this plan — fall back to eleven_multilingual_v2
+        if (useV3) {
+          console.log('🔊 eleven_v3 failed, retrying with eleven_multilingual_v2...');
+          const fallbackBody = { ...body, model_id: 'eleven_multilingual_v2' };
+          response = await callAPI(fallbackBody);
+        } else {
+          throw err;
+        }
+      }
+
+      return await this.saveAudioResponseToFile(response, 'elevenlabs_tts');
     } catch (error) {
       console.error('ElevenLabs TTS error:', error);
       throw new Error(`ElevenLabs TTS failed: ${error}`);
