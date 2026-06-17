@@ -72,11 +72,18 @@ export default function HomeScreen() {
     };
 
     const handleAppState = (next: AppStateStatus) => {
-      // When the app goes to background the OS stops the microphone.
-      // Stop the service so we don't show a stuck "Listening" on resume.
       if (next === 'background' || next === 'inactive') {
+        // OS stops the mic on background — reset so we don't show stuck "Listening"
         if (realtimeTranslationService.getIsActive()) {
           resetAll();
+        }
+      } else if (next === 'active') {
+        // App foregrounded — reconcile React state with service truth.
+        // isProcessing can get stuck if the pipeline was mid-flight when backgrounded.
+        if (!realtimeTranslationService.getIsActive()) {
+          setIsRecording(false);
+          setIsConversationRunning(false);
+          setIsProcessing(false);
         }
       }
     };
@@ -226,7 +233,6 @@ export default function HomeScreen() {
   };
 
   const isActive = isRecording || isConversationRunning;
-  const isBusy  = isActive || isProcessing; // processing after stop: keep button locked
 
   return (
     <View style={styles.container}>
@@ -307,7 +313,7 @@ export default function HomeScreen() {
               isProcessing  && styles.micButtonProcessing,
             ]}
             onPress={handleToggleRecording}
-            disabled={isButtonDisabled || isBusy}
+            disabled={isButtonDisabled || isProcessing}
             activeOpacity={0.8}
           >
             {isActive
