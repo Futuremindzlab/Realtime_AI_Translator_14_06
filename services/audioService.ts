@@ -272,12 +272,11 @@ export class AudioService {
           }
         });
 
-        // Safety timeout: on Android, durationMillis is often 0 immediately after
-        // load (decoded asynchronously). Use at least 90 seconds so long TTS
-        // audio (Tamil/Malayalam paragraphs) is never cut off prematurely.
+        // Safety timeout: on Android, durationMillis is often 0 right after load.
+        // Cap at 45s — long enough for any TTS clip, short enough not to freeze the UI.
         const reportedMs = (status.isLoaded && status.durationMillis && status.durationMillis > 0)
           ? status.durationMillis : 0;
-        const timeoutMs = Math.max(reportedMs + 10000, 90000);
+        const timeoutMs = reportedMs > 0 ? Math.min(reportedMs + 8000, 45000) : 45000;
         setTimeout(() => {
           if (!resolved) {
             resolved = true;

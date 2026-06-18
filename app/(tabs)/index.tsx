@@ -127,7 +127,7 @@ export default function HomeScreen() {
   );
 
   const handleToggleRecording = async () => {
-    if (isButtonDisabled || isProcessing) return;
+    if (isButtonDisabled) return;
     setIsButtonDisabled(true);
     Keyboard.dismiss();
 
@@ -313,7 +313,7 @@ export default function HomeScreen() {
               isProcessing  && styles.micButtonProcessing,
             ]}
             onPress={handleToggleRecording}
-            disabled={isButtonDisabled || isProcessing}
+            disabled={isButtonDisabled}
             activeOpacity={0.8}
           >
             {isActive
