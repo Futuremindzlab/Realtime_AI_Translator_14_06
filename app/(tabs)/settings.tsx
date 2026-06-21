@@ -483,6 +483,32 @@ export default function SettingsScreen() {
                 ))}
               </View>
             )}
+            {ttsProvider === 'device' && (
+              <View style={styles.radioGroup}>
+                <TouchableOpacity
+                  style={styles.radioOption}
+                  onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
+                  <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
+                    {voiceGender === 'female' && <View style={styles.radioDot} />}
+                  </View>
+                  <View>
+                    <Text style={styles.radioLabel}>Female Voice</Text>
+                    <Text style={styles.voiceDesc}>Higher pitch · Uses device built-in voice</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.radioOption}
+                  onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
+                  <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
+                    {voiceGender === 'male' && <View style={styles.radioDot} />}
+                  </View>
+                  <View>
+                    <Text style={styles.radioLabel}>Male Voice</Text>
+                    <Text style={styles.voiceDesc}>Lower pitch · Uses device built-in voice</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
             {ttsProvider === 'inworld' && (
               <Text style={styles.voiceHint}>Voice selection not available for this provider.</Text>
             )}

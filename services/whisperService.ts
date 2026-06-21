@@ -81,14 +81,19 @@ class WhisperService {
   /**
    * Try on-device transcription first; fall back to OpenAI Whisper cloud API
    * if the local model isn't ready yet, on web, or the result is empty.
-   * The tiny on-device model can silently return empty text for languages it
-   * handles poorly (e.g. some Indic scripts) — in that case we retry in cloud.
+   *
+   * When language is 'auto' (or unset) we skip the tiny on-device model entirely:
+   * it cannot reliably detect Indic languages (Malayalam, Telugu, Kannada) and
+   * frequently returns Tamil or Hindi for other Dravidian input. OpenAI cloud
+   * Whisper handles language detection significantly better for these scripts.
    */
   async transcribeWithFallback(
     audioUri: string,
     language?: string,
   ): Promise<{ text: string; detectedLanguage?: string }> {
-    if (this.isReady()) {
+    const isAutoDetect = !language || language === 'auto';
+
+    if (!isAutoDetect && this.isReady()) {
       try {
         const result = await this.transcribe(audioUri, language);
         if (result.text.trim()) return result;
@@ -99,9 +104,12 @@ class WhisperService {
       }
     }
 
+    if (isAutoDetect) {
+      console.log('[WhisperService] Auto-detect mode — using cloud Whisper for accurate language detection');
+    }
+
     // Cloud fallback — import lazily to avoid circular dependency
     const { openaiService } = await import('./openaiService');
-    console.log('[WhisperService] Using cloud Whisper fallback');
     return openaiService.transcribe(audioUri, language);
   }
 }

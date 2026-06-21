@@ -279,11 +279,14 @@ export class TTSService {
     const locale = localeMap[language] || 'en-US';
     console.log(`🔊 Device TTS: locale=${locale}, len=${text.length}`);
 
+    // Approximate gender via pitch: female=1.15 (slightly higher), male=0.82 (slightly lower)
+    const pitch = this.voiceGender === 'male' ? 0.82 : 1.15;
+
     await new Promise<void>((resolve, reject) => {
       Speech.speak(text, {
         language: locale,
         rate: 0.9,
-        pitch: 1.0,
+        pitch,
         onDone: resolve,
         onError: (err) => reject(new Error(`Device TTS error: ${err.message}`)),
         onStopped: resolve, // treat stop as done (user may have interrupted)

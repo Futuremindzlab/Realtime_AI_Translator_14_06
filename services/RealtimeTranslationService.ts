@@ -183,10 +183,18 @@ export class RealtimeTranslationService {
       const detectedLanguage = rawDetected ? this.whisperLanguageToCode(rawDetected) : undefined;
       console.log(`📝 Transcribed: "${sourceText?.substring(0, 80)}" (detected: ${detectedLanguage})`);
 
-      // Use detected language if source was auto
+      // Use detected language if source was auto.
+      // Safety: if detected language matches the target language, the model almost
+      // certainly misidentified the input (you can't translate X→X). In that case
+      // fall back to English so at least the transcribed text is passed through.
       if (this.currentSourceLanguage === 'auto' && detectedLanguage) {
-        this.currentSourceLanguage = detectedLanguage;
-        console.log(`✅ Auto-detected: ${detectedLanguage} (${this.getLanguageNameFromCode(detectedLanguage)})`);
+        if (detectedLanguage === this.currentTargetLanguage) {
+          console.warn(`⚠️ Detected language (${detectedLanguage}) === target — likely misdetection, defaulting to en`);
+          this.currentSourceLanguage = 'en';
+        } else {
+          this.currentSourceLanguage = detectedLanguage;
+          console.log(`✅ Auto-detected: ${detectedLanguage} (${this.getLanguageNameFromCode(detectedLanguage)})`);
+        }
       } else if (this.currentSourceLanguage === 'auto') {
         this.currentSourceLanguage = 'en';
         console.warn('⚠️ No language detected, defaulting to English');
@@ -456,18 +464,21 @@ export class RealtimeTranslationService {
     }
 
     // ── Resolve 'auto' source on Person A's first turn ──
-    // On-device Whisper (tiny model) does NOT return detectedLanguage.
     // If 'auto' isn't resolved here, the swap logic will set currentTargetLanguage
     // to 'auto' on Person B's turn, which breaks the translation prompt.
+    // Safety: if detected language === target language, treat as misdetection (X→X is invalid).
     if (this.isPersonATurn && this.originalSourceLanguage === 'auto') {
-      const resolved = detectedLanguage || 'en';
+      let resolved = 'en';
+      if (detectedLanguage && detectedLanguage !== this.currentTargetLanguage) {
+        resolved = detectedLanguage;
+        console.log(`🔒 Locked Person A's language (detected): ${detectedLanguage} (${this.getLanguageNameFromCode(detectedLanguage)})`);
+      } else if (detectedLanguage) {
+        console.warn(`⚠️ Detected language (${detectedLanguage}) === target — likely misdetection, defaulting Person A to English`);
+      } else {
+        console.warn(`⚠️ No language detected — defaulting Person A's source to English`);
+      }
       this.originalSourceLanguage = resolved;
       this.currentSourceLanguage = resolved;
-      if (detectedLanguage) {
-        console.log(`🔒 Locked Person A's language (detected): ${detectedLanguage} (${this.getLanguageNameFromCode(detectedLanguage)})`);
-      } else {
-        console.warn(`⚠️ No language detected by on-device Whisper — defaulting Person A's source to English`);
-      }
     }
     // For subsequent turns, currentSourceLanguage/currentTargetLanguage are set
     // by the swap logic in conversationLoop — don't override them here.
