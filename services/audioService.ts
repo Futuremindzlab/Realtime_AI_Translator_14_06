@@ -272,15 +272,15 @@ export class AudioService {
           }
         });
 
-        // Safety timeout: on Android, durationMillis is often 0 right after load.
-        // Cap at 45s — long enough for any TTS clip, short enough not to freeze the UI.
-        const reportedMs = (status.isLoaded && status.durationMillis && status.durationMillis > 0)
-          ? status.durationMillis : 0;
-        const timeoutMs = reportedMs > 0 ? Math.min(reportedMs + 8000, 45000) : 45000;
+        // Safety timeout matching February folder: duration + 2s, defaulting to 5s if unknown.
+        // Keeps the pipeline from hanging more than ~7s for a short clip.
+        const duration = (status.isLoaded && status.durationMillis && status.durationMillis > 0)
+          ? status.durationMillis : 5000;
+        const timeoutMs = duration + 2000;
         setTimeout(() => {
           if (!resolved) {
             resolved = true;
-            console.warn(`⚠️ Audio safety timeout after ${timeoutMs}ms, continuing...`);
+            console.warn(`⚠️ Audio timeout after ${timeoutMs}ms, continuing...`);
             try { sound.unloadAsync(); } catch (e) {}
             this.sound = null;
             this.audioMode = 'idle';
