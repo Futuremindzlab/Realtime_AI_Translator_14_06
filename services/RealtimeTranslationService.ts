@@ -59,44 +59,67 @@ export class RealtimeTranslationService {
   // Language Mapping: Whisper returns full names, app uses ISO codes
   // ────────────────────────────────────────────────────────────────
 
+  // Complete ISO code → display name map (all languages in SUPPORTED_LANGUAGES)
   private static readonly LANG_CODE_TO_NAME: Record<string, string> = {
     'auto': 'the detected language',
-    'en': 'English', 'hi': 'Hindi', 'ta': 'Tamil', 'te': 'Telugu',
-    'kn': 'Kannada', 'ml': 'Malayalam', 'mr': 'Marathi', 'bn': 'Bengali',
-    'gu': 'Gujarati', 'pa': 'Punjabi', 'ur': 'Urdu', 'es': 'Spanish',
-    'fr': 'French', 'de': 'German', 'it': 'Italian', 'pt': 'Portuguese',
-    'ru': 'Russian', 'ja': 'Japanese', 'ko': 'Korean', 'zh': 'Chinese',
-    'ar': 'Arabic', 'tr': 'Turkish', 'th': 'Thai', 'vi': 'Vietnamese',
-    'id': 'Indonesian', 'nl': 'Dutch', 'pl': 'Polish', 'uk': 'Ukrainian',
-    'cs': 'Czech', 'fil': 'Filipino', 'sv': 'Swedish', 'da': 'Danish',
-    'no': 'Norwegian', 'fi': 'Finnish', 'el': 'Greek', 'hu': 'Hungarian',
-    'ro': 'Romanian', 'sk': 'Slovak', 'bg': 'Bulgarian', 'sr': 'Serbian',
-    'he': 'Hebrew', 'ca': 'Catalan',
+    'en': 'English',    'hi': 'Hindi',       'ta': 'Tamil',       'te': 'Telugu',
+    'kn': 'Kannada',    'ml': 'Malayalam',   'mr': 'Marathi',     'bn': 'Bengali',
+    'gu': 'Gujarati',   'pa': 'Punjabi',     'ur': 'Urdu',        'es': 'Spanish',
+    'fr': 'French',     'de': 'German',      'it': 'Italian',     'pt': 'Portuguese',
+    'ru': 'Russian',    'ja': 'Japanese',    'ko': 'Korean',      'zh': 'Chinese',
+    'ar': 'Arabic',     'tr': 'Turkish',     'th': 'Thai',        'vi': 'Vietnamese',
+    'id': 'Indonesian', 'nl': 'Dutch',       'pl': 'Polish',      'uk': 'Ukrainian',
+    'cs': 'Czech',      'fil': 'Filipino',   'sv': 'Swedish',     'da': 'Danish',
+    'no': 'Norwegian',  'fi': 'Finnish',     'el': 'Greek',       'hu': 'Hungarian',
+    'ro': 'Romanian',   'sk': 'Slovak',      'bg': 'Bulgarian',   'sr': 'Serbian',
+    'he': 'Hebrew',     'ca': 'Catalan',     'fa': 'Persian',     'ms': 'Malay',
+    'sw': 'Swahili',    'hr': 'Croatian',    'ne': 'Nepali',      'si': 'Sinhala',
+  };
+
+  // Whisper API returns language names that may differ from our display names.
+  // These aliases map Whisper-specific strings directly to ISO codes.
+  private static readonly WHISPER_ALIASES: Record<string, string> = {
+    'tagalog':    'fil', // Whisper says "tagalog"; we use Filipino (fil)
+    'mandarin':   'zh',  // Whisper may say "mandarin" instead of "chinese"
+    'cantonese':  'zh',  // Cantonese → map to Chinese
+    'castilian':  'es',  // Spanish alias
+    'flemish':    'nl',  // Dutch alias
+    'burmese':    'my',
+    'moldavian':  'ro',
+    'moldovan':   'ro',
+    'nynorsk':    'no',
+    'valencian':  'ca',
+    'pashto':     'ps',
+    'sinhalese':  'si',
+    'odia':       'or',
+    'assamese':   'as',
   };
 
   private static readonly LANG_NAME_TO_CODE: Record<string, string> = (() => {
     const map: Record<string, string> = {};
     for (const [code, name] of Object.entries(RealtimeTranslationService.LANG_CODE_TO_NAME)) {
-      if (code !== 'auto') {
-        map[name.toLowerCase()] = code;
-      }
+      if (code !== 'auto') map[name.toLowerCase()] = code;
     }
     return map;
   })();
 
   private whisperLanguageToCode(whisperLang: string): string {
     if (!whisperLang) return 'en';
-    const lower = whisperLang.toLowerCase();
+    const lower = whisperLang.toLowerCase().trim();
+    // Already a known ISO code
     if (RealtimeTranslationService.LANG_CODE_TO_NAME[lower]) return lower;
-    return RealtimeTranslationService.LANG_NAME_TO_CODE[lower] || whisperLang;
+    // Whisper-specific alias (tagalog→fil, mandarin→zh, etc.)
+    const alias = RealtimeTranslationService.WHISPER_ALIASES[lower];
+    if (alias) return alias;
+    // Standard name → code lookup (english→en, malayalam→ml, etc.)
+    const fromName = RealtimeTranslationService.LANG_NAME_TO_CODE[lower];
+    if (fromName) return fromName;
+    // Unknown language — return as-is; callers handle gracefully
+    console.warn(`[whisperLanguageToCode] Unmapped language: "${whisperLang}"`);
+    return lower;
   }
 
   private getLanguageNameFromCode(code: string): string {
-    if (!code) return 'Unknown';
-    const lower = code.toLowerCase();
-    if (RealtimeTranslationService.LANG_NAME_TO_CODE[lower]) {
-      return lower.charAt(0).toUpperCase() + lower.slice(1);
-    }
     return RealtimeTranslationService.LANG_CODE_TO_NAME[code] || code.toUpperCase();
   }
 

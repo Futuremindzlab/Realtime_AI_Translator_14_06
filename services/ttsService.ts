@@ -214,10 +214,24 @@ export class TTSService {
       console.log(`🔊 Auto-switching openai → ElevenLabs for ${language} (better pronunciation)`);
     }
 
-    // Device TTS: only reached when still 'device' after auto-upgrade
+    // Device TTS: only reached when still 'device' after auto-upgrade.
+    // If device TTS fails (language pack not installed), fall back to cloud.
     if (effectiveProvider === 'device') {
-      await this.generateWithDevice(processedText, language);
-      return null;
+      try {
+        await this.generateWithDevice(processedText, language);
+        return null;
+      } catch (deviceErr) {
+        console.warn(`⚠️ Device TTS failed for "${language}", falling back to cloud:`, deviceErr);
+        if (hasElevenLabs) {
+          try { return await this.generateWithElevenLabs(processedText, language); } catch {}
+        }
+        if (hasOpenAI) {
+          try { return await this.generateWithOpenAI(processedText, language); } catch {}
+        }
+        // Nothing worked — swallow the error so translation still completes
+        console.error('❌ All TTS providers failed; audio skipped');
+        return null;
+      }
     }
 
     // No cloud keys → device TTS fallback
@@ -265,15 +279,16 @@ export class TTSService {
   private async generateWithDevice(text: string, language: string): Promise<void> {
     // Map ISO 639-1 → BCP-47 locale for expo-speech
     const localeMap: Record<string, string> = {
-      en: 'en-US', hi: 'hi-IN', ta: 'ta-IN', te: 'te-IN', kn: 'kn-IN',
-      ml: 'ml-IN', mr: 'mr-IN', bn: 'bn-IN', gu: 'gu-IN', pa: 'pa-IN',
-      ur: 'ur-IN', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', it: 'it-IT',
-      pt: 'pt-BR', ru: 'ru-RU', ja: 'ja-JP', ko: 'ko-KR', zh: 'zh-CN',
-      ar: 'ar-SA', tr: 'tr-TR', th: 'th-TH', vi: 'vi-VN', id: 'id-ID',
-      nl: 'nl-NL', pl: 'pl-PL', sv: 'sv-SE', da: 'da-DK', fi: 'fi-FI',
-      el: 'el-GR', cs: 'cs-CZ', hu: 'hu-HU', ro: 'ro-RO', uk: 'uk-UA',
-      he: 'he-IL', fa: 'fa-IR', ms: 'ms-MY', fil: 'fil-PH', sk: 'sk-SK',
-      bg: 'bg-BG', hr: 'hr-HR', sr: 'sr-RS', ca: 'ca-ES',
+      en: 'en-US',  hi: 'hi-IN',  ta: 'ta-IN',  te: 'te-IN',  kn: 'kn-IN',
+      ml: 'ml-IN',  mr: 'mr-IN',  bn: 'bn-IN',  gu: 'gu-IN',  pa: 'pa-IN',
+      ur: 'ur-PK',  es: 'es-ES',  fr: 'fr-FR',  de: 'de-DE',  it: 'it-IT',
+      pt: 'pt-BR',  ru: 'ru-RU',  ja: 'ja-JP',  ko: 'ko-KR',  zh: 'zh-CN',
+      ar: 'ar-SA',  tr: 'tr-TR',  th: 'th-TH',  vi: 'vi-VN',  id: 'id-ID',
+      nl: 'nl-NL',  pl: 'pl-PL',  sv: 'sv-SE',  da: 'da-DK',  fi: 'fi-FI',
+      el: 'el-GR',  cs: 'cs-CZ',  hu: 'hu-HU',  ro: 'ro-RO',  uk: 'uk-UA',
+      he: 'he-IL',  fa: 'fa-IR',  ms: 'ms-MY',  fil: 'fil-PH', sk: 'sk-SK',
+      bg: 'bg-BG',  hr: 'hr-HR',  sr: 'sr-RS',  ca: 'ca-ES',  sw: 'sw-KE',
+      no: 'nb-NO',  ne: 'ne-NP',  si: 'si-LK',
     };
 
     const locale = localeMap[language] || 'en-US';

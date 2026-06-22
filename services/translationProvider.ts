@@ -2,21 +2,26 @@ import EventSource from 'react-native-sse';
 
 export type TranslationProviderName = 'openai' | 'device';
 
-// Full language names for translation prompts — clearer than ISO codes for the model
+// Full language names for translation prompts
 const LANG_NAMES: Record<string, string> = {
-  en: 'English',  hi: 'Hindi',    ta: 'Tamil',     te: 'Telugu',
-  kn: 'Kannada',  ml: 'Malayalam', mr: 'Marathi',   bn: 'Bengali',
-  gu: 'Gujarati', pa: 'Punjabi',   ur: 'Urdu',      es: 'Spanish',
-  fr: 'French',   de: 'German',    it: 'Italian',   pt: 'Portuguese',
-  ru: 'Russian',  ja: 'Japanese',  ko: 'Korean',    zh: 'Chinese',
-  ar: 'Arabic',   tr: 'Turkish',   th: 'Thai',      vi: 'Vietnamese',
-  id: 'Indonesian', nl: 'Dutch',   pl: 'Polish',    uk: 'Ukrainian',
-  cs: 'Czech',    fil: 'Filipino', sv: 'Swedish',   da: 'Danish',
-  no: 'Norwegian', fi: 'Finnish',  el: 'Greek',     hu: 'Hungarian',
-  ro: 'Romanian', sk: 'Slovak',    bg: 'Bulgarian', sr: 'Serbian',
-  he: 'Hebrew',   ca: 'Catalan',   fa: 'Persian',   ms: 'Malay',
-  sw: 'Swahili',  ne: 'Nepali',    si: 'Sinhala',
+  en: 'English',    hi: 'Hindi',       ta: 'Tamil',       te: 'Telugu',
+  kn: 'Kannada',    ml: 'Malayalam',   mr: 'Marathi',     bn: 'Bengali',
+  gu: 'Gujarati',   pa: 'Punjabi',     ur: 'Urdu',        es: 'Spanish',
+  fr: 'French',     de: 'German',      it: 'Italian',     pt: 'Portuguese',
+  ru: 'Russian',    ja: 'Japanese',    ko: 'Korean',      zh: 'Chinese',
+  ar: 'Arabic',     tr: 'Turkish',     th: 'Thai',        vi: 'Vietnamese',
+  id: 'Indonesian', nl: 'Dutch',       pl: 'Polish',      uk: 'Ukrainian',
+  cs: 'Czech',      fil: 'Filipino',   sv: 'Swedish',     da: 'Danish',
+  no: 'Norwegian',  fi: 'Finnish',     el: 'Greek',       hu: 'Hungarian',
+  ro: 'Romanian',   sk: 'Slovak',      bg: 'Bulgarian',   sr: 'Serbian',
+  he: 'Hebrew',     ca: 'Catalan',     fa: 'Persian',     ms: 'Malay',
+  sw: 'Swahili',    hr: 'Croatian',    ne: 'Nepali',      si: 'Sinhala',
 };
+
+// Languages where gpt-4o-mini has poor script/vocabulary coverage — use gpt-4o
+const HIGH_QUALITY_LANGUAGES = new Set([
+  'ml', 'kn', 'gu', 'pa', 'bn', 'mr', 'ur', 'si', 'ne',
+]);
 
 function langName(code: string): string {
   return LANG_NAMES[code] || code;
@@ -77,12 +82,15 @@ class TranslationProvider {
     const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
     if (!OPENAI_API_KEY) throw new Error('OpenAI API key not configured');
 
-    const model = 'gpt-4o-mini';
+    // gpt-4o for languages where gpt-4o-mini has poor script/vocabulary coverage
+    const model = HIGH_QUALITY_LANGUAGES.has(targetLanguage) ? 'gpt-4o' : 'gpt-4o-mini';
     const srcName = langName(sourceLanguage);
     const tgtName = langName(targetLanguage);
+    // Explicit native-script instruction prevents Latin transliteration
     const systemPrompt =
       `You are a professional translator. Translate the user's text from ${srcName} to ${tgtName}. ` +
-      `Return ONLY the translated text — no explanation, no preamble, no quotation marks.`;
+      `Return ONLY the ${tgtName} translation written in the correct native script — ` +
+      `no explanation, no transliteration, no romanization, no quotation marks.`;
 
     try {
       const translation = await this.streamTranslation(OPENAI_API_KEY, model, systemPrompt, text, onChunk);
@@ -114,8 +122,8 @@ class TranslationProvider {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
         ],
-        temperature: 0.3,
-        max_tokens: 512,
+        temperature: 0.2,
+        max_tokens: 1024,
       }),
     });
 
@@ -162,8 +170,8 @@ class TranslationProvider {
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage },
           ],
-          temperature: 0.3,
-          max_tokens: 512,
+          temperature: 0.2,
+          max_tokens: 1024,
         }),
       });
 
