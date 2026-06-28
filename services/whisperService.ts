@@ -55,7 +55,7 @@ class WhisperService {
   /**
    * Transcribe audio on-device using whisper.rn.
    * @param audioUri  Local file URI (WAV 16 kHz mono recommended)
-   * @param language  ISO 639-1 language code, or 'auto' for auto-detection
+   * @param language  ISO 639-1 language code ('ml', 'hi', etc.) — never pass 'auto' here
    */
   async transcribe(
     audioUri: string,
@@ -65,12 +65,30 @@ class WhisperService {
       throw new Error('[WhisperService] Not initialized');
     }
 
+    const langCode = (language && language !== 'auto') ? language : undefined;
+
+    // Seed Whisper with a script-appropriate prompt for Indic languages so it
+    // stays in the correct script and doesn't fall back to transliteration.
+    const initialPrompts: Record<string, string> = {
+      ml: 'ഇത് മലയാളം ഭാഷയിലുള്ള ഒരു ഓഡിയോ ആണ്.',
+      ta: 'இது தமிழ் மொழியில் உள்ள ஒரு ஆடியோ.',
+      te: 'ఇది తెలుగు భాషలో ఉన్న ఆడియో.',
+      kn: 'ಇದು ಕನ್ನಡ ಭಾಷೆಯಲ್ಲಿರುವ ಆಡಿಯೋ.',
+      hi: 'यह हिंदी भाषा में एक ऑडियो है।',
+      mr: 'हे मराठी भाषेतील एक ऑडिओ आहे.',
+      bn: 'এটি বাংলা ভাষায় একটি অডিও।',
+      ar: 'هذا تسجيل صوتي باللغة العربية.',
+      ur: 'یہ اردو زبان میں ایک آڈیو ہے۔',
+    };
+    const initialPrompt = langCode ? (initialPrompts[langCode] ?? undefined) : undefined;
+
     const { promise } = this.context.transcribe(audioUri, {
-      language: language === 'auto' || !language ? undefined : language,
+      language: langCode,
       maxLen: 0,
-      bestOf: 2,
-      beamSize: 1,
+      bestOf: 5,
+      beamSize: 5,
       temperature: 0,
+      ...(initialPrompt ? { prompt: initialPrompt } : {}),
     });
 
     const result = await promise;

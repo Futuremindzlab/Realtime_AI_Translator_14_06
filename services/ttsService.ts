@@ -19,22 +19,24 @@ export interface VoiceOption {
 }
 
 export class TTSService {
-  // All six OpenAI TTS voices with display labels
+  // All six OpenAI TTS voices with display labels.
+  // Nova/Echo = default for Western languages; Shimmer/Onyx = auto for Indian & Arabic.
   static readonly OPENAI_VOICES: VoiceOption[] = [
-    { id: 'nova',    label: 'Nova',    desc: 'Female · Warm & natural',       gender: 'female'  },
-    { id: 'shimmer', label: 'Shimmer', desc: 'Female · Soft & clear',         gender: 'female'  },
-    { id: 'alloy',   label: 'Alloy',   desc: 'Neutral · Versatile',           gender: 'neutral' },
-    { id: 'echo',    label: 'Echo',    desc: 'Male · Mellow',                 gender: 'male'    },
-    { id: 'fable',   label: 'Fable',   desc: 'Male · Expressive (British)',   gender: 'male'    },
-    { id: 'onyx',    label: 'Onyx',    desc: 'Male · Deep & authoritative',   gender: 'male'    },
+    { id: 'nova',    label: 'Nova',    desc: 'Female · Warm · Western & European',        gender: 'female'  },
+    { id: 'shimmer', label: 'Shimmer', desc: 'Female · Clear · Indian & Arabic scripts',  gender: 'female'  },
+    { id: 'alloy',   label: 'Alloy',   desc: 'Neutral · Versatile · All languages',       gender: 'neutral' },
+    { id: 'echo',    label: 'Echo',    desc: 'Male · Mellow · Western & European',        gender: 'male'    },
+    { id: 'fable',   label: 'Fable',   desc: 'Male · Expressive · British accent',        gender: 'male'    },
+    { id: 'onyx',    label: 'Onyx',    desc: 'Male · Deep · Indian & Arabic scripts',     gender: 'male'    },
   ];
 
-  // ElevenLabs premade voices — all multilingual, available on all accounts
+  // ElevenLabs premade voices — all multilingual, available on all accounts.
+  // Aria & Adam auto-selected for Indian/Arabic scripts; George for European languages.
   static readonly ELEVENLABS_VOICES: VoiceOption[] = [
-    { id: '9BWtsMINqrJLrRacOk9x', label: 'Aria',   desc: 'Female · Versatile',   gender: 'female' },
-    { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel', desc: 'Female · American',    gender: 'female' },
-    { id: 'JBFqnCBsd6RMkjVDRZzb', label: 'George', desc: 'Male · British',       gender: 'male'   },
-    { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam',   desc: 'Male · American deep', gender: 'male'   },
+    { id: '9BWtsMINqrJLrRacOk9x', label: 'Aria',   desc: 'Female · Versatile · All languages incl. Indian', gender: 'female' },
+    { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel', desc: 'Female · American · Best for English & Western',  gender: 'female' },
+    { id: 'JBFqnCBsd6RMkjVDRZzb', label: 'George', desc: 'Male · British · Best for European & Western',    gender: 'male'   },
+    { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam',   desc: 'Male · Deep · Best for Indian & Arabic scripts',  gender: 'male'   },
   ];
 
   private inworldApiKey: string | null = null;
@@ -138,10 +140,25 @@ export class TTSService {
     this.openaiApiKey = apiKey;
   }
 
-  // Languages where device TTS and OpenAI TTS are unreliable — prefer ElevenLabs
+  // Indic-script languages: Whisper prompt-only, ElevenLabs eleven_v3, Adam voice (male)
+  private static readonly INDIC_LANGUAGES = new Set([
+    'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ne', 'si',
+  ]);
+
+  // Right-to-left script languages: also benefit from ElevenLabs + Adam voice
+  private static readonly RTL_LANGUAGES = new Set([
+    'ar', 'fa', 'he', 'ur',
+  ]);
+
+  // Languages where device TTS is unreliable or unavailable on most phones.
+  // Automatically upgrade to ElevenLabs (or OpenAI) when one of these is the target.
   private static readonly ELEVENLABS_PREFERRED_LANGUAGES = new Set([
-    'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ur',
-    'ar', 'fa', 'he', 'th',
+    // All Indian Indic-script languages
+    'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ur', 'ne', 'si',
+    // Middle Eastern / RTL
+    'ar', 'fa', 'he',
+    // Other languages with poor device TTS coverage
+    'th', 'vi', 'sw', 'fil',
   ]);
 
   /**
@@ -518,11 +535,18 @@ export class TTSService {
     }
   }
 
-  private getOpenAIVoiceForLanguage(_language: string): string {
+  private getOpenAIVoiceForLanguage(language: string): string {
     const knownIds = TTSService.OPENAI_VOICES.map(v => v.id);
     if (this.selectedVoiceId && knownIds.includes(this.selectedVoiceId)) {
       return this.selectedVoiceId;
     }
+    // For Indian/Indic scripts: onyx (male) has a deeper, more authoritative tone
+    // that carries Indic phonology well; shimmer (female) is clear and enunciates
+    // consonant clusters better than nova for these scripts.
+    if (TTSService.INDIC_LANGUAGES.has(language) || TTSService.RTL_LANGUAGES.has(language)) {
+      return this.voiceGender === 'male' ? 'onyx' : 'shimmer';
+    }
+    // Western/European/East Asian: nova (female, warm) and echo (male, mellow)
     return this.voiceGender === 'male' ? 'echo' : 'nova';
   }
 
@@ -575,22 +599,33 @@ export class TTSService {
   }
 
   /**
-   * Voice selection for ElevenLabs based on gender preference.
+   * Language-aware voice selection for ElevenLabs.
    *
-   * The model handles pronunciation — voice ID controls timbre/personality only.
-   * All IDs are ElevenLabs default/premade voices available to every account.
+   * The model handles pronunciation — voice ID controls timbre/personality.
+   * Routes automatically based on target script family so non-Latin scripts
+   * are matched to voices that remain consistent under eleven_v3.
    *
-   * Female: Aria (9BWtsMINqrJLrRacOk9x) — warm, clear, verified multilingual
-   * Male:   George (JBFqnCBsd6RMkjVDRZzb) — natural, expressive, verified multilingual
+   * Indian/RTL  → Female: Aria (versatile, best for non-Latin)
+   *               Male:   Adam (deep, most consistent on eleven_v3 for Indic/Arabic)
+   * Western/EA  → Female: Aria (versatile)
+   *               Male:   George (British accent, natural for European languages)
    */
-  private getElevenLabsVoiceForLanguage(_language: string): string {
+  private getElevenLabsVoiceForLanguage(language: string): string {
     const knownIds = TTSService.ELEVENLABS_VOICES.map(v => v.id);
     if (this.selectedVoiceId && knownIds.includes(this.selectedVoiceId)) {
       return this.selectedVoiceId;
     }
+    const isIndic = TTSService.INDIC_LANGUAGES.has(language);
+    const isRTL   = TTSService.RTL_LANGUAGES.has(language);
+    if (isIndic || isRTL) {
+      return this.voiceGender === 'male'
+        ? 'pNInz6obpgDQGcFmaJgB'  // Adam — deep, consistent for Indian & Arabic on eleven_v3
+        : '9BWtsMINqrJLrRacOk9x'; // Aria — versatile, best for non-Latin scripts
+    }
+    // Western / European / East Asian / Southeast Asian
     return this.voiceGender === 'male'
-      ? 'JBFqnCBsd6RMkjVDRZzb'   // George
-      : '9BWtsMINqrJLrRacOk9x';  // Aria
+      ? 'JBFqnCBsd6RMkjVDRZzb'   // George — British, natural for European languages
+      : '9BWtsMINqrJLrRacOk9x';  // Aria — versatile for all Western languages too
   }
 }
 

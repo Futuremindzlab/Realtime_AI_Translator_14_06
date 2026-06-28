@@ -66,14 +66,49 @@ async transcribe(
     }
 
     formData.append('model', 'whisper-1');
-    formData.append('response_format', 'verbose_json'); // 🔧 Changed to get language detection
-    formData.append('temperature', '0'); // 🔧 Enable for more accurate transcription
+    formData.append('response_format', 'verbose_json');
+    formData.append('temperature', '0');
 
-    // When we know the expected language, tell Whisper to improve accuracy
-    // (like Google Translate — once languages are set, constrain detection)
+    // Script-specific seed prompts: bias Whisper toward the correct Unicode block
+    // so it does not transliterate or fall back to a similar language.
+    // Whisper uses the ISO 639-1 code internally; BCP-47 region variants are not
+    // needed for Whisper (they are for TTS). We strip region suffixes here.
+    const WHISPER_PROMPTS: Record<string, string> = {
+      ml: 'ഇത് മലയാളം ഭാഷയിലുള്ള ഒരു ഓഡിയോ ആണ്.',
+      ta: 'இது தமிழ் மொழியில் உள்ள ஒரு ஆடியோ.',
+      te: 'ఇది తెలుగు భాషలో ఉన్న ఆడియో.',
+      kn: 'ಇದು ಕನ್ನಡ ಭಾಷೆಯಲ್ಲಿರುವ ಆಡಿಯೋ.',
+      hi: 'यह हिंदी भाषा में एक ऑडियो है।',
+      mr: 'हे मराठी भाषेतील एक ऑडिओ आहे.',
+      bn: 'এটি বাংলা ভাষায় একটি অডিও।',
+      gu: 'આ ગુજરાતી ભાષામાં એક ઑડિઓ છે.',
+      pa: 'ਇਹ ਪੰਜਾਬੀ ਭਾਸ਼ਾ ਵਿੱਚ ਇੱਕ ਆਡੀਓ ਹੈ।',
+      ur: 'یہ اردو زبان میں ایک آڈیو ہے۔',
+      ar: 'هذا تسجيل صوتي باللغة العربية.',
+      fa: 'این یک فایل صوتی به زبان فارسی است.',
+      he: 'זהו קובץ שמע בשפה העברית.',
+      ne: 'यो नेपाली भाषामा एउटा अडियो हो।',
+      si: 'මෙය සිංහල භාෂාවෙන් පටිගත කළ ශ්‍රව්‍ය ගොනුවකි.',
+    };
+
     if (language && language !== 'auto') {
-      formData.append('language', language);
-      console.log(`🎤 Whisper language hint: ${language}`);
+      // Strip BCP-47 region suffix (e.g. 'ml-IN' → 'ml') — Whisper expects ISO 639-1
+      const isoCode = language.split('-')[0].toLowerCase();
+
+      // Whisper API rejects some low-resource Indic language codes with HTTP 400.
+      // For these, omit the language param but still pass the script-seed prompt —
+      // the prompt alone is enough to anchor Whisper's output to the correct
+      // Unicode block (Malayalam, Sinhala, Odia, etc.).
+      const WHISPER_PROMPT_ONLY_LANGS = new Set(['ml', 'si', 'or', 'as', 'ne']);
+      const usePromptOnly = WHISPER_PROMPT_ONLY_LANGS.has(isoCode);
+
+      if (!usePromptOnly) {
+        formData.append('language', isoCode);
+      }
+      const prompt = WHISPER_PROMPTS[isoCode];
+      if (prompt) formData.append('prompt', prompt);
+      const langNote = usePromptOnly ? `prompt-only(${isoCode})` : isoCode;
+      console.log(`🎤 Whisper: ${langNote}${prompt ? ' +prompt' : ''}`);
     } else {
       console.log(`🎤 Whisper: auto-detecting language`);
     }

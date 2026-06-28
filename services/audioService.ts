@@ -1,5 +1,6 @@
 import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
+import { preprocessForWhisper } from './audioProcessor';
 
 // expo-file-system is native-only. On web, TTS audio arrives as blob: URLs and
 // recording produces blob: URIs — neither path touches FileSystem, so a no-op
@@ -120,7 +121,9 @@ export class AudioService {
       this.audioMode = 'idle';
       const uri = recording.getURI();
       console.log(`🎤 Recording stopped, URI: ${uri ? 'ok' : 'null'}`);
-      return uri;
+      if (!uri) return null;
+      // Normalize + VAD-strip before handing to Whisper (iOS WAV only; Android no-op)
+      return await preprocessForWhisper(uri);
     } catch (error) {
       console.error('❌ stopRecording error:', error);
       this.recording = null;
