@@ -30,13 +30,15 @@ export class TTSService {
     { id: 'onyx',    label: 'Onyx',    desc: 'Male · Deep · Indian & Arabic scripts',     gender: 'male'    },
   ];
 
-  // ElevenLabs premade voices — all multilingual, available on all accounts.
-  // Aria & Adam auto-selected for Indian/Arabic scripts; George for European languages.
+  // ElevenLabs premade voices — classic voices available on ALL plan tiers (free + paid).
+  // IMPORTANT: Aria (9BWt…) is a Voice Library voice requiring a paid subscription (HTTP 402
+  // on free tier). Auto-routing uses Rachel (female) and George (male) — both classic premades.
+  // Aria and Adam are shown in Settings for manual selection by users on paid plans.
   static readonly ELEVENLABS_VOICES: VoiceOption[] = [
-    { id: '9BWtsMINqrJLrRacOk9x', label: 'Aria',   desc: 'Female · Versatile · All languages incl. Indian', gender: 'female' },
-    { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel', desc: 'Female · American · Best for English & Western',  gender: 'female' },
-    { id: 'JBFqnCBsd6RMkjVDRZzb', label: 'George', desc: 'Male · British · Best for European & Western',    gender: 'male'   },
-    { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam',   desc: 'Male · Deep · Best for Indian & Arabic scripts',  gender: 'male'   },
+    { id: '21m00Tcm4TlvDq8ikWAM', label: 'Rachel', desc: 'Female · American · Default for all languages incl. Indian', gender: 'female' },
+    { id: '9BWtsMINqrJLrRacOk9x', label: 'Aria',   desc: 'Female · Versatile · Paid plan required',                    gender: 'female' },
+    { id: 'JBFqnCBsd6RMkjVDRZzb', label: 'George', desc: 'Male · British · Default for all languages incl. Indian',    gender: 'male'   },
+    { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam',   desc: 'Male · Deep · Alternative for Indian & Arabic scripts',      gender: 'male'   },
   ];
 
   private inworldApiKey: string | null = null;
@@ -126,6 +128,21 @@ export class TTSService {
     return voiceId;
   }
 
+  /**
+   * Called at app startup to force-configure 3 default voice slots:
+   *   Indian Female → Aria, Indian Male → George, Foreign → Aria/George
+   * Resets any stale selectedVoiceId so auto-routing is always active at launch.
+   * AuthContext / Settings may override voice_gender and selectedVoiceId once
+   * user preferences load from DynamoDB.
+   */
+  initializeStartupVoices(): void {
+    this.selectedVoiceId = null;  // ensure language-aware auto-routing is active
+    this.voiceGender = 'female';  // default gender until settings load
+    console.log(
+      '🔊 Startup voices: ElevenLabs=George (free tier) · OpenAI=Shimmer/Nova for female · OpenAI=Onyx/Echo for male'
+    );
+  }
+
   initializeInworld(apiKey: string) {
     this.inworldApiKey = apiKey;
   }
@@ -140,12 +157,12 @@ export class TTSService {
     this.openaiApiKey = apiKey;
   }
 
-  // Indic-script languages: Whisper prompt-only, ElevenLabs eleven_v3, Adam voice (male)
+  // Indic-script languages: Whisper prompt-only mode; ElevenLabs eleven_v3; George voice (male)
   private static readonly INDIC_LANGUAGES = new Set([
     'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ne', 'si',
   ]);
 
-  // Right-to-left script languages: also benefit from ElevenLabs + Adam voice
+  // Right-to-left script languages: ElevenLabs eleven_v3; George voice (male)
   private static readonly RTL_LANGUAGES = new Set([
     'ar', 'fa', 'he', 'ur',
   ]);
@@ -164,21 +181,23 @@ export class TTSService {
   /**
    * Languages supported by eleven_flash_v2_5 + language_code (ISO 639-1).
    * Fast model (~75ms latency, 0.5 credits/char).
+   * NOTE: hi/ta/ar were tested in Flash but reverted to V3 — classic premade voices
+   * (Aria, George) are more reliable with eleven_v3 for Indic/Arabic scripts.
    */
   private static readonly FLASH_SUPPORTED_LANGUAGES = new Set([
     'en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh',
     'tr', 'pl', 'nl', 'sv', 'da', 'no', 'fi', 'el', 'cs', 'hu',
     'ro', 'bg', 'sk', 'hr', 'id', 'ms', 'fil', 'uk', 'ca',
-    'hi', 'ta', 'ar',
   ]);
 
   /**
    * Languages handled by eleven_v3 — 70+ languages including all Indian scripts.
    * eleven_v3 auto-detects language from Unicode script; do NOT send language_code.
+   * hi/ta/ar restored here (reverted from Flash) to match the Feb working baseline.
    */
   private static readonly V3_SUPPORTED_LANGUAGES = new Set([
-    'ml', 'te', 'kn', 'mr', 'bn', 'gu', 'pa', 'ur',
-    'fa', 'he', 'th', 'vi', 'sw', 'ne', 'si',
+    'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ur',
+    'ar', 'fa', 'he', 'th', 'vi', 'sw', 'ne', 'si',
   ]);
 
   /**
@@ -281,9 +300,13 @@ export class TTSService {
         }
       }
 
-      // Final fallback: device TTS
+      // Final fallback: device TTS (may not support all languages; swallow failures)
       console.log('🔊 Final fallback: device TTS');
-      await this.generateWithDevice(processedText, language);
+      try {
+        await this.generateWithDevice(processedText, language);
+      } catch (deviceErr) {
+        console.error('❌ Device TTS also failed; audio skipped:', deviceErr);
+      }
       return null;
     }
   }
@@ -408,9 +431,9 @@ export class TTSService {
     const voiceId = this.customVoiceId || this.getElevenLabsVoiceForLanguage(language);
 
     // Three-tier model selection:
-    // 1. eleven_flash_v2_5  — fast (32 languages incl. Hindi, Tamil, Arabic)
-    // 2. eleven_v3          — 70+ languages, best for Indian scripts (Malayalam, Telugu, etc.)
-    // 3. eleven_multilingual_v2 — fallback if v3 is unavailable on this plan
+    // 1. eleven_flash_v2_5      — fast; Western + EA languages (en/es/fr/de/ja/ko/zh …)
+    // 2. eleven_v3              — Indian scripts + Arabic/Persian/Hebrew/Thai (hi/ta/ml/ar …)
+    // 3. eleven_multilingual_v2 — fallback if v3/flash fails on this account plan
     const useFlash = TTSService.FLASH_SUPPORTED_LANGUAGES.has(language);
     const useV3    = !useFlash && TTSService.V3_SUPPORTED_LANGUAGES.has(language);
     const model    = useFlash ? 'eleven_flash_v2_5' : useV3 ? 'eleven_v3' : 'eleven_multilingual_v2';
@@ -470,10 +493,23 @@ export class TTSService {
       try {
         response = await callAPI(body);
       } catch (err) {
-        // eleven_v3 may not be on this plan — fall back to eleven_multilingual_v2
         if (useV3) {
+          // eleven_v3 unavailable on this plan → eleven_multilingual_v2 (widely supported)
           console.log('🔊 eleven_v3 failed, retrying with eleven_multilingual_v2...');
-          const fallbackBody = { ...body, model_id: 'eleven_multilingual_v2' };
+          const fallbackBody = {
+            text: body.text,
+            model_id: 'eleven_multilingual_v2',
+            voice_settings: { stability: 0.5, similarity_boost: 0.78, style: 0.35, use_speaker_boost: true },
+          };
+          response = await callAPI(fallbackBody);
+        } else if (useFlash) {
+          // Flash failed (voice may not support this model) → eleven_multilingual_v2
+          console.log('🔊 eleven_flash_v2_5 failed, retrying with eleven_multilingual_v2...');
+          const fallbackBody = {
+            text: body.text,
+            model_id: 'eleven_multilingual_v2',
+            voice_settings: { stability: 0.5, similarity_boost: 0.78, style: 0.35, use_speaker_boost: true },
+          };
           response = await callAPI(fallbackBody);
         } else {
           throw err;
@@ -599,33 +635,27 @@ export class TTSService {
   }
 
   /**
-   * Language-aware voice selection for ElevenLabs.
+   * Voice selection for ElevenLabs.
    *
-   * The model handles pronunciation — voice ID controls timbre/personality.
-   * Routes automatically based on target script family so non-Latin scripts
-   * are matched to voices that remain consistent under eleven_v3.
+   * Auto-routing always uses George — the only voice confirmed to work on the ElevenLabs
+   * free tier. Rachel (21m00…) and Aria (9BWt…) return HTTP 402 on free accounts.
    *
-   * Indian/RTL  → Female: Aria (versatile, best for non-Latin)
-   *               Male:   Adam (deep, most consistent on eleven_v3 for Indic/Arabic)
-   * Western/EA  → Female: Aria (versatile)
-   *               Male:   George (British accent, natural for European languages)
+   * Startup defaults (Issue 4):
+   *   Indian Female  → George (ElevenLabs free tier; use OpenAI shimmer for female TTS)
+   *   Indian Male    → George (ElevenLabs free tier, confirmed working with eleven_v3)
+   *   Foreign Female → George (ElevenLabs free tier; use OpenAI nova for female TTS)
+   *   Foreign Male   → George
+   *
+   * For true female voice: set TTS provider to 'openai' (shimmer/nova) or select Aria/Rachel
+   * in Settings on a paid ElevenLabs plan.
    */
   private getElevenLabsVoiceForLanguage(language: string): string {
     const knownIds = TTSService.ELEVENLABS_VOICES.map(v => v.id);
     if (this.selectedVoiceId && knownIds.includes(this.selectedVoiceId)) {
-      return this.selectedVoiceId;
+      return this.selectedVoiceId;  // explicit user selection wins
     }
-    const isIndic = TTSService.INDIC_LANGUAGES.has(language);
-    const isRTL   = TTSService.RTL_LANGUAGES.has(language);
-    if (isIndic || isRTL) {
-      return this.voiceGender === 'male'
-        ? 'pNInz6obpgDQGcFmaJgB'  // Adam — deep, consistent for Indian & Arabic on eleven_v3
-        : '9BWtsMINqrJLrRacOk9x'; // Aria — versatile, best for non-Latin scripts
-    }
-    // Western / European / East Asian / Southeast Asian
-    return this.voiceGender === 'male'
-      ? 'JBFqnCBsd6RMkjVDRZzb'   // George — British, natural for European languages
-      : '9BWtsMINqrJLrRacOk9x';  // Aria — versatile for all Western languages too
+    // George is the only free-tier-compatible voice — handles all 70+ languages on eleven_v3
+    return 'JBFqnCBsd6RMkjVDRZzb';
   }
 }
 

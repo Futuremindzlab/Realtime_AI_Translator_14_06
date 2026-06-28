@@ -493,7 +493,7 @@ export default function SettingsScreen() {
                   </View>
                   <View>
                     <Text style={styles.radioLabel}>Female Voice</Text>
-                    <Text style={styles.voiceDesc}>Higher pitch · Device TTS · Aria (ElevenLabs) for Indian/Arabic</Text>
+                    <Text style={styles.voiceDesc}>Higher pitch · Device TTS · OpenAI Shimmer / ElevenLabs George</Text>
                   </View>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -504,7 +504,7 @@ export default function SettingsScreen() {
                   </View>
                   <View>
                     <Text style={styles.radioLabel}>Male Voice</Text>
-                    <Text style={styles.voiceDesc}>Lower pitch · Device TTS · Adam (ElevenLabs) for Indian/Arabic</Text>
+                    <Text style={styles.voiceDesc}>Lower pitch · Device TTS · George (ElevenLabs) for Indian/Arabic</Text>
                   </View>
                 </TouchableOpacity>
               </View>

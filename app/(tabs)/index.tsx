@@ -38,7 +38,7 @@ export default function HomeScreen() {
   const [progress, setProgress] = useState<TranslationProgress | null>(null);
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
 
-  // ── 1. Initialise API keys + sync settings ──
+  // ── 1. Initialise API keys + startup voices + sync settings ──
   useEffect(() => {
     const openaiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY?.trim();
     if (openaiKey) {
@@ -48,7 +48,11 @@ export default function HomeScreen() {
     const elevenlabsKey = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY?.trim();
     if (elevenlabsKey) ttsService.initializeElevenLabs(elevenlabsKey);
 
-    if (settings) {
+    if (!settings) {
+      // Cold start: force 3 startup voice defaults before user settings arrive
+      // Indian Female=Aria, Indian Male=George, Foreign=Aria/George (auto-routed)
+      ttsService.initializeStartupVoices();
+    } else {
       setSourceLanguage(settings.default_source_language || 'auto');
       setTargetLanguage(settings.default_target_language || 'es');
       setConversationMode(settings.conversation_mode_default ?? false);
@@ -62,8 +66,12 @@ export default function HomeScreen() {
     audioService.requestPermissions().catch(() => {});
 
     const handleAppState = (next: AppStateStatus) => {
-      if (next === 'background' || next === 'inactive') {
-        // OS kills the mic on background — stop everything
+      if (next === 'background') {
+        // True background: OS kills mic access — must stop everything.
+        // NOTE: 'inactive' is intentionally excluded — on iOS it fires for
+        // notification overlays, permission dialogs, and control center
+        // (mic is NOT killed). Stopping on 'inactive' would drop conversations
+        // at startup (permission dialog) or on any incoming notification.
         if (realtimeTranslationService.getIsActive()) {
           realtimeTranslationService.stopConversation();
           audioService.forceCleanup().catch(() => {});
@@ -86,7 +94,8 @@ export default function HomeScreen() {
 
     return () => {
       sub.remove();
-      realtimeTranslationService.setProgressCallback(null);
+      // Feb pattern: do NOT clear the progress callback on unmount so any in-flight
+      // progress from a final cleanup cycle is still routed correctly.
       realtimeTranslationService.cleanup().catch(() => {});
     };
   }, []);
