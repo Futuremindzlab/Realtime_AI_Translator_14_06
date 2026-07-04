@@ -77,8 +77,12 @@ class WhisperService {
       hi: 'यह हिंदी भाषा में एक ऑडियो है।',
       mr: 'हे मराठी भाषेतील एक ऑडिओ आहे.',
       bn: 'এটি বাংলা ভাষায় একটি অডিও।',
+      gu: 'આ ગુજરાતી ભાષામાં એક ઑડિઓ છે.',
+      pa: 'ਇਹ ਪੰਜਾਬੀ ਭਾਸ਼ਾ ਵਿੱਚ ਇੱਕ ਆਡੀਓ ਹੈ।',
       ar: 'هذا تسجيل صوتي باللغة العربية.',
       ur: 'یہ اردو زبان میں ایک آڈیو ہے۔',
+      ne: 'यो नेपाली भाषामा एउटा अडियो हो।',
+      si: 'මෙය සිංහල භාෂාවෙන් පටිගත කළ ශ්‍රව්‍ය ගොනුවකි.',
     };
     const initialPrompt = langCode ? (initialPrompts[langCode] ?? undefined) : undefined;
 
@@ -100,10 +104,12 @@ class WhisperService {
    * Try on-device transcription first; fall back to OpenAI Whisper cloud API
    * if the local model isn't ready yet, on web, or the result is empty.
    *
-   * When language is 'auto' (or unset) we skip the tiny on-device model entirely:
-   * it cannot reliably detect Indic languages (Malayalam, Telugu, Kannada) and
-   * frequently returns Tamil or Hindi for other Dravidian input. OpenAI cloud
-   * Whisper handles language detection significantly better for these scripts.
+   * We always skip the tiny on-device model for:
+   *   - Auto-detect: tiny model cannot reliably detect Indic languages and
+   *     frequently returns Tamil or Hindi for other Dravidian input.
+   *   - All Indic + RTL languages: the tiny model has poor accuracy for
+   *     Malayalam, Kannada, Telugu, Gujarati, Punjabi, Urdu, Arabic, etc.
+   *     OpenAI cloud Whisper handles these significantly better.
    */
   async transcribeWithFallback(
     audioUri: string,
@@ -111,19 +117,29 @@ class WhisperService {
   ): Promise<{ text: string; detectedLanguage?: string }> {
     const isAutoDetect = !language || language === 'auto';
 
-    if (!isAutoDetect && this.isReady()) {
+    // Languages where the tiny on-device model performs poorly.
+    // Cloud Whisper is significantly more accurate for these scripts.
+    const CLOUD_ONLY_LANGS = new Set([
+      'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ur', 'ne', 'si',
+      'ar', 'fa', 'he',
+    ]);
+    const isoCode = language?.split('-')[0]?.toLowerCase() ?? '';
+    const forceCloud = isAutoDetect || CLOUD_ONLY_LANGS.has(isoCode);
+
+    if (!forceCloud && this.isReady()) {
       try {
         const result = await this.transcribe(audioUri, language);
         if (result.text.trim()) return result;
-        // On-device returned empty — cloud may do better for this language
         console.log('[WhisperService] On-device returned empty, trying cloud...');
       } catch (err) {
         console.warn('[WhisperService] On-device transcription error, falling back:', err);
       }
     }
 
-    if (isAutoDetect) {
-      console.log('[WhisperService] Auto-detect mode — using cloud Whisper for accurate language detection');
+    if (forceCloud && !isAutoDetect) {
+      console.log(`[WhisperService] Routing ${isoCode} directly to cloud Whisper (better accuracy)`);
+    } else if (isAutoDetect) {
+      console.log('[WhisperService] Auto-detect mode — using cloud Whisper');
     }
 
     // Cloud fallback — import lazily to avoid circular dependency

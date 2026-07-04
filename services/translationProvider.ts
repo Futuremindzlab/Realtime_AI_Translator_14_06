@@ -18,9 +18,13 @@ const LANG_NAMES: Record<string, string> = {
   sw: 'Swahili',    hr: 'Croatian',    ne: 'Nepali',      si: 'Sinhala',
 };
 
-// Languages where gpt-4o-mini has poor script/vocabulary coverage — use gpt-4o
+// Languages where gpt-4o-mini produces transliteration or wrong-script output — use gpt-4o.
+// Includes all Indic scripts, RTL scripts, and CJK to ensure native-script accuracy.
 const HIGH_QUALITY_LANGUAGES = new Set([
-  'ml', 'kn', 'gu', 'pa', 'bn', 'mr', 'ur', 'si', 'ne',
+  // Indic languages (all scripts)
+  'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ur', 'si', 'ne',
+  // Right-to-left scripts
+  'ar', 'fa', 'he',
 ]);
 
 function langName(code: string): string {
@@ -82,15 +86,36 @@ class TranslationProvider {
     const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
     if (!OPENAI_API_KEY) throw new Error('OpenAI API key not configured');
 
-    // gpt-4o for languages where gpt-4o-mini has poor script/vocabulary coverage
+    // gpt-4o for languages where gpt-4o-mini produces transliteration or wrong-script output
     const model = HIGH_QUALITY_LANGUAGES.has(targetLanguage) ? 'gpt-4o' : 'gpt-4o-mini';
     const srcName = langName(sourceLanguage);
     const tgtName = langName(targetLanguage);
-    // Explicit native-script instruction prevents Latin transliteration
+
+    // Native-script examples embedded in the prompt anchor GPT to the correct Unicode block.
+    const SCRIPT_EXAMPLES: Record<string, string> = {
+      ml: 'ഉദാഹരണം: "നന്ദി" (not "nandi")',
+      ta: 'உதாரணம்: "நன்றி" (not "nandri")',
+      te: 'ఉదాహరణ: "ధన్యవాదాలు" (not "dhanyavaadaalu")',
+      kn: 'ಉದಾಹರಣೆ: "ಧನ್ಯವಾದಗಳು" (not "dhanyavaadagalu")',
+      hi: 'उदाहरण: "धन्यवाद" (not "dhanyavaad")',
+      mr: 'उदाहरण: "धन्यवाद" (not "dhanyavaad")',
+      bn: 'উদাহরণ: "ধন্যবাদ" (not "dhônyôbad")',
+      gu: 'ઉદાહરણ: "આભાર" (not "aabhar")',
+      pa: 'ਉਦਾਹਰਨ: "ਧੰਨਵਾਦ" (not "dhanyavaad")',
+      ur: 'مثال: "شکریہ" (not "shukriya")',
+      si: 'නිදසුන: "ස්තූතියි" (not "sthootiyi")',
+      ne: 'उदाहरण: "धन्यवाद" (not "dhanyavaad")',
+      ar: 'مثال: "شكراً" (not "shukran")',
+      fa: 'مثال: "ممنون" (not "mamnoon")',
+      he: 'דוגמה: "תודה" (not "toda")',
+    };
+    const scriptHint = SCRIPT_EXAMPLES[targetLanguage] ? ` ${SCRIPT_EXAMPLES[targetLanguage]}.` : '';
+
     const systemPrompt =
       `You are a professional translator. Translate the user's text from ${srcName} to ${tgtName}. ` +
-      `Return ONLY the ${tgtName} translation written in the correct native script — ` +
-      `no explanation, no transliteration, no romanization, no quotation marks.`;
+      `Return ONLY the ${tgtName} translation written entirely in the correct native script — ` +
+      `no explanation, no transliteration, no romanization, no Latin characters, no quotation marks.` +
+      scriptHint;
 
     try {
       const translation = await this.streamTranslation(OPENAI_API_KEY, model, systemPrompt, text, onChunk);

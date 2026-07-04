@@ -462,9 +462,12 @@ export class TTSService {
 
     console.log(`🔊 ElevenLabs TTS: model=${model}, voice=${voiceId}, lang=${language}`);
 
-    const callAPI = async (requestBody: Record<string, any>) => {
+    // Free-tier fallback voice — George is the only voice confirmed on all plan tiers.
+    const FREE_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb';
+
+    const callAPI = async (requestVoiceId: string, requestBody: Record<string, any>) => {
       const response = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+        `https://api.elevenlabs.io/v1/text-to-speech/${requestVoiceId}`,
         {
           method: 'POST',
           headers: {
@@ -482,35 +485,44 @@ export class TTSService {
         }
         const errBody = await response.text().catch(() => '');
         console.error(`❌ ElevenLabs ${response.status}: ${errBody.substring(0, 200)}`);
-        throw new Error(`ElevenLabs TTS failed (${response.status})`);
+        throw Object.assign(new Error(`ElevenLabs TTS failed (${response.status})`), { status: response.status });
       }
 
       return response;
     };
 
+    const mv2Body = {
+      text: body.text,
+      model_id: 'eleven_multilingual_v2',
+      voice_settings: { stability: 0.5, similarity_boost: 0.78, style: 0.35, use_speaker_boost: true },
+    };
+
     try {
       let response: Response;
       try {
-        response = await callAPI(body);
-      } catch (err) {
-        if (useV3) {
+        response = await callAPI(voiceId, body);
+      } catch (err: any) {
+        const status: number = err?.status ?? 0;
+
+        // 402 = paid feature / voice not available on this plan.
+        // If we were using a non-default voice, retry with the free-tier George voice first.
+        if (status === 402 && voiceId !== FREE_VOICE_ID) {
+          console.log(`🔊 Voice ${voiceId} requires paid plan (402) — retrying with George (free tier)`);
+          try {
+            response = await callAPI(FREE_VOICE_ID, body);
+          } catch (georgeErr: any) {
+            // George also failed → fall through to model downgrade
+            console.warn('🔊 George also failed, trying eleven_multilingual_v2...');
+            response = await callAPI(FREE_VOICE_ID, mv2Body);
+          }
+        } else if (useV3) {
           // eleven_v3 unavailable on this plan → eleven_multilingual_v2 (widely supported)
           console.log('🔊 eleven_v3 failed, retrying with eleven_multilingual_v2...');
-          const fallbackBody = {
-            text: body.text,
-            model_id: 'eleven_multilingual_v2',
-            voice_settings: { stability: 0.5, similarity_boost: 0.78, style: 0.35, use_speaker_boost: true },
-          };
-          response = await callAPI(fallbackBody);
+          response = await callAPI(voiceId !== FREE_VOICE_ID && status === 402 ? FREE_VOICE_ID : voiceId, mv2Body);
         } else if (useFlash) {
           // Flash failed (voice may not support this model) → eleven_multilingual_v2
           console.log('🔊 eleven_flash_v2_5 failed, retrying with eleven_multilingual_v2...');
-          const fallbackBody = {
-            text: body.text,
-            model_id: 'eleven_multilingual_v2',
-            voice_settings: { stability: 0.5, similarity_boost: 0.78, style: 0.35, use_speaker_boost: true },
-          };
-          response = await callAPI(fallbackBody);
+          response = await callAPI(voiceId, mv2Body);
         } else {
           throw err;
         }

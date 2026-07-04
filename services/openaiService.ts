@@ -37,42 +37,9 @@ async transcribe(
 
     // --- REPLACED SDK CALL WITH DIRECT FETCH ---
     console.log('Sending to Whisper API via Direct Fetch...');
-    
-    const formData = new FormData();
-
-    if (Platform.OS === 'web') {
-      // Web: pass the actual File/Blob object
-      formData.append('file', audioFile, audioFile.name);
-    } else {
-      // Native (iOS/Android): use React Native's { uri, name, type } format
-      const cleanUri = Platform.OS === 'android' && !audioUri.startsWith('file://')
-        ? `file://${audioUri}`
-        : audioUri;
-      // Derive format from the actual recorded URI so the extension/MIME matches
-      // the file content. audioService records .wav; sending a mismatched name
-      // (e.g. .m4a) causes Whisper to reject it as "Invalid File Format".
-      const uriExt = cleanUri.split('.').pop()?.toLowerCase() || 'wav';
-      const extToMime: Record<string, string> = {
-        wav: 'audio/wav', m4a: 'audio/mp4', mp4: 'audio/mp4',
-        mp3: 'audio/mpeg', ogg: 'audio/ogg', webm: 'audio/webm',
-        flac: 'audio/flac', oga: 'audio/ogg',
-      };
-      const fileMime = extToMime[uriExt] ?? 'audio/wav';
-      formData.append('file', {
-        uri: cleanUri,
-        name: `recording.${uriExt}`,
-        type: fileMime,
-      } as any);
-    }
-
-    formData.append('model', 'whisper-1');
-    formData.append('response_format', 'verbose_json');
-    formData.append('temperature', '0');
 
     // Script-specific seed prompts: bias Whisper toward the correct Unicode block
     // so it does not transliterate or fall back to a similar language.
-    // Whisper uses the ISO 639-1 code internally; BCP-47 region variants are not
-    // needed for Whisper (they are for TTS). We strip region suffixes here.
     const WHISPER_PROMPTS: Record<string, string> = {
       ml: 'ഇത് മലയാളം ഭാഷയിലുള്ള ഒരു ഓഡിയോ ആണ്.',
       ta: 'இது தமிழ் மொழியில் உள்ள ஒரு ஆடியோ.',
@@ -89,40 +56,75 @@ async transcribe(
       he: 'זהו קובץ שמע בשפה העברית.',
       ne: 'यो नेपाली भाषामा एउटा अडियो हो।',
       si: 'මෙය සිංහල භාෂාවෙන් පටිගත කළ ශ්‍රව්‍ය ගොනුවකි.',
+      tl: 'Ito ay isang audio sa wikang Filipino.',
     };
 
+    // Odia and Assamese are not recognised by Whisper API (returns HTTP 400).
+    // All other Indic codes — including ml, ne, si — are fully supported.
+    const WHISPER_UNSUPPORTED_LANGS = new Set(['or', 'as']);
+
+    // Filipino uses 'tl' (Tagalog) as the Whisper language code, not ISO 639-2 'fil'.
+    const WHISPER_LANG_REMAP: Record<string, string> = { fil: 'tl' };
+
+    // Resolve the language code we'll send to Whisper, independent of FormData build.
+    let whisperLangCode: string | null = null;
+    let whisperPrompt: string | undefined;
     if (language && language !== 'auto') {
-      // Strip BCP-47 region suffix (e.g. 'ml-IN' → 'ml') — Whisper expects ISO 639-1
       const isoCode = language.split('-')[0].toLowerCase();
-
-      // Whisper API rejects some low-resource Indic language codes with HTTP 400.
-      // For these, omit the language param but still pass the script-seed prompt —
-      // the prompt alone is enough to anchor Whisper's output to the correct
-      // Unicode block (Malayalam, Sinhala, Odia, etc.).
-      const WHISPER_PROMPT_ONLY_LANGS = new Set(['ml', 'si', 'or', 'as', 'ne']);
-      const usePromptOnly = WHISPER_PROMPT_ONLY_LANGS.has(isoCode);
-
-      if (!usePromptOnly) {
-        formData.append('language', isoCode);
-      }
-      const prompt = WHISPER_PROMPTS[isoCode];
-      if (prompt) formData.append('prompt', prompt);
-      const langNote = usePromptOnly ? `prompt-only(${isoCode})` : isoCode;
-      console.log(`🎤 Whisper: ${langNote}${prompt ? ' +prompt' : ''}`);
+      const remapped = WHISPER_LANG_REMAP[isoCode] || isoCode;
+      whisperLangCode = WHISPER_UNSUPPORTED_LANGS.has(remapped) ? null : remapped;
+      whisperPrompt = WHISPER_PROMPTS[isoCode] ?? WHISPER_PROMPTS[remapped];
+      const langNote = whisperLangCode ?? `prompt-only(${remapped})`;
+      console.log(`🎤 Whisper: ${langNote}${whisperPrompt ? ' +prompt' : ''}`);
     } else {
       console.log(`🎤 Whisper: auto-detecting language`);
     }
 
+    // Helper: build a FormData for one Whisper attempt.
+    // withLang: include the language field (false for prompt-only retry).
+    const buildFormData = (withLang: boolean): FormData => {
+      const fd = new FormData();
+      if (Platform.OS === 'web') {
+        fd.append('file', audioFile, audioFile.name);
+      } else {
+        const cleanUri = Platform.OS === 'android' && !audioUri.startsWith('file://')
+          ? `file://${audioUri}`
+          : audioUri;
+        const uriExt = cleanUri.split('.').pop()?.toLowerCase() || 'wav';
+        const extToMime: Record<string, string> = {
+          wav: 'audio/wav', m4a: 'audio/mp4', mp4: 'audio/mp4',
+          mp3: 'audio/mpeg', ogg: 'audio/ogg', webm: 'audio/webm',
+          flac: 'audio/flac', oga: 'audio/ogg',
+        };
+        const fileMime = extToMime[uriExt] ?? 'audio/wav';
+        fd.append('file', { uri: cleanUri, name: `recording.${uriExt}`, type: fileMime } as any);
+      }
+      fd.append('model', 'whisper-1');
+      fd.append('response_format', 'verbose_json');
+      fd.append('temperature', '0');
+      if (withLang && whisperLangCode) fd.append('language', whisperLangCode);
+      if (whisperPrompt) fd.append('prompt', whisperPrompt);
+      return fd;
+    };
+
     console.log('📡 Sending to Whisper API...');
 
-    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    let response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        // DO NOT set 'Content-Type': 'multipart/form-data', fetch handles the boundary automatically
-      },
-      body: formData,
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      body: buildFormData(true),
     });
+
+    // Safety net: if the language code was rejected (HTTP 400), retry without it.
+    // This handles ultra-rare codes that Whisper doesn't recognise at runtime.
+    if (!response.ok && response.status === 400 && whisperLangCode) {
+      console.warn(`🎤 Whisper rejected language code "${whisperLangCode}" — retrying prompt-only`);
+      response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        body: buildFormData(false),
+      });
+    }
 
     if (!response.ok) {
       const errorData = await response.json();
