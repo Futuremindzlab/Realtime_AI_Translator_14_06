@@ -41,14 +41,12 @@ export class TTSService {
     { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam',   desc: 'Male · Deep · Alternative for Indian & Arabic scripts',      gender: 'male'   },
   ];
 
-  // ElevenLabs has no native Malayalam voice — Rachel/George are English voices doing
-  // cross-lingual/phonetic Malayalam. Azure Cognitive Speech has genuine native ml-IN
-  // neural voices, so it's preferred over ElevenLabs for languages listed here.
+  // Azure Cognitive Speech has native ml-IN neural voices. Not auto-preferred —
+  // ElevenLabs (eleven_v3) genuinely supports Malayalam natively too and remains
+  // the default — but Azure is available as a manual provider choice in Settings.
   static readonly AZURE_VOICE_MAP: Record<string, { female: string; male: string }> = {
     ml: { female: 'ml-IN-SobhanaNeural', male: 'ml-IN-MidhunNeural' },
   };
-
-  private static readonly AZURE_PREFERRED_LANGUAGES = new Set(Object.keys(TTSService.AZURE_VOICE_MAP));
 
   private inworldApiKey: string | null = null;
   private elevenlabsApiKey: string | null = null;
@@ -246,19 +244,18 @@ export class TTSService {
     const needsBetterTTS = TTSService.ELEVENLABS_PREFERRED_LANGUAGES.has(language);
     const hasElevenLabs = !!(this.elevenlabsApiKey && this.elevenlabsKeyValid);
     const hasOpenAI = !!this.openaiApiKey;
-    const preferAzure = TTSService.AZURE_PREFERRED_LANGUAGES.has(language) && !!(this.azureSpeechKey && this.azureSpeechRegion);
 
     // Determine effective provider.
     // CRITICAL: auto-upgrade BEFORE the 'device' short-circuit so that Indian/Arabic
     // languages are never sent to device TTS (Android falls back to system language
     // — e.g. Spanish — when the target language pack is not installed).
+    // NOTE: Azure is available as a manually-selectable provider (see generateWithAzure /
+    // AZURE_VOICE_MAP) but is not auto-preferred — ElevenLabs (eleven_v3) genuinely
+    // supports Malayalam natively, so it remains the default/preferred engine.
     let effectiveProvider = provider;
 
     if (provider === 'device' && needsBetterTTS) {
-      if (preferAzure) {
-        effectiveProvider = 'azure';
-        console.log(`🔊 Auto-switching device → Azure (native voice) for ${language}`);
-      } else if (hasElevenLabs) {
+      if (hasElevenLabs) {
         effectiveProvider = 'elevenlabs';
         console.log(`🔊 Auto-switching device → ElevenLabs for ${language}`);
       } else if (hasOpenAI) {
@@ -266,9 +263,6 @@ export class TTSService {
         console.log(`🔊 Auto-switching device → OpenAI for ${language}`);
       }
       // No cloud keys: fall through to device TTS (user's explicit choice, best we can do)
-    } else if ((provider === 'openai' || provider === 'elevenlabs') && preferAzure) {
-      effectiveProvider = 'azure';
-      console.log(`🔊 Auto-switching ${provider} → Azure (native voice) for ${language}`);
     } else if (provider === 'openai' && needsBetterTTS && hasElevenLabs) {
       effectiveProvider = 'elevenlabs';
       console.log(`🔊 Auto-switching openai → ElevenLabs for ${language} (better pronunciation)`);
@@ -282,9 +276,6 @@ export class TTSService {
         return null;
       } catch (deviceErr) {
         console.warn(`⚠️ Device TTS failed for "${language}", falling back to cloud:`, deviceErr);
-        if (preferAzure) {
-          try { return await this.generateWithAzure(processedText, language); } catch {}
-        }
         if (hasElevenLabs) {
           try { return await this.generateWithElevenLabs(processedText, language); } catch {}
         }
@@ -298,7 +289,7 @@ export class TTSService {
     }
 
     // No cloud keys → device TTS fallback
-    if (!hasOpenAI && !hasElevenLabs && !preferAzure) {
+    if (!hasOpenAI && !hasElevenLabs && effectiveProvider !== 'azure') {
       console.log('🔊 No cloud TTS key — using device TTS');
       await this.generateWithDevice(processedText, language);
       return null;
@@ -476,7 +467,9 @@ export class TTSService {
   private getAzureVoiceForLanguage(language: string): string {
     const pair = TTSService.AZURE_VOICE_MAP[language];
     if (!pair) {
-      // Should not happen — generateWithAzure is only invoked for AZURE_PREFERRED_LANGUAGES.
+      // Azure is manually selectable as a general provider but only has a voice
+      // mapped for Malayalam today; the caller's catch block falls back to
+      // ElevenLabs/OpenAI/device for any other language.
       throw new Error(`No Azure voice mapped for language "${language}"`);
     }
     return this.voiceGender === 'male' ? pair.male : pair.female;

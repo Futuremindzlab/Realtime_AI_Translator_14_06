@@ -1,30 +1,25 @@
-# Documentation — Azure TTS Fallback & Phone/OTP Auth
+# Documentation — TTS Provider Notes & Phone/OTP Auth
 
-This file covers two additions to the app: **Azure Speech as a native-Malayalam TTS fallback** and **Phone + OTP login**. For the full architecture (STT/translation/TTS pipeline, existing Cognito email/password flow, DynamoDB schema, etc.), see [docs/TECHNICAL.md](docs/TECHNICAL.md) — this document only covers what's new.
+This file covers two additions to the app: **TTS provider fixes/options for Malayalam** and **Phone + OTP login**. For the full architecture (STT/translation/TTS pipeline, existing Cognito email/password flow, DynamoDB schema, etc.), see [docs/TECHNICAL.md](docs/TECHNICAL.md) — this document only covers what's new.
 
 ---
 
 ## 1. Why this was needed
 
-Malayalam speech quality remained poor even after prior STT/routing fixes because **ElevenLabs has no native Malayalam voice** — the app's auto-routing was picking Rachel (American) or George (British) reading Malayalam phonetically via `eleven_v3`, a hard ceiling on quality. Azure Cognitive Speech has genuine native Malayalam neural voices (`ml-IN-SobhanaNeural` / `ml-IN-MidhunNeural`), so it's now the preferred engine for Malayalam, with ElevenLabs → OpenAI → device TTS as the fallback chain if Azure isn't configured or fails.
+Malayalam speech quality remained poor even after prior STT/routing fixes. Initial investigation suspected ElevenLabs had no native Malayalam voice, but further research showed that's incorrect — ElevenLabs' `eleven_v3` model genuinely supports Malayalam natively. **The real bug**: `services/ttsService.ts`'s ElevenLabs error handling treated HTTP 401 as always meaning "invalid API key," but ElevenLabs also returns 401 for "quota exceeded" (distinguished only by a field in the response body) — so once the free-tier monthly character quota ran out, the app misdiagnosed it as a bad key and silently disabled ElevenLabs for the rest of the session, falling back to lower-quality OpenAI/device TTS. That's now fixed (`generateWithElevenLabs`'s `callAPI`, ~line 576) — quota errors only fail that one request instead of disabling the provider. **ElevenLabs (with an active subscription/quota headroom) remains the default/preferred engine for Malayalam.**
+
+Azure Cognitive Speech (native `ml-IN-SobhanaNeural` / `ml-IN-MidhunNeural` voices) was also built out as a **manually-selectable alternative provider** in Settings, but is **not auto-preferred** — it's there if you want to compare quality or have an Azure subscription already, not as the primary fix.
 
 ---
 
-## 2. New environment variables
+## 2. Azure Speech (optional, manual provider only)
 
 | Variable | Used by | Required |
 |---|---|---|
-| `EXPO_PUBLIC_AZURE_SPEECH_KEY` | Azure TTS for Malayalam | Optional — app falls back to ElevenLabs/OpenAI/device if unset |
+| `EXPO_PUBLIC_AZURE_SPEECH_KEY` | Azure TTS (manual selection only) | Optional — feature has no effect if unset |
 | `EXPO_PUBLIC_AZURE_SPEECH_REGION` | Azure TTS region (e.g. `centralindia`, `eastus`) | Optional, required alongside the key above |
 
-Add both to `.env` (see the template already added there) and to GitHub Actions secrets if building via CI (`build-apk.yml`).
-
-## 3. Azure Speech onboarding
-
-1. In the [Azure Portal](https://portal.azure.com), create a **Speech** resource (Cognitive Services).
-2. Pick a region that hosts `ml-IN-*` neural voices — most standard regions do, but confirm via the [Azure Speech Studio voice gallery](https://speech.microsoft.com/portal/voicegallery) or `GET https://{region}.tts.speech.microsoft.com/cognitiveservices/voices/list` before deploying, since Azure occasionally adds/renames voices.
-3. Copy the resource's **Key** and **Region** into `.env` as `EXPO_PUBLIC_AZURE_SPEECH_KEY` / `EXPO_PUBLIC_AZURE_SPEECH_REGION`.
-4. No backend changes are needed for TTS — Azure Speech is called directly from the client (`services/ttsService.ts`), same pattern as OpenAI/ElevenLabs.
+To use it: in the [Azure Portal](https://portal.azure.com), create a **Speech** resource, confirm the region hosts `ml-IN-*` neural voices via the [Azure Speech Studio voice gallery](https://speech.microsoft.com/portal/voicegallery), and put the key/region in `.env`. Users then select "Azure Speech" manually in Settings. No backend changes needed — called directly from the client (`services/ttsService.ts`), same pattern as OpenAI/ElevenLabs.
 
 ### Voice coverage
 
@@ -32,7 +27,7 @@ Add both to `.env` (see the template already added there) and to GitHub Actions 
 |---|---|---|
 | Malayalam (`ml`) | `ml-IN-SobhanaNeural` | `ml-IN-MidhunNeural` |
 
-Only Malayalam is auto-enabled today (`AZURE_PREFERRED_LANGUAGES` in `services/ttsService.ts`). Azure has native neural voices for other Indic languages too (Tamil, Telugu, Kannada, Hindi, Marathi, Bengali, Gujarati) but they're intentionally **not** auto-enabled yet — each should be verified individually (voice quality, latency, SSML escaping) before adding to that set, to keep the blast radius of this change small.
+Only Malayalam has a mapped voice today (`AZURE_VOICE_MAP` in `services/ttsService.ts`). If a user selects Azure as their provider and translates into any other language, it falls back to ElevenLabs/OpenAI/device automatically (no mapped voice → caught error → fallback chain).
 
 ---
 
