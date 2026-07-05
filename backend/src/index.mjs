@@ -24,6 +24,9 @@
  *
  * Health
  *   GET    /v1/health                                 health check
+ *
+ * Auth (unauthenticated — no token exists yet)
+ *   POST   /v1/auth/phone/request-otp                 requestPhoneOtp
  */
 
 import {
@@ -46,6 +49,8 @@ import {
   patchSettings,
   resetSettings,
 } from './handlers/settings.mjs';
+
+import { requestPhoneOtp } from './handlers/phoneAuth.mjs';
 
 import { sendSuccess, sendError } from './response.mjs';
 
@@ -71,6 +76,11 @@ export const handler = async (event) => {
   // ── Health check ──────────────────────────────────────
   if (method === 'GET' && path === '/v1/health') {
     return sendSuccess({ status: 'ok', ts: new Date().toISOString() });
+  }
+
+  // ── Phone auth (unauthenticated) ───────────────────────
+  if (method === 'POST' && path === '/v1/auth/phone/request-otp') {
+    return requestPhoneOtp(event);
   }
 
   // ── Settings ──────────────────────────────────────────

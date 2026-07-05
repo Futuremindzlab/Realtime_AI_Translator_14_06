@@ -75,6 +75,10 @@ Resources:
       Policies:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - !Ref DynamoDBPolicy
+        - !Ref CognitoAdminPolicy
+      Environment:
+        Variables:
+          USER_POOL_ID: !Ref UserPoolId
       Events:
         # Catch-all proxy — routes every path+method to the single handler
         ProxyRoot:
@@ -92,6 +96,62 @@ Resources:
             Method:    OPTIONS
             Auth:
               Authorizer: NONE
+        # Unauthenticated phone-OTP pre-provisioning route — API Gateway resolves
+        # this exact literal path ahead of the {proxy+} catch-all above, so it
+        # needs its own explicit Auth override (no token exists yet at this point).
+        PhoneOtpRequest:
+          Type:       Api
+          Properties:
+            RestApiId: !Ref TranslatorApi
+            Path:      /v1/auth/phone/request-otp
+            Method:    POST
+            Auth:
+              Authorizer: NONE
+        PhoneOtpRequestOptions:
+          Type:       Api
+          Properties:
+            RestApiId: !Ref TranslatorApi
+            Path:      /v1/auth/phone/request-otp
+            Method:    OPTIONS
+            Auth:
+              Authorizer: NONE
+
+  # ── Cognito Custom Auth (phone + OTP) Lambda triggers ──
+  # These are invoked directly by Cognito, not via API Gateway, so each
+  # needs its own function + explicit Handler override (Globals.Function.Handler
+  # points at the translation router above).
+  #
+  # NOT wired to the user pool automatically — the pool (UserPoolId parameter)
+  # isn't a CloudFormation resource in this template (it was created out-of-band),
+  # so `aws cognito-idp update-user-pool --lambda-config ...` and
+  # `aws lambda add-permission` must be run manually after deploy. See DOCUMENTATION.md.
+  DefineAuthChallengeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "ai-translator-define-auth-${Stage}"
+      CodeUri:      ./
+      Handler:      src/handlers/defineAuthChallenge.handler
+      Policies:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  CreateAuthChallengeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "ai-translator-create-auth-${Stage}"
+      CodeUri:      ./
+      Handler:      src/handlers/createAuthChallenge.handler
+      Policies:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref SnsPublishPolicy
+
+  VerifyAuthChallengeResponseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "ai-translator-verify-auth-${Stage}"
+      CodeUri:      ./
+      Handler:      src/handlers/verifyAuthChallengeResponse.handler
+      Policies:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
   # ── DynamoDB Tables ─────────────────────────────────────
   ConversationHistoryTable:
@@ -169,6 +229,37 @@ Resources:
               - !Sub "${ConversationHistoryTable.Arn}/index/*"
               - !GetAtt UserSettingsTable.Arn
 
+  # ── IAM policy for CreateAuthChallenge → SNS (OTP SMS) ──
+  SnsPublishPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "ai-translator-sns-${Stage}"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect:   Allow
+            Action:
+              - sns:Publish
+            # SNS direct-to-phone-number publishing doesn't support resource-level ARN scoping.
+            Resource: "*"
+
+  # ── IAM policy for phone-OTP pre-provisioning (TranslatorFunction) ──
+  CognitoAdminPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "ai-translator-cognito-admin-${Stage}"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect:   Allow
+            Action:
+              - cognito-idp:AdminCreateUser
+              - cognito-idp:AdminGetUser
+              - cognito-idp:AdminSetUserPassword
+              - cognito-idp:ListUsers
+            Resource:
+              - !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}"
+
 # ──────────────────────────────────────────────────────────
 # Outputs
 # ──────────────────────────────────────────────────────────
@@ -180,3 +271,15 @@ Outputs:
   FunctionArn:
     Description: "Lambda function ARN"
     Value:        !GetAtt TranslatorFunction.Arn
+
+  DefineAuthChallengeFunctionArn:
+    Description: "Cognito DefineAuthChallenge trigger ARN — needed for `aws cognito-idp update-user-pool --lambda-config`, see DOCUMENTATION.md"
+    Value:        !GetAtt DefineAuthChallengeFunction.Arn
+
+  CreateAuthChallengeFunctionArn:
+    Description: "Cognito CreateAuthChallenge trigger ARN — needed for `aws cognito-idp update-user-pool --lambda-config`, see DOCUMENTATION.md"
+    Value:        !GetAtt CreateAuthChallengeFunction.Arn
+
+  VerifyAuthChallengeResponseFunctionArn:
+    Description: "Cognito VerifyAuthChallengeResponse trigger ARN — needed for `aws cognito-idp update-user-pool --lambda-config`, see DOCUMENTATION.md"
+    Value:        !GetAtt VerifyAuthChallengeResponseFunction.Arn

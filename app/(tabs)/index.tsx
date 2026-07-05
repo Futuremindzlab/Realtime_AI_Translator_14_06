@@ -48,6 +48,10 @@ export default function HomeScreen() {
     const elevenlabsKey = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY?.trim();
     if (elevenlabsKey) ttsService.initializeElevenLabs(elevenlabsKey);
 
+    const azureKey = process.env.EXPO_PUBLIC_AZURE_SPEECH_KEY?.trim();
+    const azureRegion = process.env.EXPO_PUBLIC_AZURE_SPEECH_REGION?.trim();
+    if (azureKey && azureRegion) ttsService.initializeAzure(azureKey, azureRegion);
+
     if (!settings) {
       // Cold start: force 3 startup voice defaults before user settings arrive
       // Indian Female=Aria, Indian Male=George, Foreign=Aria/George (auto-routed)

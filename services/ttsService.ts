@@ -7,7 +7,7 @@ const FileSystem: any = Platform.OS === 'web'
   ? { cacheDirectory: '', writeAsStringAsync: async () => {}, readAsStringAsync: async () => '', getInfoAsync: async () => ({ exists: true, size: 1 }) }
   : require('expo-file-system/legacy');
 
-export type TTSProvider = 'inworld' | 'elevenlabs' | 'openai' | 'device';
+export type TTSProvider = 'inworld' | 'elevenlabs' | 'openai' | 'device' | 'azure';
 
 export type VoiceGender = 'male' | 'female';
 
@@ -41,10 +41,21 @@ export class TTSService {
     { id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam',   desc: 'Male · Deep · Alternative for Indian & Arabic scripts',      gender: 'male'   },
   ];
 
+  // ElevenLabs has no native Malayalam voice — Rachel/George are English voices doing
+  // cross-lingual/phonetic Malayalam. Azure Cognitive Speech has genuine native ml-IN
+  // neural voices, so it's preferred over ElevenLabs for languages listed here.
+  static readonly AZURE_VOICE_MAP: Record<string, { female: string; male: string }> = {
+    ml: { female: 'ml-IN-SobhanaNeural', male: 'ml-IN-MidhunNeural' },
+  };
+
+  private static readonly AZURE_PREFERRED_LANGUAGES = new Set(Object.keys(TTSService.AZURE_VOICE_MAP));
+
   private inworldApiKey: string | null = null;
   private elevenlabsApiKey: string | null = null;
   private elevenlabsKeyValid = true;
   private openaiApiKey: string | null = null;
+  private azureSpeechKey: string | null = null;
+  private azureSpeechRegion: string | null = null;
   private customVoiceId: string | null = null;
   private voiceGender: VoiceGender = 'female';
   private selectedVoiceId: string | null = null;
@@ -157,6 +168,12 @@ export class TTSService {
     this.openaiApiKey = apiKey;
   }
 
+  initializeAzure(apiKey: string, region: string) {
+    this.azureSpeechKey = apiKey;
+    this.azureSpeechRegion = region;
+    console.log(`🔊 Azure Speech initialized (region: ${region})`);
+  }
+
   // Indic-script languages: Whisper prompt-only mode; ElevenLabs eleven_v3; George voice (male)
   private static readonly INDIC_LANGUAGES = new Set([
     'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ne', 'si',
@@ -229,6 +246,7 @@ export class TTSService {
     const needsBetterTTS = TTSService.ELEVENLABS_PREFERRED_LANGUAGES.has(language);
     const hasElevenLabs = !!(this.elevenlabsApiKey && this.elevenlabsKeyValid);
     const hasOpenAI = !!this.openaiApiKey;
+    const preferAzure = TTSService.AZURE_PREFERRED_LANGUAGES.has(language) && !!(this.azureSpeechKey && this.azureSpeechRegion);
 
     // Determine effective provider.
     // CRITICAL: auto-upgrade BEFORE the 'device' short-circuit so that Indian/Arabic
@@ -237,7 +255,10 @@ export class TTSService {
     let effectiveProvider = provider;
 
     if (provider === 'device' && needsBetterTTS) {
-      if (hasElevenLabs) {
+      if (preferAzure) {
+        effectiveProvider = 'azure';
+        console.log(`🔊 Auto-switching device → Azure (native voice) for ${language}`);
+      } else if (hasElevenLabs) {
         effectiveProvider = 'elevenlabs';
         console.log(`🔊 Auto-switching device → ElevenLabs for ${language}`);
       } else if (hasOpenAI) {
@@ -245,6 +266,9 @@ export class TTSService {
         console.log(`🔊 Auto-switching device → OpenAI for ${language}`);
       }
       // No cloud keys: fall through to device TTS (user's explicit choice, best we can do)
+    } else if ((provider === 'openai' || provider === 'elevenlabs') && preferAzure) {
+      effectiveProvider = 'azure';
+      console.log(`🔊 Auto-switching ${provider} → Azure (native voice) for ${language}`);
     } else if (provider === 'openai' && needsBetterTTS && hasElevenLabs) {
       effectiveProvider = 'elevenlabs';
       console.log(`🔊 Auto-switching openai → ElevenLabs for ${language} (better pronunciation)`);
@@ -258,6 +282,9 @@ export class TTSService {
         return null;
       } catch (deviceErr) {
         console.warn(`⚠️ Device TTS failed for "${language}", falling back to cloud:`, deviceErr);
+        if (preferAzure) {
+          try { return await this.generateWithAzure(processedText, language); } catch {}
+        }
         if (hasElevenLabs) {
           try { return await this.generateWithElevenLabs(processedText, language); } catch {}
         }
@@ -271,7 +298,7 @@ export class TTSService {
     }
 
     // No cloud keys → device TTS fallback
-    if (!hasOpenAI && !hasElevenLabs) {
+    if (!hasOpenAI && !hasElevenLabs && !preferAzure) {
       console.log('🔊 No cloud TTS key — using device TTS');
       await this.generateWithDevice(processedText, language);
       return null;
@@ -281,6 +308,8 @@ export class TTSService {
 
     try {
       switch (effectiveProvider) {
+        case 'azure':
+          return await this.generateWithAzure(processedText, language);
         case 'elevenlabs':
           return await this.generateWithElevenLabs(processedText, language);
         case 'openai':
@@ -290,6 +319,15 @@ export class TTSService {
       }
     } catch (primaryError) {
       console.error(`❌ TTS failed with ${effectiveProvider}:`, primaryError);
+
+      if (effectiveProvider === 'azure' && hasElevenLabs) {
+        try {
+          console.log('🔊 Fallback: ElevenLabs TTS...');
+          return await this.generateWithElevenLabs(processedText, language);
+        } catch (elevenErr) {
+          console.error('❌ ElevenLabs TTS fallback also failed:', elevenErr);
+        }
+      }
 
       if (effectiveProvider !== 'openai' && hasOpenAI) {
         try {
@@ -387,6 +425,63 @@ export class TTSService {
     }
   }
 
+  private async generateWithAzure(text: string, language: string): Promise<string> {
+    if (!this.azureSpeechKey || !this.azureSpeechRegion) {
+      throw new Error('Azure Speech key/region not set.');
+    }
+
+    const voiceName = this.getAzureVoiceForLanguage(language);
+    const locale = voiceName.split('-').slice(0, 2).join('-'); // e.g. 'ml-IN-SobhanaNeural' → 'ml-IN'
+
+    // SSML requires XML-escaping — unlike the JSON bodies used by OpenAI/ElevenLabs above.
+    const escapedText = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+
+    const ssml = `<speak version='1.0' xml:lang='${locale}'><voice name='${voiceName}'>${escapedText}</voice></speak>`;
+
+    console.log(`🔊 Azure TTS: voice=${voiceName}, lang=${language}`);
+
+    try {
+      const response = await fetch(
+        `https://${this.azureSpeechRegion}.tts.speech.microsoft.com/cognitiveservices/v1`,
+        {
+          method: 'POST',
+          headers: {
+            'Ocp-Apim-Subscription-Key': this.azureSpeechKey,
+            'Content-Type': 'application/ssml+xml',
+            'X-Microsoft-OutputFormat': 'audio-16khz-32kbitrate-mono-mp3',
+          },
+          body: ssml,
+        }
+      );
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        throw new Error(`Azure TTS failed with status ${response.status}: ${errBody.substring(0, 200)}`);
+      }
+
+      const fileUri = await this.saveAudioResponseToFile(response, 'azure_tts');
+      console.log('Azure TTS audio saved to:', fileUri);
+      return fileUri;
+    } catch (error) {
+      console.error('Azure TTS error:', error);
+      throw new Error(`Azure TTS failed: ${error}`);
+    }
+  }
+
+  private getAzureVoiceForLanguage(language: string): string {
+    const pair = TTSService.AZURE_VOICE_MAP[language];
+    if (!pair) {
+      // Should not happen — generateWithAzure is only invoked for AZURE_PREFERRED_LANGUAGES.
+      throw new Error(`No Azure voice mapped for language "${language}"`);
+    }
+    return this.voiceGender === 'male' ? pair.male : pair.female;
+  }
+
   private async generateWithInworld(text: string, language: string): Promise<string> {
     if (!this.inworldApiKey) {
       throw new Error('Inworld API key not set.');
@@ -479,11 +574,21 @@ export class TTSService {
       );
 
       if (!response.ok) {
-        if (response.status === 401) {
-          this.elevenlabsKeyValid = false;
-          console.error('❌ ElevenLabs 401 — key invalid, disabling auto-switch');
-        }
         const errBody = await response.text().catch(() => '');
+
+        // ElevenLabs returns HTTP 401 for BOTH an invalid API key AND a used-up monthly
+        // character quota — the two are only distinguishable via detail.status in the body.
+        // Only the former should permanently disable auto-routing for the session; a quota
+        // limit is transient (resets monthly / lifts with a plan upgrade) and should just
+        // fail this one request, falling through to OpenAI/device like any other error.
+        if (response.status === 401) {
+          if (errBody.includes('quota_exceeded')) {
+            console.error('❌ ElevenLabs 401 — quota exceeded (not a bad key); falling back for this request only');
+          } else {
+            this.elevenlabsKeyValid = false;
+            console.error('❌ ElevenLabs 401 — key invalid, disabling auto-switch');
+          }
+        }
         console.error(`❌ ElevenLabs ${response.status}: ${errBody.substring(0, 200)}`);
         throw Object.assign(new Error(`ElevenLabs TTS failed (${response.status})`), { status: response.status });
       }

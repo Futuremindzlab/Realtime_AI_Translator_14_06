@@ -44,7 +44,7 @@ export async function putSettings(event) {
     const userId = getUserId(event);
     const body   = JSON.parse(event.body || '{}');
 
-    const VALID_PROVIDERS = ['openai', 'elevenlabs', 'inworld', 'device'];
+    const VALID_PROVIDERS = ['openai', 'elevenlabs', 'inworld', 'device', 'azure'];
     const VALID_GENDERS   = ['male', 'female'];
 
     if (body.tts_provider && !VALID_PROVIDERS.includes(body.tts_provider)) {
@@ -81,7 +81,7 @@ export async function patchSettings(event) {
     const userId = getUserId(event);
     const body   = JSON.parse(event.body || '{}');
 
-    const VALID_PROVIDERS = ['openai', 'elevenlabs', 'inworld', 'device'];
+    const VALID_PROVIDERS = ['openai', 'elevenlabs', 'inworld', 'device', 'azure'];
     const VALID_GENDERS   = ['male', 'female'];
 
     if (body.tts_provider && !VALID_PROVIDERS.includes(body.tts_provider)) {

@@ -27,11 +27,15 @@ interface AuthContextType {
   needsNewPassword: boolean;
   needsConfirmation: boolean;
   pendingEmail: string | null;
+  needsOtpVerification: boolean;
+  pendingPhone: string | null;
   viewMode: 'admin' | 'user';
   setViewMode: (mode: 'admin' | 'user') => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   confirmSignUp: (email: string, code: string) => Promise<void>;
+  signInWithPhone: (e164Phone: string) => Promise<void>;
+  confirmOtpCode: (code: string) => Promise<void>;
   signOut: () => Promise<void>;
   completeNewPassword: (newPassword: string) => Promise<void>;
   updateSettings: (settings: Partial<UserSettings>) => Promise<void>;
@@ -74,6 +78,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [pendingUserAttributes, setPendingUserAttributes] = useState<Record<string, string>>({});
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [needsOtpVerification, setNeedsOtpVerification] = useState(false);
+  const [pendingPhone, setPendingPhone] = useState<string | null>(null);
   const [viewMode, setViewModeState] = useState<'admin' | 'user'>('admin');
 
   useEffect(() => {
@@ -274,6 +280,100 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
+  const signInWithPhone = async (e164Phone: string) => {
+    if (!userPool) throw new Error('Offline mode — sign in not available');
+
+    // Ensure the Cognito user exists BEFORE calling initiateAuth. This pool has
+    // UsernameAttributes=['email'] with no phone alias (both immutable), so
+    // Cognito can't look users up by raw phone number — the backend derives and
+    // returns the deterministic Username to use instead. Pre-creating here (rather
+    // than inside the CreateAuthChallenge trigger via request.userNotFound) avoids
+    // relying on Cognito's user-existence-suppression to still issue real tokens
+    // for a user created mid-session, which isn't a guaranteed behavior.
+    const apiBase = (process.env.EXPO_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
+    if (!apiBase) throw new Error('EXPO_PUBLIC_API_BASE_URL is not set in .env');
+
+    const otpResponse = await fetch(`${apiBase}/v1/auth/phone/request-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: e164Phone }),
+    });
+
+    if (!otpResponse.ok) {
+      const errBody = await otpResponse.json().catch(() => ({}));
+      throw new Error(errBody.error || `Failed to start phone sign-in (${otpResponse.status})`);
+    }
+
+    const { username } = await otpResponse.json();
+
+    return new Promise<void>((resolve, reject) => {
+      const existingUser = userPool!.getCurrentUser();
+      if (existingUser) {
+        existingUser.signOut();
+      }
+
+      const cognitoUser = new CognitoUser({
+        Username: username,
+        Pool: userPool!,
+        Storage: cognitoStorage,
+      });
+      cognitoUser.setAuthenticationFlowType('CUSTOM_AUTH');
+
+      const authDetails = new AuthenticationDetails({ Username: username });
+
+      cognitoUser.initiateAuth(authDetails, {
+        onSuccess: () => {
+          // Shouldn't happen for CUSTOM_AUTH without a challenge, but handle defensively.
+          reject(new Error('Unexpected sign-in success without OTP challenge'));
+        },
+        onFailure: (err: Error) => {
+          console.error('❌ Phone sign in failed:', err.message);
+          reject(err);
+        },
+        customChallenge: () => {
+          console.log(`📱 OTP challenge issued for ${e164Phone}`);
+          setPendingCognitoUser(cognitoUser);
+          setPendingPhone(e164Phone);
+          setNeedsOtpVerification(true);
+          resolve();
+        },
+      });
+    });
+  };
+
+  const confirmOtpCode = async (code: string) => {
+    if (!pendingCognitoUser) throw new Error('No pending phone sign-in');
+
+    return new Promise<void>((resolve, reject) => {
+      pendingCognitoUser.sendCustomChallengeAnswer(code, {
+        onSuccess: (session: CognitoUserSession) => {
+          const idToken = session.getIdToken().getJwtToken();
+          const payload = session.getIdToken().payload;
+          const userId = payload['sub'] as string;
+          const phone = (payload['phone_number'] as string) || pendingPhone || '';
+          const role = extractRole(payload);
+
+          console.log(`✅ Signed in via phone: ${phone} (role: ${role})`);
+          setNeedsOtpVerification(false);
+          setPendingCognitoUser(null);
+          setPendingPhone(null);
+          dynamoService.initialize(idToken);
+          setUser({ id: userId, email: phone, role });
+          loadUserSettings(userId);
+          resolve();
+        },
+        onFailure: (err: Error) => {
+          console.error('❌ OTP verification failed:', err.message);
+          reject(err);
+        },
+        customChallenge: () => {
+          // Wrong code — Cognito re-issued the challenge; let the user retry.
+          reject(new Error('Incorrect code. Please try again.'));
+        },
+      });
+    });
+  };
+
   const completeNewPassword = async (newPassword: string) => {
     if (!pendingCognitoUser) throw new Error('No pending password challenge');
 
@@ -315,6 +415,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ttsService.setVoiceGender('female');
     setUser(null);
     setSettings(null);
+    setNeedsOtpVerification(false);
+    setPendingPhone(null);
     // Reset view mode to admin when signing out
     setViewModeState('admin');
     AsyncStorage.removeItem(VIEW_MODE_KEY).catch(() => {});
@@ -349,11 +451,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     needsNewPassword,
     needsConfirmation,
     pendingEmail,
+    needsOtpVerification,
+    pendingPhone,
     viewMode,
     setViewMode,
     signIn,
     signUp,
     confirmSignUp,
+    signInWithPhone,
+    confirmOtpCode,
     signOut,
     completeNewPassword,
     updateSettings,

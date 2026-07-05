@@ -48,6 +48,10 @@ export default function HistoryScreen() {
     }
     const elevenlabsKey = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY?.trim();
     if (elevenlabsKey) ttsService.initializeElevenLabs(elevenlabsKey);
+
+    const azureKey = process.env.EXPO_PUBLIC_AZURE_SPEECH_KEY?.trim();
+    const azureRegion = process.env.EXPO_PUBLIC_AZURE_SPEECH_REGION?.trim();
+    if (azureKey && azureRegion) ttsService.initializeAzure(azureKey, azureRegion);
   }, []);
 
   // Sync TTS voice gender from settings whenever they load

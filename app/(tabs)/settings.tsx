@@ -14,9 +14,15 @@ import { LogIn, LogOut, Save, Mic, Trash2 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { audioService } from '@/services/audioService';
 import { ttsService, TTSService } from '@/services/ttsService';
+import { CountryCodeSelector } from '@/components/CountryCodeSelector';
 
 export default function SettingsScreen() {
-  const { user, settings, signIn, signUp, confirmSignUp, signOut, completeNewPassword, updateSettings, loading, needsNewPassword, needsConfirmation, pendingEmail, viewMode, setViewMode } = useAuth();
+  const {
+    user, settings, signIn, signUp, confirmSignUp, signInWithPhone, confirmOtpCode,
+    signOut, completeNewPassword, updateSettings, loading,
+    needsNewPassword, needsConfirmation, pendingEmail, needsOtpVerification, pendingPhone,
+    viewMode, setViewMode,
+  } = useAuth();
   const isUserView = user?.role === 'USER' || viewMode === 'user';
 
   const [email, setEmail] = useState('');
@@ -27,7 +33,12 @@ export default function SettingsScreen() {
   const [isLogin, setIsLogin] = useState(true);
   const [authLoading, setAuthLoading] = useState(false);
 
-  const [ttsProvider, setTtsProvider] = useState<'inworld' | 'elevenlabs' | 'openai' | 'device'>('device');
+  const [authMode, setAuthMode] = useState<'email' | 'phone'>('email');
+  const [dialCode, setDialCode] = useState('+91');
+  const [phoneNational, setPhoneNational] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+
+  const [ttsProvider, setTtsProvider] = useState<'inworld' | 'elevenlabs' | 'openai' | 'device' | 'azure'>('device');
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('female');
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
   const [conversationModeDefault, setConversationModeDefault] = useState(true);
@@ -109,6 +120,40 @@ export default function SettingsScreen() {
       await confirmSignUp(emailToConfirm, confirmationCode);
       setConfirmationCode('');
       setIsLogin(true);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Verification failed');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleSendOtp = async () => {
+    const digits = phoneNational.replace(/\D/g, '');
+    if (!digits) {
+      setAuthError('Please enter your phone number');
+      return;
+    }
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      await signInWithPhone(`${dialCode}${digits}`);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Failed to send verification code');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpCode) {
+      setAuthError('Please enter the verification code');
+      return;
+    }
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      await confirmOtpCode(otpCode);
+      setOtpCode('');
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Verification failed');
     } finally {
@@ -317,57 +362,123 @@ export default function SettingsScreen() {
             )}
           </TouchableOpacity>
         </View>
+      ) : needsOtpVerification ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Enter Verification Code</Text>
+          <Text style={styles.sectionDescription}>
+            We sent a code via SMS to {pendingPhone}. Enter it below to sign in.
+          </Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="6-digit code"
+            value={otpCode}
+            onChangeText={setOtpCode}
+            keyboardType="number-pad"
+            autoCapitalize="none"
+          />
+
+          {authError && <Text style={styles.authError}>{authError}</Text>}
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleVerifyOtp}
+            disabled={authLoading}>
+            {authLoading ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Verify & Continue</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       ) : !user ? (
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>
-            {isLogin ? 'Sign In' : 'Create Account'}
+            {authMode === 'email' ? (isLogin ? 'Sign In' : 'Create Account') : 'Sign In with Phone'}
           </Text>
           <Text style={styles.sectionDescription}>
             Sign in to save your translation history and settings
           </Text>
 
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
+          {authMode === 'email' ? (
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="Email"
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
 
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-          {!isLogin && (
-            <Text style={styles.passwordHint}>
-              Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.
-            </Text>
-          )}
-          {authError && <Text style={styles.authError}>{authError}</Text>}
-
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleAuth}
-            disabled={authLoading}>
-            {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <>
-                <LogIn size={20} color="#ffffff" />
-                <Text style={styles.primaryButtonText}>
-                  {isLogin ? 'Sign In' : 'Sign Up'}
+              <TextInput
+                style={styles.input}
+                placeholder="Password"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+              />
+              {!isLogin && (
+                <Text style={styles.passwordHint}>
+                  Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.
                 </Text>
-              </>
-            )}
-          </TouchableOpacity>
+              )}
+              {authError && <Text style={styles.authError}>{authError}</Text>}
 
-          <TouchableOpacity onPress={() => setIsLogin(!isLogin)}>
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={handleAuth}
+                disabled={authLoading}>
+                {authLoading ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <>
+                    <LogIn size={20} color="#ffffff" />
+                    <Text style={styles.primaryButtonText}>
+                      {isLogin ? 'Sign In' : 'Sign Up'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => setIsLogin(!isLogin)}>
+                <Text style={styles.linkText}>
+                  {isLogin ? "Don't have an account? Sign Up" : 'Already have an account? Sign In'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <View style={styles.phoneRow}>
+                <CountryCodeSelector selectedDialCode={dialCode} onSelect={setDialCode} />
+                <TextInput
+                  style={[styles.input, styles.phoneInput]}
+                  placeholder="Phone number"
+                  value={phoneNational}
+                  onChangeText={setPhoneNational}
+                  keyboardType="phone-pad"
+                />
+              </View>
+              {authError && <Text style={styles.authError}>{authError}</Text>}
+
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={handleSendOtp}
+                disabled={authLoading}>
+                {authLoading ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <>
+                    <LogIn size={20} color="#ffffff" />
+                    <Text style={styles.primaryButtonText}>Send Code</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
+
+          <TouchableOpacity onPress={() => { setAuthError(null); setAuthMode(authMode === 'email' ? 'phone' : 'email'); }}>
             <Text style={styles.linkText}>
-              {isLogin ? "Don't have an account? Sign Up" : 'Already have an account? Sign In'}
+              {authMode === 'email' ? 'Sign in with phone instead' : 'Sign in with email instead'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -428,6 +539,18 @@ export default function SettingsScreen() {
                     <View>
                       <Text style={styles.radioLabel}>ElevenLabs</Text>
                       <Text style={styles.voiceDesc}>Cloud · Best for Indian & Arabic · Requires API key</Text>
+                    </View>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.radioOption}
+                    onPress={() => setTtsProvider('azure')}>
+                    <View style={[styles.radio, ttsProvider === 'azure' && styles.radioSelected]}>
+                      {ttsProvider === 'azure' && <View style={styles.radioDot} />}
+                    </View>
+                    <View>
+                      <Text style={styles.radioLabel}>Azure Speech</Text>
+                      <Text style={styles.voiceDesc}>Cloud · Native Malayalam voices · Requires API key</Text>
                     </View>
                   </TouchableOpacity>
 
@@ -505,6 +628,32 @@ export default function SettingsScreen() {
                   <View>
                     <Text style={styles.radioLabel}>Male Voice</Text>
                     <Text style={styles.voiceDesc}>Lower pitch · Device TTS · George (ElevenLabs) for Indian/Arabic</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
+            {ttsProvider === 'azure' && (
+              <View style={styles.radioGroup}>
+                <TouchableOpacity
+                  style={styles.radioOption}
+                  onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
+                  <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
+                    {voiceGender === 'female' && <View style={styles.radioDot} />}
+                  </View>
+                  <View>
+                    <Text style={styles.radioLabel}>Female Voice</Text>
+                    <Text style={styles.voiceDesc}>Sobhana · Native Malayalam neural voice</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.radioOption}
+                  onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
+                  <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
+                    {voiceGender === 'male' && <View style={styles.radioDot} />}
+                  </View>
+                  <View>
+                    <Text style={styles.radioLabel}>Male Voice</Text>
+                    <Text style={styles.voiceDesc}>Midhun · Native Malayalam neural voice</Text>
                   </View>
                 </TouchableOpacity>
               </View>
@@ -774,6 +923,14 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 16,
     fontSize: 16,
+  },
+  phoneRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'flex-start',
+  },
+  phoneInput: {
+    flex: 1,
   },
   primaryButton: {
     backgroundColor: '#2563eb',
