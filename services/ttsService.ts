@@ -584,17 +584,17 @@ export class TTSService {
   }
 
   private getOpenAIVoiceForLanguage(language: string): string {
+    // For Indian/Arabic scripts always use script-optimized voices regardless of selectedVoiceId.
+    // nova/echo have significantly worse phoneme coverage for Devanagari, Malayalam, Arabic, etc.
+    // This enforces strict Indian/RTL voice selection — cannot be overridden by user voice pick.
+    if (TTSService.INDIC_LANGUAGES.has(language) || TTSService.RTL_LANGUAGES.has(language)) {
+      return this.voiceGender === 'male' ? 'onyx' : 'shimmer';
+    }
+    // For Western/European/East Asian: respect user's explicit voice selection.
     const knownIds = TTSService.OPENAI_VOICES.map(v => v.id);
     if (this.selectedVoiceId && knownIds.includes(this.selectedVoiceId)) {
       return this.selectedVoiceId;
     }
-    // For Indian/Indic scripts: onyx (male) has a deeper, more authoritative tone
-    // that carries Indic phonology well; shimmer (female) is clear and enunciates
-    // consonant clusters better than nova for these scripts.
-    if (TTSService.INDIC_LANGUAGES.has(language) || TTSService.RTL_LANGUAGES.has(language)) {
-      return this.voiceGender === 'male' ? 'onyx' : 'shimmer';
-    }
-    // Western/European/East Asian: nova (female, warm) and echo (male, mellow)
     return this.voiceGender === 'male' ? 'echo' : 'nova';
   }
 
@@ -661,13 +661,17 @@ export class TTSService {
    * For true female voice: set TTS provider to 'openai' (shimmer/nova) or select Aria/Rachel
    * in Settings on a paid ElevenLabs plan.
    */
-  private getElevenLabsVoiceForLanguage(language: string): string {
+  private getElevenLabsVoiceForLanguage(_language: string): string {
     const knownIds = TTSService.ELEVENLABS_VOICES.map(v => v.id);
     if (this.selectedVoiceId && knownIds.includes(this.selectedVoiceId)) {
-      return this.selectedVoiceId;  // explicit user selection wins
+      return this.selectedVoiceId;
     }
-    // George is the only free-tier-compatible voice — handles all 70+ languages on eleven_v3
-    return 'JBFqnCBsd6RMkjVDRZzb';
+    // Gender-aware auto-routing using free-tier classic premades.
+    // Rachel (female) is a classic premade available on the free tier.
+    // If Rachel returns HTTP 402, callAPI's 402-handler retries automatically with George.
+    return this.voiceGender === 'male'
+      ? 'JBFqnCBsd6RMkjVDRZzb'   // George — confirmed free tier, all scripts
+      : '21m00Tcm4TlvDq8ikWAM';  // Rachel — free tier; 402 → auto-fallback to George
   }
 }
 

@@ -1,31 +1,62 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Modal,
+  Platform,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { Play, Trash2, Languages } from 'lucide-react-native';
+import { Play, Trash2, Languages, ChevronDown, X } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { dynamoService } from '@/services/dynamoService';
 import { ConversationHistory } from '@/types';
 import { audioService } from '@/services/audioService';
+import { ttsService } from '@/services/ttsService';
+import { translationProvider } from '@/services/translationProvider';
+import { openaiService } from '@/services/openaiService';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
 
+// Languages available for replay (no 'auto' option)
+const REPLAY_LANGUAGES = SUPPORTED_LANGUAGES.filter(l => l.code !== 'auto');
+
 export default function HistoryScreen() {
-  const { user, viewMode } = useAuth();
+  const { user, viewMode, settings } = useAuth();
   const isUserView = user?.role === 'USER' || viewMode === 'user';
+
   const [history, setHistory] = useState<ConversationHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [playingId, setPlayingId] = useState<string | null>(null);
 
-  // Reload history every time the tab is focused
+  // Replay state
+  const [replayingId, setReplayingId] = useState<string | null>(null);
+  const [replayLangs, setReplayLangs] = useState<Record<string, string>>({});
+  const [langPickerItem, setLangPickerItem] = useState<ConversationHistory | null>(null);
+
+  // Initialise API keys — ttsService is a singleton; safe to call multiple times
+  useEffect(() => {
+    const openaiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY?.trim();
+    if (openaiKey) {
+      openaiService.initialize(openaiKey);
+      ttsService.initializeOpenAI(openaiKey);
+    }
+    const elevenlabsKey = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY?.trim();
+    if (elevenlabsKey) ttsService.initializeElevenLabs(elevenlabsKey);
+  }, []);
+
+  // Sync TTS voice gender from settings whenever they load
+  useEffect(() => {
+    if (settings?.voice_gender) ttsService.setVoiceGender(settings.voice_gender);
+    if (settings?.selected_voice_id !== undefined) ttsService.setSelectedVoiceId(settings.selected_voice_id ?? null);
+    if (settings?.custom_voice_id !== undefined) ttsService.setCustomVoiceId(settings.custom_voice_id ?? null);
+  }, [settings]);
+
   useFocusEffect(
     useCallback(() => {
       if (user) {
@@ -41,7 +72,6 @@ export default function HistoryScreen() {
       setLoading(false);
       return;
     }
-
     try {
       const data = await dynamoService.getConversationHistory(user.id, isUserView ? 5 : undefined);
       setHistory(data);
@@ -59,17 +89,47 @@ export default function HistoryScreen() {
     loadHistory();
   };
 
-  const handlePlayAudio = async (audioUrl: string, id: string) => {
+  // ---------- Replay logic ----------
+
+  const getReplayLang = (item: ConversationHistory): string =>
+    replayLangs[item.id] ?? item.target_language;
+
+  const handleReplay = async (item: ConversationHistory) => {
+    if (replayingId) return;
+    const targetLang = getReplayLang(item);
+    setReplayingId(item.id);
     try {
-      setPlayingId(id);
-      await audioService.playAudio(audioUrl);
-      setPlayingId(null);
-    } catch (error) {
-      console.error('Error playing audio:', error);
-      Alert.alert('Error', 'Failed to play audio');
-      setPlayingId(null);
+      let text = item.translated_text;
+
+      // Re-translate when user chose a different target language
+      if (targetLang !== item.target_language) {
+        if (!item.source_text?.trim()) {
+          throw new Error('Original text not available for re-translation');
+        }
+        text = '';
+        await translationProvider.translate(
+          item.source_text,
+          item.source_language,
+          targetLang,
+          (chunk) => { text += chunk; }
+        );
+        if (!text.trim()) throw new Error('Translation returned an empty result');
+      }
+
+      const provider = settings?.tts_provider ?? 'openai';
+      const uri = await ttsService.generateSpeech(text, targetLang, provider as any);
+      if (uri) await audioService.playAudio(uri);
+    } catch (err: any) {
+      Alert.alert(
+        'Replay Failed',
+        err?.message ?? 'Could not generate audio. Check your internet connection.'
+      );
+    } finally {
+      setReplayingId(null);
     }
   };
+
+  // ---------- Delete logic ----------
 
   const handleDeleteItem = async (id: string) => {
     Alert.alert(
@@ -88,7 +148,6 @@ export default function HistoryScreen() {
                 await dynamoService.deleteConversationHistoryItem(user.id, item.timestamp);
               }
               setHistory(history.filter((h) => h.id !== id));
-              Alert.alert('Success', 'Translation deleted');
             } catch (error) {
               console.error('Error deleting item:', error);
               Alert.alert('Error', 'Failed to delete translation');
@@ -101,7 +160,6 @@ export default function HistoryScreen() {
 
   const handleClearHistory = async () => {
     if (!user) return;
-
     Alert.alert(
       'Clear All History',
       'Are you sure you want to delete all your translation history? This action cannot be undone.',
@@ -114,7 +172,6 @@ export default function HistoryScreen() {
             try {
               await dynamoService.clearConversationHistory(user.id);
               setHistory([]);
-              Alert.alert('Success', 'History cleared');
             } catch (error) {
               console.error('Error clearing history:', error);
               Alert.alert('Error', 'Failed to clear history');
@@ -125,30 +182,29 @@ export default function HistoryScreen() {
     );
   };
 
-  const getLanguageName = (code: string): string => {
-    const lang = SUPPORTED_LANGUAGES.find((l) => l.code === code);
-    return lang ? lang.name : code.toUpperCase();
-  };
+  // ---------- Helpers ----------
+
+  const getLanguageName = (code: string): string =>
+    SUPPORTED_LANGUAGES.find(l => l.code === code)?.name ?? code.toUpperCase();
 
   const formatDate = (dateString: string): string => {
     const date = new Date(dateString);
     const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
+    const diffMins = Math.floor((now.getTime() - date.getTime()) / 60000);
     const diffHours = Math.floor(diffMins / 60);
     const diffDays = Math.floor(diffHours / 24);
-
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins} min ago`;
     if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
     if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
     });
   };
+
+  // ---------- Render ----------
 
   if (!user) {
     return (
@@ -172,6 +228,7 @@ export default function HistoryScreen() {
 
   return (
     <View style={styles.container}>
+      {/* ── Header ── */}
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>History</Text>
@@ -204,54 +261,142 @@ export default function HistoryScreen() {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
           }>
-          {history.map((item) => (
-            <View key={item.id} style={styles.historyCard}>
-              <View style={styles.cardHeader}>
-                <View style={styles.languageInfo}>
-                  <Text style={styles.languageText}>
-                    {getLanguageName(item.source_language)} → {getLanguageName(item.target_language)}
-                  </Text>
-                  <Text style={styles.dateText}>{formatDate(item.timestamp)}</Text>
+          {history.map((item) => {
+            const replayLang = getReplayLang(item);
+            const isReplaying = replayingId === item.id;
+            const isDifferentLang = replayLang !== item.target_language;
+            return (
+              <View key={item.id} style={styles.historyCard}>
+                {/* Card header */}
+                <View style={styles.cardHeader}>
+                  <View style={styles.languageInfo}>
+                    <Text style={styles.languageText}>
+                      {getLanguageName(item.source_language)} → {getLanguageName(item.target_language)}
+                    </Text>
+                    <Text style={styles.dateText}>{formatDate(item.timestamp)}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleDeleteItem(item.id)}
+                    style={styles.deleteButton}>
+                    <Trash2 size={18} color="#ef4444" />
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                  onPress={() => handleDeleteItem(item.id)}
-                  style={styles.deleteButton}>
-                  <Trash2 size={18} color="#ef4444" />
-                </TouchableOpacity>
-              </View>
 
-              <View style={styles.textBlock}>
-                <Text style={styles.textLabel}>Original</Text>
-                <Text style={styles.textContent}>{item.source_text}</Text>
-              </View>
+                {/* Source text */}
+                <View style={styles.textBlock}>
+                  <Text style={styles.textLabel}>Original</Text>
+                  <Text style={styles.textContent}>{item.source_text}</Text>
+                </View>
 
-              <View style={styles.textBlock}>
-                <Text style={styles.textLabel}>Translation</Text>
-                <Text style={styles.textContent}>{item.translated_text}</Text>
-              </View>
+                {/* Translation text */}
+                <View style={styles.textBlock}>
+                  <Text style={styles.textLabel}>Translation</Text>
+                  <Text style={styles.textContent}>{item.translated_text}</Text>
+                </View>
 
-              {item.translated_audio_url && (
-                <TouchableOpacity
-                  style={[
-                    styles.playButton,
-                    playingId === item.id && styles.playButtonActive,
-                  ]}
-                  onPress={() => handlePlayAudio(item.translated_audio_url!, item.id)}
-                  disabled={playingId === item.id}>
-                  {playingId === item.id ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
-                  ) : (
-                    <>
-                      <Play size={18} color="#ffffff" fill="#ffffff" />
-                      <Text style={styles.playButtonText}>Play Translation</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              )}
-            </View>
-          ))}
+                {/* ── Replay bar ── */}
+                <View style={styles.replayBar}>
+                  {/* Replay button */}
+                  <TouchableOpacity
+                    style={[styles.replayButton, isReplaying && styles.replayButtonActive]}
+                    onPress={() => handleReplay(item)}
+                    disabled={!!replayingId}
+                    activeOpacity={0.8}>
+                    {isReplaying ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <>
+                        <Play size={15} color="#ffffff" fill="#ffffff" />
+                        <Text style={styles.replayButtonText}>
+                          {isDifferentLang ? `Play in ${getLanguageName(replayLang)}` : 'Replay'}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Language picker pill */}
+                  <TouchableOpacity
+                    style={[styles.langPill, isDifferentLang && styles.langPillChanged]}
+                    onPress={() => setLangPickerItem(item)}
+                    disabled={!!replayingId}
+                    activeOpacity={0.7}>
+                    <Text
+                      style={[styles.langPillText, isDifferentLang && styles.langPillTextChanged]}
+                      numberOfLines={1}>
+                      {getLanguageName(replayLang)}
+                    </Text>
+                    <ChevronDown size={13} color={isDifferentLang ? '#2563eb' : '#6b7280'} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })}
         </ScrollView>
       )}
+
+      {/* ── Language Picker Modal ── */}
+      <Modal
+        visible={langPickerItem !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setLangPickerItem(null)}>
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setLangPickerItem(null)}
+          />
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Replay Language</Text>
+              <TouchableOpacity onPress={() => setLangPickerItem(null)} style={styles.modalCloseBtn}>
+                <X size={20} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+            {langPickerItem && (
+              <Text style={styles.modalSubtitle}>
+                Original: {getLanguageName(langPickerItem.target_language)}
+              </Text>
+            )}
+            <FlatList
+              data={REPLAY_LANGUAGES}
+              keyExtractor={(l) => l.code}
+              style={styles.langList}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item: lang }) => {
+                const isSelected = langPickerItem
+                  ? getReplayLang(langPickerItem) === lang.code
+                  : false;
+                const isOriginal = langPickerItem
+                  ? lang.code === langPickerItem.target_language
+                  : false;
+                return (
+                  <TouchableOpacity
+                    style={[styles.langOption, isSelected && styles.langOptionSelected]}
+                    onPress={() => {
+                      if (langPickerItem) {
+                        setReplayLangs(prev => ({
+                          ...prev,
+                          [langPickerItem.id]: lang.code,
+                        }));
+                      }
+                      setLangPickerItem(null);
+                    }}>
+                    <Text style={[styles.langOptionText, isSelected && styles.langOptionTextSelected]}>
+                      {lang.name}
+                    </Text>
+                    {isOriginal && !isSelected && (
+                      <Text style={styles.langOptionOriginalBadge}>original</Text>
+                    )}
+                    {isSelected && <Text style={styles.langOptionCheck}>✓</Text>}
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -291,7 +436,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 20,
-    paddingTop: 40,
+    paddingTop: Platform.OS === 'ios' ? 56 : 40,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
@@ -321,17 +466,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    padding: 16,
     paddingBottom: 40,
   },
   historyCard: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 3,
   },
@@ -339,16 +484,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   languageInfo: {
     flex: 1,
   },
   languageText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#2563eb',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   dateText: {
     fontSize: 12,
@@ -356,39 +501,164 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     padding: 4,
+    marginLeft: 8,
   },
   textBlock: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   textLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6b7280',
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9ca3af',
     marginBottom: 4,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   textContent: {
     fontSize: 15,
     color: '#111827',
     lineHeight: 22,
   },
-  playButton: {
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-    padding: 12,
+
+  // ── Replay bar ──
+  replayBar: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
-    marginTop: 8,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
   },
-  playButtonActive: {
+  replayButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#2563eb',
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    minWidth: 90,
+    justifyContent: 'center',
+  },
+  replayButtonActive: {
     backgroundColor: '#1d4ed8',
   },
-  playButtonText: {
+  replayButtonText: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
+  },
+  langPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    flex: 1,
+  },
+  langPillChanged: {
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  langPillText: {
+    fontSize: 13,
+    color: '#374151',
+    fontWeight: '500',
+    flex: 1,
+  },
+  langPillTextChanged: {
+    color: '#2563eb',
+    fontWeight: '600',
+  },
+
+  // ── Language picker modal ──
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalSheet: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+  },
+  modalHandle: {
+    width: 36,
+    height: 4,
+    backgroundColor: '#d1d5db',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalSubtitle: {
+    fontSize: 12,
+    color: '#9ca3af',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  langList: {
+    flex: 1,
+  },
+  langOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f9fafb',
+  },
+  langOptionSelected: {
+    backgroundColor: '#eff6ff',
+  },
+  langOptionText: {
+    fontSize: 15,
+    color: '#1f2937',
+    flex: 1,
+  },
+  langOptionTextSelected: {
+    color: '#2563eb',
+    fontWeight: '600',
+  },
+  langOptionOriginalBadge: {
+    fontSize: 11,
+    color: '#9ca3af',
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 4,
+  },
+  langOptionCheck: {
+    fontSize: 15,
+    color: '#2563eb',
+    fontWeight: '700',
   },
 });
