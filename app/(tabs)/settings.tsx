@@ -764,6 +764,11 @@ export default function SettingsScreen() {
       <View style={styles.footer}>
         <Text style={styles.footerText}>Realtime Modern AI Translator</Text>
         <Text style={styles.footerSubtext}>Powered by OpenAI & Advanced TTS</Text>
+        {/* versionCode/versionName never change between builds — this is the only
+            way to tell whether an installed APK is actually the latest build. */}
+        <Text style={styles.footerSubtext}>
+          Build {process.env.EXPO_PUBLIC_BUILD_SHA ? process.env.EXPO_PUBLIC_BUILD_SHA.substring(0, 7) : 'dev'}
+        </Text>
       </View>
     </ScrollView>
   );
