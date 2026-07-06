@@ -1,12 +1,12 @@
 import crypto from 'node:crypto';
 import {
   CognitoIdentityProviderClient,
-  ListUsersCommand,
+  AdminGetUserCommand,
   AdminCreateUserCommand,
   AdminSetUserPasswordCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { toE164, derivePhoneUsername } from '../phone.mjs';
-import { sendSuccess, sendError, handleError } from '../response.mjs';
+import { sendSuccess, handleError } from '../response.mjs';
 
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION || 'us-east-1' });
 
@@ -33,13 +33,18 @@ export async function requestPhoneOtp(event) {
     const phone = toE164(body.phone);
     const username = derivePhoneUsername(phone);
 
-    const existing = await cognito.send(new ListUsersCommand({
-      UserPoolId: process.env.USER_POOL_ID,
-      Filter: `phone_number = "${phone}"`,
-      Limit: 1,
-    }));
+    let userExists = true;
+    try {
+      await cognito.send(new AdminGetUserCommand({
+        UserPoolId: process.env.USER_POOL_ID,
+        Username: username,
+      }));
+    } catch (err) {
+      if (err.name !== 'UserNotFoundException') throw err;
+      userExists = false;
+    }
 
-    if (!existing.Users || existing.Users.length === 0) {
+    if (!userExists) {
       await cognito.send(new AdminCreateUserCommand({
         UserPoolId: process.env.USER_POOL_ID,
         Username: username,
@@ -68,9 +73,6 @@ export async function requestPhoneOtp(event) {
 
     return sendSuccess({ username });
   } catch (err) {
-    if (err.message?.includes('E.164')) {
-      return sendError(400, err.message);
-    }
     return handleError(err);
   }
 }

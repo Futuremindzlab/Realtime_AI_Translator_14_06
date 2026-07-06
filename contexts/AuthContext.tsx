@@ -36,6 +36,7 @@ interface AuthContextType {
   confirmSignUp: (email: string, code: string) => Promise<void>;
   signInWithPhone: (e164Phone: string) => Promise<void>;
   confirmOtpCode: (code: string) => Promise<void>;
+  cancelPhoneVerification: () => void;
   signOut: () => Promise<void>;
   completeNewPassword: (newPassword: string) => Promise<void>;
   updateSettings: (settings: Partial<UserSettings>) => Promise<void>;
@@ -112,12 +113,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const idToken = session.getIdToken().getJwtToken();
         const payload = session.getIdToken().payload;
         const userId = payload['sub'] as string;
-        const email = payload['email'] as string;
+        // Phone-based accounts have a synthetic placeholder email (see backend/src/phone.mjs
+        // derivePhoneUsername) — prefer the real phone_number claim when present so a
+        // restored session doesn't display the internal placeholder to the user.
+        const displayId = (payload['phone_number'] as string) || (payload['email'] as string);
         const role = extractRole(payload);
 
-        console.log(`✅ Session restored for ${email} (role: ${role})`);
+        console.log(`✅ Session restored for ${displayId} (role: ${role})`);
         dynamoService.initialize(idToken);
-        setUser({ id: userId, email, role });
+        setUser({ id: userId, email: displayId, role });
         loadUserSettings(userId);
       });
     } else {
@@ -363,7 +367,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           resolve();
         },
         onFailure: (err: Error) => {
+          // Terminal failure (e.g. too many wrong attempts — see defineAuthChallenge.mjs's
+          // MAX_ATTEMPTS) — reset so the user isn't stuck on the OTP screen with no way
+          // back except restarting the app.
           console.error('❌ OTP verification failed:', err.message);
+          setNeedsOtpVerification(false);
+          setPendingCognitoUser(null);
+          setPendingPhone(null);
           reject(err);
         },
         customChallenge: () => {
@@ -372,6 +382,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
       });
     });
+  };
+
+  /** Lets the user back out of the phone-OTP flow (wrong number, no SMS received, etc.). */
+  const cancelPhoneVerification = () => {
+    setNeedsOtpVerification(false);
+    setPendingCognitoUser(null);
+    setPendingPhone(null);
   };
 
   const completeNewPassword = async (newPassword: string) => {
@@ -460,6 +477,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     confirmSignUp,
     signInWithPhone,
     confirmOtpCode,
+    cancelPhoneVerification,
     signOut,
     completeNewPassword,
     updateSettings,

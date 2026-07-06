@@ -18,7 +18,7 @@ import { CountryCodeSelector } from '@/components/CountryCodeSelector';
 
 export default function SettingsScreen() {
   const {
-    user, settings, signIn, signUp, confirmSignUp, signInWithPhone, confirmOtpCode,
+    user, settings, signIn, signUp, confirmSignUp, signInWithPhone, confirmOtpCode, cancelPhoneVerification,
     signOut, completeNewPassword, updateSettings, loading,
     needsNewPassword, needsConfirmation, pendingEmail, needsOtpVerification, pendingPhone,
     viewMode, setViewMode,
@@ -128,15 +128,23 @@ export default function SettingsScreen() {
   };
 
   const handleSendOtp = async () => {
-    const digits = phoneNational.replace(/\D/g, '');
-    if (!digits) {
+    const trimmed = phoneNational.trim();
+    // If the user pasted an already-fully-qualified international number
+    // (e.g. copied from another app as "+919876543210"), use it as-is instead
+    // of also prepending the selected dial code — otherwise the country code
+    // gets duplicated (+91 + "+919876543210" digits → wrong number, silent).
+    const composed = trimmed.startsWith('+')
+      ? `+${trimmed.replace(/\D/g, '')}`
+      : `${dialCode}${trimmed.replace(/\D/g, '').replace(/^0+/, '')}`;
+
+    if (composed.replace(/\D/g, '').length === 0) {
       setAuthError('Please enter your phone number');
       return;
     }
     setAuthError(null);
     setAuthLoading(true);
     try {
-      await signInWithPhone(`${dialCode}${digits}`);
+      await signInWithPhone(composed);
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Failed to send verification code');
     } finally {
@@ -388,6 +396,10 @@ export default function SettingsScreen() {
             ) : (
               <Text style={styles.primaryButtonText}>Verify & Continue</Text>
             )}
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => { setAuthError(null); setOtpCode(''); cancelPhoneVerification(); }}>
+            <Text style={styles.linkText}>Entered the wrong number? Start over</Text>
           </TouchableOpacity>
         </View>
       ) : !user ? (

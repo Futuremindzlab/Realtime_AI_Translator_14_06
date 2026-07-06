@@ -570,16 +570,24 @@ export class TTSService {
         const errBody = await response.text().catch(() => '');
 
         // ElevenLabs returns HTTP 401 for BOTH an invalid API key AND a used-up monthly
-        // character quota — the two are only distinguishable via detail.status in the body.
-        // Only the former should permanently disable auto-routing for the session; a quota
-        // limit is transient (resets monthly / lifts with a plan upgrade) and should just
-        // fail this one request, falling through to OpenAI/device like any other error.
+        // character quota (and possibly other transient reasons) — only distinguishable via
+        // detail.status in the body. Default to the SAFE side: only disable auto-routing for
+        // the session when we can positively confirm it's actually an invalid key. Any other
+        // 401 (quota_exceeded, an unrecognized reason, or an unparseable body) just fails this
+        // one request and falls through to OpenAI/device, same as any other transient error —
+        // a false "key invalid" latch is worse than one extra retried request.
         if (response.status === 401) {
-          if (errBody.includes('quota_exceeded')) {
-            console.error('❌ ElevenLabs 401 — quota exceeded (not a bad key); falling back for this request only');
-          } else {
+          let status: string | undefined;
+          try {
+            status = JSON.parse(errBody)?.detail?.status;
+          } catch {
+            // Unparseable body — status stays undefined, treated as non-key-invalid below.
+          }
+          if (status === 'invalid_api_key') {
             this.elevenlabsKeyValid = false;
             console.error('❌ ElevenLabs 401 — key invalid, disabling auto-switch');
+          } else {
+            console.error(`❌ ElevenLabs 401 — ${status || 'unrecognized reason'} (not a confirmed bad key); falling back for this request only`);
           }
         }
         console.error(`❌ ElevenLabs ${response.status}: ${errBody.substring(0, 200)}`);

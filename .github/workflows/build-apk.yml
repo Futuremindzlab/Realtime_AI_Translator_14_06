@@ -20,6 +20,8 @@ jobs:
       EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID: ${{ secrets.EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID }}
       EXPO_PUBLIC_AWS_IDENTITY_POOL_ID: ${{ secrets.EXPO_PUBLIC_AWS_IDENTITY_POOL_ID }}
       EXPO_PUBLIC_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_API_BASE_URL }}
+      EXPO_PUBLIC_AZURE_SPEECH_KEY: ${{ secrets.EXPO_PUBLIC_AZURE_SPEECH_KEY }}
+      EXPO_PUBLIC_AZURE_SPEECH_REGION: ${{ secrets.EXPO_PUBLIC_AZURE_SPEECH_REGION }}
 
     steps:
       - name: 🏗 Checkout
@@ -43,6 +45,8 @@ jobs:
           echo "EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID=$EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID" >> .env
           echo "EXPO_PUBLIC_AWS_IDENTITY_POOL_ID=$EXPO_PUBLIC_AWS_IDENTITY_POOL_ID" >> .env
           echo "EXPO_PUBLIC_API_BASE_URL=$EXPO_PUBLIC_API_BASE_URL" >> .env
+          echo "EXPO_PUBLIC_AZURE_SPEECH_KEY=$EXPO_PUBLIC_AZURE_SPEECH_KEY" >> .env
+          echo "EXPO_PUBLIC_AZURE_SPEECH_REGION=$EXPO_PUBLIC_AZURE_SPEECH_REGION" >> .env
           echo "✅ .env created:"
           # Print keys only (not values) to confirm file is correct
           cut -d'=' -f1 .env

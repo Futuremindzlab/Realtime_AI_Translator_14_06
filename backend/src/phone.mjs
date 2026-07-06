@@ -16,25 +16,20 @@ const E164_PATTERN = /^\+[1-9]\d{1,14}$/;
  */
 export function toE164(rawPhone) {
   if (!rawPhone || typeof rawPhone !== 'string') {
-    throw new Error('Phone number is required');
+    const err = new Error('Phone number is required');
+    err.statusCode = 400;
+    throw err;
   }
 
   const cleaned = rawPhone.trim().replace(/[\s\-()]/g, '');
 
   if (!E164_PATTERN.test(cleaned)) {
-    throw new Error('Phone number must be in E.164 format (e.g. +919876543210)');
+    const err = new Error('Phone number must be in E.164 format (e.g. +919876543210)');
+    err.statusCode = 400;
+    throw err;
   }
 
   return cleaned;
-}
-
-export function isValidE164(rawPhone) {
-  try {
-    toE164(rawPhone);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**

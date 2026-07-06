@@ -61,8 +61,8 @@ jobs:
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
             --parameter-overrides \
               Stage=${{ env.STAGE }} \
-              UserPoolId=${{ secrets.AWS_USER_POOL_ID }} \
-              UserPoolClientId=${{ secrets.AWS_USER_POOL_CLIENT_ID }} \
+              UserPoolId=${{ secrets.EXPO_PUBLIC_AWS_USER_POOL_ID }} \
+              UserPoolClientId=${{ secrets.EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID }} \
               TranslationsTable=conversation_history \
               SettingsTable=user_settings
 
