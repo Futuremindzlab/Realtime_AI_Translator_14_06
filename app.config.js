@@ -2,8 +2,10 @@
 // Explicitly reads EXPO_PUBLIC_* env vars so they are always inlined by Metro
 // during both local dev (from .env) and EAS builds (from GitHub Secrets → .env).
 
+// Note: OpenAI/ElevenLabs/Azure API keys are intentionally NOT read here — they
+// live server-side in the backend AI proxy (see backend/src/handlers/aiProxy.mjs)
+// and must never be inlined into the client bundle.
 const required = [
-  'EXPO_PUBLIC_OPENAI_API_KEY',
   'EXPO_PUBLIC_AWS_REGION',
   'EXPO_PUBLIC_AWS_USER_POOL_ID',
   'EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID',
@@ -64,7 +66,9 @@ module.exports = {
         'expo-build-properties',
         {
           android: {
-            usesCleartextTraffic: true,
+            // All endpoints (API Gateway, Cognito, OpenAI/ElevenLabs/Azure) are HTTPS —
+            // cleartext (HTTP) traffic is never needed and should stay disabled.
+            usesCleartextTraffic: false,
           },
         },
       ],
@@ -78,7 +82,6 @@ module.exports = {
       router: {},
       eas: { projectId: 'd7c5b190-f02b-4782-a64c-5414b9490e98' },
       // Snapshot current env for runtime inspection (values are inlined by Metro)
-      openaiKeyPresent: !!process.env.EXPO_PUBLIC_OPENAI_API_KEY,
       awsRegion: process.env.EXPO_PUBLIC_AWS_REGION || '',
       apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || '',
     },

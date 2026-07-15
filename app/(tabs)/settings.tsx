@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -38,7 +38,7 @@ export default function SettingsScreen() {
   const [phoneNational, setPhoneNational] = useState('');
   const [otpCode, setOtpCode] = useState('');
 
-  const [ttsProvider, setTtsProvider] = useState<'inworld' | 'elevenlabs' | 'openai' | 'device' | 'azure'>('device');
+  const [ttsProvider, setTtsProvider] = useState<'elevenlabs' | 'openai' | 'device' | 'azure'>('device');
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('female');
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
   const [conversationModeDefault, setConversationModeDefault] = useState(true);
@@ -46,6 +46,19 @@ export default function SettingsScreen() {
   const [isCloningVoice, setIsCloningVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [authError, setAuthError] = useState<string | null>(null);
+  const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Guard against the countdown interval outliving the component (e.g. user
+  // navigates away mid-recording) — it would otherwise keep firing setState on
+  // an unmounted screen and could trigger stopRecording() at an unexpected time.
+  useEffect(() => {
+    return () => {
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   React.useEffect(() => {
     if (settings) {
@@ -210,19 +223,19 @@ export default function SettingsScreen() {
       const maxSeconds = isUserView ? 29 : 59;
 
       // Count seconds while recording
-      const interval = setInterval(() => {
+      recordingIntervalRef.current = setInterval(() => {
         setRecordingSeconds(prev => {
           if (prev >= maxSeconds) {
-            clearInterval(interval);
+            if (recordingIntervalRef.current) {
+              clearInterval(recordingIntervalRef.current);
+              recordingIntervalRef.current = null;
+            }
             handleStopVoiceRecording();
             return maxSeconds + 1;
           }
           return prev + 1;
         });
       }, 1000);
-
-      // Store interval ID for cleanup
-      (handleStartVoiceRecording as any)._interval = interval;
     } catch (error) {
       setIsRecordingVoice(false);
       Alert.alert('Error', 'Failed to start recording');
@@ -232,8 +245,9 @@ export default function SettingsScreen() {
   const handleStopVoiceRecording = async () => {
     try {
       // Clear the timer
-      if ((handleStartVoiceRecording as any)._interval) {
-        clearInterval((handleStartVoiceRecording as any)._interval);
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+        recordingIntervalRef.current = null;
       }
       setIsRecordingVoice(false);
 
@@ -669,9 +683,6 @@ export default function SettingsScreen() {
                   </View>
                 </TouchableOpacity>
               </View>
-            )}
-            {ttsProvider === 'inworld' && (
-              <Text style={styles.voiceHint}>Voice selection not available for this provider.</Text>
             )}
 
             <View style={styles.switchRow}>

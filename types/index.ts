@@ -19,7 +19,7 @@ export interface UserSettings {
   user_id: string;
   default_source_language: string;
   default_target_language: string;
-  tts_provider: 'inworld' | 'elevenlabs' | 'openai' | 'device' | 'azure';
+  tts_provider: 'elevenlabs' | 'openai' | 'device' | 'azure';
   translation_provider?: 'openai' | 'device';
   conversation_mode_default: boolean;
   custom_voice_id?: string;

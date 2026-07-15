@@ -23,6 +23,10 @@ export async function createTranslation(event) {
     if (!body.source_text || !body.translated_text) {
       return sendError(400, 'source_text and translated_text are required');
     }
+    const MAX_TEXT_LENGTH = 20000; // keep well under DynamoDB's 400KB item limit
+    if (body.source_text.length > MAX_TEXT_LENGTH || body.translated_text.length > MAX_TEXT_LENGTH) {
+      return sendError(400, `source_text and translated_text must be under ${MAX_TEXT_LENGTH} characters`);
+    }
 
     const timestamp = body.timestamp || new Date().toISOString();
     const item = {
@@ -54,7 +58,8 @@ export async function listTranslations(event) {
     const role = getRole(event);
     const qs = event.queryStringParameters || {};
     // OWNER: max 200 items per page; USER: hard-capped at 5 regardless of requested limit
-    const requestedLimit = Math.min(parseInt(qs.limit || '50', 10), 200);
+    const parsedLimit = parseInt(qs.limit || '50', 10);
+    const requestedLimit = Math.min(Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 50, 200);
     const limit = role === 'USER' ? Math.min(requestedLimit, 5) : requestedLimit;
     const lastKey = qs.lastKey
       ? JSON.parse(Buffer.from(qs.lastKey, 'base64').toString('utf8'))

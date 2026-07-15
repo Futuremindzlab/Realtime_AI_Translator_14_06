@@ -1,13 +1,14 @@
 import { Platform } from 'react-native';
 import * as Speech from 'expo-speech';
+import { proxyPost } from '@/lib/apiProxy';
 
-// expo-file-system is native-only. On web, saveAudioResponseToFile() uses
+// expo-file-system is native-only. On web, saveBase64Audio() uses
 // URL.createObjectURL() instead, so FileSystem is never called.
 const FileSystem: any = Platform.OS === 'web'
   ? { cacheDirectory: '', writeAsStringAsync: async () => {}, readAsStringAsync: async () => '', getInfoAsync: async () => ({ exists: true, size: 1 }) }
   : require('expo-file-system/legacy');
 
-export type TTSProvider = 'inworld' | 'elevenlabs' | 'openai' | 'device' | 'azure';
+export type TTSProvider = 'elevenlabs' | 'openai' | 'device' | 'azure';
 
 export type VoiceGender = 'male' | 'female';
 
@@ -48,12 +49,10 @@ export class TTSService {
     ml: { female: 'ml-IN-SobhanaNeural', male: 'ml-IN-MidhunNeural' },
   };
 
-  private inworldApiKey: string | null = null;
-  private elevenlabsApiKey: string | null = null;
+  // Provider API keys live server-side (backend AI proxy) — the client never holds them.
+  // This latch flips false only when the proxy positively confirms the server's
+  // ElevenLabs key is invalid, so we stop retrying it for the rest of the session.
   private elevenlabsKeyValid = true;
-  private openaiApiKey: string | null = null;
-  private azureSpeechKey: string | null = null;
-  private azureSpeechRegion: string | null = null;
   private customVoiceId: string | null = null;
   private voiceGender: VoiceGender = 'female';
   private selectedVoiceId: string | null = null;
@@ -94,41 +93,24 @@ export class TTSService {
    * Returns the new voice ID.
    */
   async cloneVoice(audioUri: string, name: string): Promise<string> {
-    if (!this.elevenlabsApiKey) {
-      throw new Error('ElevenLabs API key not set');
-    }
-
     console.log(`🎤 Starting voice cloning for "${name}" from ${audioUri}`);
 
-    // Read the audio file as base64
+    // Read the audio file as base64 and hand it to the backend proxy —
+    // the real ElevenLabs key lives server-side, never on the client.
     const base64Audio = await FileSystem.readAsStringAsync(audioUri, {
       encoding: 'base64',
     });
 
-    // Convert base64 to a blob for FormData
-    const binaryString = atob(base64Audio);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const audioBlob = new Blob([bytes], { type: 'audio/m4a' });
-
-    const formData = new FormData();
-    formData.append('name', name);
-    formData.append('description', 'Voice cloned from Realtime AI Translator app');
-    formData.append('files', audioBlob, 'voice_sample.m4a');
-
-    const response = await fetch('https://api.elevenlabs.io/v1/voices/add', {
-      method: 'POST',
-      headers: {
-        'xi-api-key': this.elevenlabsApiKey,
-      },
-      body: formData,
+    const response = await proxyPost('/v1/proxy/elevenlabs/voice-clone', {
+      name,
+      audioBase64: base64Audio,
+      mimeType: 'audio/m4a',
+      fileName: 'voice_sample.m4a',
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error?.detail?.message || `Voice cloning failed (${response.status})`);
+      throw new Error(error?.detail?.message || error?.error || `Voice cloning failed (${response.status})`);
     }
 
     const data = await response.json();
@@ -150,26 +132,6 @@ export class TTSService {
     console.log(
       '🔊 Startup voices: ElevenLabs=George (free tier) · OpenAI=Shimmer/Nova for female · OpenAI=Onyx/Echo for male'
     );
-  }
-
-  initializeInworld(apiKey: string) {
-    this.inworldApiKey = apiKey;
-  }
-
-  initializeElevenLabs(apiKey: string) {
-    this.elevenlabsApiKey = apiKey;
-    this.elevenlabsKeyValid = true; // Reset on new key
-    console.log(`🔊 ElevenLabs initialized (key: ${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)})`);
-  }
-
-  initializeOpenAI(apiKey: string) {
-    this.openaiApiKey = apiKey;
-  }
-
-  initializeAzure(apiKey: string, region: string) {
-    this.azureSpeechKey = apiKey;
-    this.azureSpeechRegion = region;
-    console.log(`🔊 Azure Speech initialized (region: ${region})`);
   }
 
   // Indic-script languages: Whisper prompt-only mode; ElevenLabs eleven_v3; George voice (male)
@@ -218,7 +180,7 @@ export class TTSService {
   /**
    * Generate speech for the given text.
    *
-   * Returns a local file URI for cloud providers (openai / elevenlabs / inworld)
+   * Returns a local file URI for cloud providers (openai / elevenlabs / azure)
    * that must be passed to audioService.playAudio().
    *
    * Returns null for the 'device' provider — expo-speech speaks inline and
@@ -242,8 +204,11 @@ export class TTSService {
     }
 
     const needsBetterTTS = TTSService.ELEVENLABS_PREFERRED_LANGUAGES.has(language);
-    const hasElevenLabs = !!(this.elevenlabsApiKey && this.elevenlabsKeyValid);
-    const hasOpenAI = !!this.openaiApiKey;
+    // Provider keys live server-side now — "has X" just means "the server hasn't told
+    // us this key is confirmed invalid yet". Any other unavailability (missing key,
+    // quota, network) surfaces as a thrown error and is handled by the fallback chains below.
+    const hasElevenLabs = this.elevenlabsKeyValid;
+    const hasOpenAI = true;
 
     // Determine effective provider.
     // CRITICAL: auto-upgrade BEFORE the 'device' short-circuit so that Indian/Arabic
@@ -286,13 +251,6 @@ export class TTSService {
         console.error('❌ All TTS providers failed; audio skipped');
         return null;
       }
-    }
-
-    // No cloud keys → device TTS fallback
-    if (!hasOpenAI && !hasElevenLabs && effectiveProvider !== 'azure') {
-      console.log('🔊 No cloud TTS key — using device TTS');
-      await this.generateWithDevice(processedText, language);
-      return null;
     }
 
     console.log(`🔊 TTS: provider=${effectiveProvider}, lang=${language}, chars=${processedText.length}`);
@@ -379,35 +337,25 @@ export class TTSService {
   }
 
   private async generateWithOpenAI(text: string, language: string): Promise<string> {
-    if (!this.openaiApiKey) {
-      throw new Error('OpenAI API key not set. Please add it in settings.');
-    }
-
     const voice = this.getOpenAIVoiceForLanguage(language);
     console.log(`🔊 OpenAI TTS: voice=${voice}, lang=${language}`);
 
     try {
-      const response = await fetch('https://api.openai.com/v1/audio/speech', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.openaiApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'tts-1-hd',  // HD model: better pronunciation for all languages
-          voice,
-          input: text,
-          speed: 1.0,
-          response_format: 'mp3',
-        }),
+      const response = await proxyPost('/v1/proxy/openai/tts', {
+        model: 'tts-1-hd', // HD model: better pronunciation for all languages
+        voice,
+        input: text,
+        speed: 1.0,
+        response_format: 'mp3',
       });
 
       if (!response.ok) {
-        throw new Error(`OpenAI TTS failed with status ${response.status}`);
+        const errBody = await response.text().catch(() => '');
+        throw new Error(`OpenAI TTS failed with status ${response.status}: ${errBody.substring(0, 200)}`);
       }
 
-      // Save audio to file
-      const fileUri = await this.saveAudioResponseToFile(response, 'openai_tts');
+      const data = await response.json();
+      const fileUri = await this.saveBase64Audio(data.audioBase64, data.contentType || 'audio/mpeg', 'openai_tts');
       console.log('OpenAI TTS audio saved to:', fileUri);
       return fileUri;
     } catch (error) {
@@ -417,10 +365,6 @@ export class TTSService {
   }
 
   private async generateWithAzure(text: string, language: string): Promise<string> {
-    if (!this.azureSpeechKey || !this.azureSpeechRegion) {
-      throw new Error('Azure Speech key/region not set.');
-    }
-
     const voiceName = this.getAzureVoiceForLanguage(language);
     const locale = voiceName.split('-').slice(0, 2).join('-'); // e.g. 'ml-IN-SobhanaNeural' → 'ml-IN'
 
@@ -437,25 +381,15 @@ export class TTSService {
     console.log(`🔊 Azure TTS: voice=${voiceName}, lang=${language}`);
 
     try {
-      const response = await fetch(
-        `https://${this.azureSpeechRegion}.tts.speech.microsoft.com/cognitiveservices/v1`,
-        {
-          method: 'POST',
-          headers: {
-            'Ocp-Apim-Subscription-Key': this.azureSpeechKey,
-            'Content-Type': 'application/ssml+xml',
-            'X-Microsoft-OutputFormat': 'audio-16khz-32kbitrate-mono-mp3',
-          },
-          body: ssml,
-        }
-      );
+      const response = await proxyPost('/v1/proxy/azure/tts', { ssml });
 
       if (!response.ok) {
         const errBody = await response.text().catch(() => '');
         throw new Error(`Azure TTS failed with status ${response.status}: ${errBody.substring(0, 200)}`);
       }
 
-      const fileUri = await this.saveAudioResponseToFile(response, 'azure_tts');
+      const data = await response.json();
+      const fileUri = await this.saveBase64Audio(data.audioBase64, data.contentType || 'audio/mpeg', 'azure_tts');
       console.log('Azure TTS audio saved to:', fileUri);
       return fileUri;
     } catch (error) {
@@ -475,46 +409,7 @@ export class TTSService {
     return this.voiceGender === 'male' ? pair.male : pair.female;
   }
 
-  private async generateWithInworld(text: string, language: string): Promise<string> {
-    if (!this.inworldApiKey) {
-      throw new Error('Inworld API key not set.');
-    }
-
-    console.log('Attempting Inworld TTS generation...');
-
-    try {
-      const response = await fetch('https://api.inworld.ai/v1/text-to-speech', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.inworldApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          text,
-          language,
-          voice: this.getInworldVoiceForLanguage(language),
-          format: 'mp3',
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Inworld TTS failed with status ${response.status}`);
-      }
-
-      const fileUri = await this.saveAudioResponseToFile(response, 'inworld_tts');
-      console.log('Inworld TTS audio saved to:', fileUri);
-      return fileUri;
-    } catch (error) {
-      console.error('Inworld TTS error:', error);
-      throw new Error(`Inworld TTS failed: ${error}`);
-    }
-  }
-
   private async generateWithElevenLabs(text: string, language: string): Promise<string> {
-    if (!this.elevenlabsApiKey) {
-      throw new Error('ElevenLabs API key not set.');
-    }
-
     // Use custom cloned voice if available, otherwise pick by language + gender
     const voiceId = this.customVoiceId || this.getElevenLabsVoiceForLanguage(language);
 
@@ -554,17 +449,10 @@ export class TTSService {
     const FREE_VOICE_ID = 'JBFqnCBsd6RMkjVDRZzb';
 
     const callAPI = async (requestVoiceId: string, requestBody: Record<string, any>) => {
-      const response = await fetch(
-        `https://api.elevenlabs.io/v1/text-to-speech/${requestVoiceId}`,
-        {
-          method: 'POST',
-          headers: {
-            'xi-api-key': this.elevenlabsApiKey!,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-        }
-      );
+      const response = await proxyPost('/v1/proxy/elevenlabs/tts', {
+        voiceId: requestVoiceId,
+        ...requestBody,
+      });
 
       if (!response.ok) {
         const errBody = await response.text().catch(() => '');
@@ -634,50 +522,37 @@ export class TTSService {
         }
       }
 
-      return await this.saveAudioResponseToFile(response, 'elevenlabs_tts');
+      const data = await response.json();
+      return await this.saveBase64Audio(data.audioBase64, data.contentType || 'audio/mpeg', 'elevenlabs_tts');
     } catch (error) {
       console.error('ElevenLabs TTS error:', error);
       throw new Error(`ElevenLabs TTS failed: ${error}`);
     }
   }
 
-  private async saveAudioResponseToFile(response: Response, prefix: string): Promise<string> {
+  /** Save a base64-encoded audio payload (from the AI proxy) to a playable URI. */
+  private async saveBase64Audio(base64: string, contentType: string, prefix: string): Promise<string> {
     try {
-      const blob = await response.blob();
-      console.log(`🔊 Audio blob size: ${(blob.size / 1024).toFixed(1)} KB`);
-
-      if (blob.size === 0) {
+      if (!base64) {
         throw new Error('TTS returned empty audio');
       }
 
-      // Web: create an object URL directly from the blob — no file system needed
+      // Web: decode to a Blob and hand back an object URL — no file system needed
       if (Platform.OS === 'web') {
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: contentType });
         const objectUrl = URL.createObjectURL(blob);
         console.log(`✅ Audio object URL created (web)`);
         return objectUrl;
       }
 
-      // Native (iOS/Android): save base64 to cache directory
-      const base64String = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          if (typeof reader.result === 'string') {
-            const commaIndex = reader.result.indexOf(',');
-            resolve(commaIndex >= 0 ? reader.result.substring(commaIndex + 1) : reader.result);
-          } else {
-            reject(new Error('FileReader returned non-string result'));
-          }
-        };
-        reader.onerror = () => reject(new Error('FileReader failed'));
-        reader.readAsDataURL(blob);
-      });
-
+      // Native (iOS/Android): the proxy already gives us base64 — write it straight to disk
       const fileName = `${prefix}_${Date.now()}.mp3`;
       const fileUri = (FileSystem.cacheDirectory || '') + fileName;
 
-      await FileSystem.writeAsStringAsync(fileUri, base64String, {
-        encoding: 'base64',
-      });
+      await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: 'base64' });
 
       const fileInfo = await FileSystem.getInfoAsync(fileUri);
       console.log(`✅ Audio saved: ${fileUri} (${fileInfo.exists ? `${((fileInfo as any).size / 1024).toFixed(1)} KB` : 'NOT FOUND'})`);
@@ -702,54 +577,6 @@ export class TTSService {
       return this.selectedVoiceId;
     }
     return this.voiceGender === 'male' ? 'echo' : 'nova';
-  }
-
-  private getInworldVoiceForLanguage(language: string): string {
-    const voiceMap: Record<string, string> = {
-      en: 'en-US-Standard-A',
-      hi: 'hi-IN-Standard-A',
-      ta: 'ta-IN-Standard-A',
-      te: 'te-IN-Standard-A',
-      kn: 'kn-IN-Standard-A',
-      ml: 'ml-IN-Standard-A',
-      mr: 'mr-IN-Standard-A',
-      bn: 'bn-IN-Standard-A',
-      gu: 'gu-IN-Standard-A',
-      pa: 'pa-IN-Standard-A',
-      ur: 'ur-IN-Standard-A',
-      es: 'es-ES-Standard-A',
-      fr: 'fr-FR-Standard-A',
-      de: 'de-DE-Standard-A',
-      it: 'it-IT-Standard-A',
-      pt: 'pt-BR-Standard-A',
-      ru: 'ru-RU-Standard-A',
-      ja: 'ja-JP-Standard-A',
-      ko: 'ko-KR-Standard-A',
-      zh: 'cmn-CN-Standard-A',
-      ar: 'ar-XA-Standard-A',
-      tr: 'tr-TR-Standard-A',
-      th: 'th-TH-Standard-A',
-      vi: 'vi-VN-Standard-A',
-      id: 'id-ID-Standard-A',
-      nl: 'nl-NL-Standard-A',
-      pl: 'pl-PL-Standard-A',
-      uk: 'uk-UA-Standard-A',
-      cs: 'cs-CZ-Standard-A',
-      fil: 'fil-PH-Standard-A',
-      sv: 'sv-SE-Standard-A',
-      da: 'da-DK-Standard-A',
-      no: 'nb-NO-Standard-A',
-      fi: 'fi-FI-Standard-A',
-      el: 'el-GR-Standard-A',
-      hu: 'hu-HU-Standard-A',
-      ro: 'ro-RO-Standard-A',
-      sk: 'sk-SK-Standard-A',
-      bg: 'bg-BG-Standard-A',
-      sr: 'sr-RS-Standard-A',
-      he: 'he-IL-Standard-A',
-      ca: 'ca-ES-Standard-A',
-    };
-    return voiceMap[language] || 'en-US-Standard-A';
   }
 
   /**

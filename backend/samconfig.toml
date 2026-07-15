@@ -3,6 +3,14 @@ version = 0.1
 # ── Local developer deployments only (sam build && sam deploy) ────────────
 # GitHub Actions uses --no-config-file so this file is ignored in CI.
 # resolve_s3 tells SAM to auto-create/manage the S3 artifact bucket locally.
+#
+# AI provider secrets (OpenAiApiKey, ElevenLabsApiKey, AzureSpeechKey/Region) are
+# deliberately NOT stored here — this file is committed to git. Supply them at
+# deploy time instead, e.g.:
+#   sam deploy --parameter-overrides \
+#     Stage="prod" UserPoolId="..." UserPoolClientId="..." \
+#     OpenAIApiKey="sk-..." ElevenLabsApiKey="..." \
+#     AzureSpeechKey="..." AzureSpeechRegion="eastus"
 [default.deploy.parameters]
 stack_name = "ai-translator-stack"
 s3_prefix  = "ai-translator-stack"

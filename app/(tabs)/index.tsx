@@ -20,7 +20,6 @@ import {
   TranslationProgress,
 } from '@/services/RealtimeTranslationService';
 import { audioService } from '@/services/audioService';
-import { openaiService } from '@/services/openaiService';
 import { ttsService } from '@/services/ttsService';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
 
@@ -38,20 +37,9 @@ export default function HomeScreen() {
   const [progress, setProgress] = useState<TranslationProgress | null>(null);
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
 
-  // ── 1. Initialise API keys + startup voices + sync settings ──
+  // ── 1. Startup voices + sync settings ──
+  // Provider API keys live server-side (backend AI proxy) — nothing to initialise here.
   useEffect(() => {
-    const openaiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY?.trim();
-    if (openaiKey) {
-      openaiService.initialize(openaiKey);
-      ttsService.initializeOpenAI(openaiKey);
-    }
-    const elevenlabsKey = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY?.trim();
-    if (elevenlabsKey) ttsService.initializeElevenLabs(elevenlabsKey);
-
-    const azureKey = process.env.EXPO_PUBLIC_AZURE_SPEECH_KEY?.trim();
-    const azureRegion = process.env.EXPO_PUBLIC_AZURE_SPEECH_REGION?.trim();
-    if (azureKey && azureRegion) ttsService.initializeAzure(azureKey, azureRegion);
-
     if (!settings) {
       // Cold start: force 3 startup voice defaults before user settings arrive
       // Indian Female=Aria, Indian Male=George, Foreign=Aria/George (auto-routed)

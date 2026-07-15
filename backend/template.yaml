@@ -27,6 +27,30 @@ Parameters:
     Type: String
     Default: user_settings
 
+  # ── AI provider keys — held server-side only; never shipped to the client.
+  # Pass via `sam deploy --parameter-overrides` (or samconfig.toml), not source control.
+  OpenAIApiKey:
+    Type: String
+    NoEcho: true
+    Description: OpenAI API key — powers translation, TTS and Whisper transcription proxy routes
+
+  ElevenLabsApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: ElevenLabs API key — optional; leave blank to disable the ElevenLabs TTS proxy
+
+  AzureSpeechKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Azure Speech key — optional; leave blank to disable the Azure TTS proxy
+
+  AzureSpeechRegion:
+    Type: String
+    Default: ""
+    Description: Azure Speech region (e.g. eastus) — required only if AzureSpeechKey is set
+
 # ──────────────────────────────────────────────────────────
 # Globals — applied to every Lambda function
 # ──────────────────────────────────────────────────────────
@@ -35,8 +59,8 @@ Globals:
     Runtime:      nodejs20.x
     Handler:      src/index.handler
     Architectures: [x86_64]
-    MemorySize:   256
-    Timeout:      15
+    MemorySize:   512
+    Timeout:      30
     Environment:
       Variables:
         TRANSLATIONS_TABLE: !Ref TranslationsTable
@@ -78,7 +102,11 @@ Resources:
         - !Ref CognitoAdminPolicy
       Environment:
         Variables:
-          USER_POOL_ID: !Ref UserPoolId
+          USER_POOL_ID:        !Ref UserPoolId
+          OPENAI_API_KEY:      !Ref OpenAIApiKey
+          ELEVENLABS_API_KEY:  !Ref ElevenLabsApiKey
+          AZURE_SPEECH_KEY:    !Ref AzureSpeechKey
+          AZURE_SPEECH_REGION: !Ref AzureSpeechRegion
       Events:
         # Catch-all proxy — routes every path+method to the single handler
         ProxyRoot:

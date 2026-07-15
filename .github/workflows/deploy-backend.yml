@@ -64,7 +64,11 @@ jobs:
               UserPoolId=${{ secrets.EXPO_PUBLIC_AWS_USER_POOL_ID }} \
               UserPoolClientId=${{ secrets.EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID }} \
               TranslationsTable=conversation_history \
-              SettingsTable=user_settings
+              SettingsTable=user_settings \
+              OpenAIApiKey=${{ secrets.OPENAI_API_KEY }} \
+              ElevenLabsApiKey=${{ secrets.ELEVENLABS_API_KEY }} \
+              AzureSpeechKey=${{ secrets.AZURE_SPEECH_KEY }} \
+              AzureSpeechRegion=${{ secrets.AZURE_SPEECH_REGION }}
 
       - name: Print API base URL
         run: |

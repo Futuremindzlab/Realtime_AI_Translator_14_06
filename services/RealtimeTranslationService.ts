@@ -35,6 +35,22 @@ export class RealtimeTranslationService {
   private isPersonATurn = true;
   private originalSourceLanguage = '';
   private originalTargetLanguage = '';
+  private singleModeMaxDurationTimer: ReturnType<typeof setTimeout> | null = null;
+  private isStoppingSingleModeRecording = false;
+
+  // Safety cap for single-translation-mode recording (conversation mode already
+  // auto-stops at 10s of silence). Without this, a forgotten open mic could record
+  // indefinitely — ballooning memory during WAV processing and exceeding the AI
+  // proxy's ~6MB Lambda payload ceiling. 90s of 16kHz mono audio stays comfortably
+  // under that limit on both the WAV (iOS) and compressed m4a (Android) paths.
+  private static readonly SINGLE_MODE_MAX_DURATION_MS = 90_000;
+
+  private clearSingleModeMaxDurationTimer() {
+    if (this.singleModeMaxDurationTimer) {
+      clearTimeout(this.singleModeMaxDurationTimer);
+      this.singleModeMaxDurationTimer = null;
+    }
+  }
 
   setProgressCallback(callback: ((progress: TranslationProgress) => void) | null) {
     this.onProgressCallback = callback;
@@ -181,9 +197,24 @@ export class RealtimeTranslationService {
     console.log(`🎤 Single mode: ${sourceLanguage} → ${targetLanguage}`);
     this.updateProgress({ stage: 'recording', isRealtime: true });
     await audioService.startRecording();
+
+    this.clearSingleModeMaxDurationTimer();
+    this.singleModeMaxDurationTimer = setTimeout(() => {
+      if (this.isActive && !this.autoContinueEnabled) {
+        console.warn('⏱️ Single mode: max recording duration reached, auto-stopping');
+        this.stopRealtimeRecording();
+      }
+    }, RealtimeTranslationService.SINGLE_MODE_MAX_DURATION_MS);
   }
 
   async stopRealtimeRecording(): Promise<void> {
+    // Re-entrancy guard: the safety timer (see startRealtimeRecording) can fire this
+    // concurrently with a manual stop tap. Without this, a double call could race on
+    // audioService.stopRecording() and clobber the first call's in-flight progress.
+    if (this.isStoppingSingleModeRecording) return;
+    this.isStoppingSingleModeRecording = true;
+    this.clearSingleModeMaxDurationTimer();
+
     let lastSourceText = '';
     let lastTranslatedText = '';
 
@@ -325,6 +356,8 @@ export class RealtimeTranslationService {
         translatedText: lastTranslatedText || undefined,
       });
       await audioService.cleanup();
+    } finally {
+      this.isStoppingSingleModeRecording = false;
     }
   }
 
@@ -635,6 +668,7 @@ export class RealtimeTranslationService {
 
   async forceReset(): Promise<void> {
     console.log('Force resetting translation service...');
+    this.clearSingleModeMaxDurationTimer();
     this.isActive = false;
     this.autoContinueEnabled = false;
     this.isPersonATurn = true;
@@ -643,6 +677,7 @@ export class RealtimeTranslationService {
   }
 
   async cleanup(): Promise<void> {
+    this.clearSingleModeMaxDurationTimer();
     this.isActive = false;
     this.autoContinueEnabled = false;
     await audioService.cleanup();

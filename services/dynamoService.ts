@@ -28,6 +28,11 @@ class DynamoService {
     return this.idToken !== null;
   }
 
+  /** Current Cognito idToken, reused as the Bearer token for the AI proxy routes. */
+  getIdToken(): string | null {
+    return this.idToken;
+  }
+
   // ── Internal HTTP helper ────────────────────────────────────────────────────
 
   private async request<T>(

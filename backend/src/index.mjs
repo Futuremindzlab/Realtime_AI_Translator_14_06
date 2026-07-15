@@ -25,6 +25,14 @@
  * Health
  *   GET    /v1/health                                 health check
  *
+ * AI provider proxy (holds OpenAI/ElevenLabs/Azure keys server-side)
+ *   POST   /v1/proxy/openai/chat                       proxyOpenAIChat
+ *   POST   /v1/proxy/openai/tts                        proxyOpenAITts
+ *   POST   /v1/proxy/openai/transcribe                 proxyOpenAITranscribe
+ *   POST   /v1/proxy/elevenlabs/tts                     proxyElevenLabsTts
+ *   POST   /v1/proxy/elevenlabs/voice-clone             proxyElevenLabsVoiceClone
+ *   POST   /v1/proxy/azure/tts                          proxyAzureTts
+ *
  * Auth (unauthenticated — no token exists yet)
  *   POST   /v1/auth/phone/request-otp                 requestPhoneOtp
  */
@@ -51,6 +59,15 @@ import {
 } from './handlers/settings.mjs';
 
 import { requestPhoneOtp } from './handlers/phoneAuth.mjs';
+
+import {
+  proxyOpenAIChat,
+  proxyOpenAITts,
+  proxyOpenAITranscribe,
+  proxyElevenLabsTts,
+  proxyElevenLabsVoiceClone,
+  proxyAzureTts,
+} from './handlers/aiProxy.mjs';
 
 import { sendSuccess, sendError } from './response.mjs';
 
@@ -82,6 +99,14 @@ export const handler = async (event) => {
   if (method === 'POST' && path === '/v1/auth/phone/request-otp') {
     return requestPhoneOtp(event);
   }
+
+  // ── AI provider proxy ───────────────────────────────────
+  if (method === 'POST' && path === '/v1/proxy/openai/chat')           return proxyOpenAIChat(event);
+  if (method === 'POST' && path === '/v1/proxy/openai/tts')            return proxyOpenAITts(event);
+  if (method === 'POST' && path === '/v1/proxy/openai/transcribe')     return proxyOpenAITranscribe(event);
+  if (method === 'POST' && path === '/v1/proxy/elevenlabs/tts')        return proxyElevenLabsTts(event);
+  if (method === 'POST' && path === '/v1/proxy/elevenlabs/voice-clone') return proxyElevenLabsVoiceClone(event);
+  if (method === 'POST' && path === '/v1/proxy/azure/tts')             return proxyAzureTts(event);
 
   // ── Settings ──────────────────────────────────────────
   if (path === '/v1/settings') {

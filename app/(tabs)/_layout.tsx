@@ -72,10 +72,6 @@ export default function TabLayout() {
           tabBarIcon: ({ size, color }) => <Settings size={size} color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="translation-test"
-        options={{ href: null }}
-      />
     </Tabs>
   );
 }

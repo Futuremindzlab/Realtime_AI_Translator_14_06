@@ -20,7 +20,6 @@ import { ConversationHistory } from '@/types';
 import { audioService } from '@/services/audioService';
 import { ttsService } from '@/services/ttsService';
 import { translationProvider } from '@/services/translationProvider';
-import { openaiService } from '@/services/openaiService';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
 
 // Languages available for replay (no 'auto' option)
@@ -38,21 +37,6 @@ export default function HistoryScreen() {
   const [replayingId, setReplayingId] = useState<string | null>(null);
   const [replayLangs, setReplayLangs] = useState<Record<string, string>>({});
   const [langPickerItem, setLangPickerItem] = useState<ConversationHistory | null>(null);
-
-  // Initialise API keys — ttsService is a singleton; safe to call multiple times
-  useEffect(() => {
-    const openaiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY?.trim();
-    if (openaiKey) {
-      openaiService.initialize(openaiKey);
-      ttsService.initializeOpenAI(openaiKey);
-    }
-    const elevenlabsKey = process.env.EXPO_PUBLIC_ELEVENLABS_API_KEY?.trim();
-    if (elevenlabsKey) ttsService.initializeElevenLabs(elevenlabsKey);
-
-    const azureKey = process.env.EXPO_PUBLIC_AZURE_SPEECH_KEY?.trim();
-    const azureRegion = process.env.EXPO_PUBLIC_AZURE_SPEECH_REGION?.trim();
-    if (azureKey && azureRegion) ttsService.initializeAzure(azureKey, azureRegion);
-  }, []);
 
   // Sync TTS voice gender from settings whenever they load
   useEffect(() => {
