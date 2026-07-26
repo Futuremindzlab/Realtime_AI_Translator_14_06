@@ -1,9 +1,19 @@
+import { Platform } from 'react-native';
 import { audioService } from './audioService';
 import { whisperService } from './whisperService';
 import { ttsService, TTSProvider } from './ttsService';
 import { getCachedTranslation, cacheTranslation } from './translationCache';
 import { dynamoService } from './dynamoService';
-import { resolveLanguage } from '@/lib/constants';
+import { resolveLanguage, isCorrectScript, detectScriptLanguage } from '@/lib/constants';
+
+// expo-file-system is native-only — audio history persistence is skipped on
+// web, where recording/TTS URIs are blob: URLs FileSystem can't read anyway.
+const FileSystem: any = Platform.OS === 'web' ? null : require('expo-file-system/legacy');
+
+const AUDIO_EXTENSION_TO_MIME: Record<string, string> = {
+  wav: 'audio/wav', m4a: 'audio/mp4', mp4: 'audio/mp4',
+  mp3: 'audio/mpeg', ogg: 'audio/ogg', webm: 'audio/webm',
+};
 
 export interface TranslationProgress {
   stage:
@@ -69,6 +79,13 @@ export class RealtimeTranslationService {
         currentTargetLanguage: this.currentTargetLanguage,
       });
     }
+  }
+
+  // Stage-timing instrumentation — no latency numbers existed anywhere in this
+  // pipeline before this; used to evidence-base future pipelining/tuning work
+  // instead of guessing which stage is actually slow.
+  private logDuration(stage: string, startedAt: number) {
+    console.log(`⏱️ [${stage}] ${Date.now() - startedAt}ms`);
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -137,6 +154,27 @@ export class RealtimeTranslationService {
 
   private getLanguageNameFromCode(code: string): string {
     return RealtimeTranslationService.LANG_CODE_TO_NAME[code] || code.toUpperCase();
+  }
+
+  /**
+   * Resolve Whisper's raw detected-language string to an ISO code, then cross-check
+   * it against the actual transcribed text's script. Whisper's `language` field
+   * confuses closely related Indic languages (e.g. reports "tamil" for Malayalam
+   * audio) far more often than its transcription itself is wrong, so when the
+   * declared language's script doesn't match the transcribed characters, trust
+   * the text over the declared language.
+   */
+  private resolveDetectedLanguage(rawDetected: string | undefined, text: string): string | undefined {
+    if (!rawDetected) return undefined;
+    const code = this.whisperLanguageToCode(rawDetected);
+    if (text && !isCorrectScript(text, code)) {
+      const scriptMatch = detectScriptLanguage(text);
+      if (scriptMatch && scriptMatch !== code) {
+        console.warn(`⚠️ Whisper declared "${code}" but transcribed text script is "${scriptMatch}" — correcting label`);
+        return scriptMatch;
+      }
+    }
+    return code;
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -220,6 +258,7 @@ export class RealtimeTranslationService {
 
     try {
       console.log('=== SINGLE TRANSLATION FLOW ===');
+      const pipelineStartedAt = Date.now();
       const audioUri = await audioService.stopRecording();
 
       if (!audioUri) {
@@ -230,11 +269,13 @@ export class RealtimeTranslationService {
 
       // Transcribe (on-device whisper.rn with cloud fallback)
       this.updateProgress({ stage: 'transcribing', isRealtime: true });
+      const transcribeStartedAt = Date.now();
       const { text: sourceText, detectedLanguage: rawDetected } = await whisperService.transcribeWithFallback(
         audioUri, this.currentSourceLanguage
       );
+      this.logDuration('transcribe', transcribeStartedAt);
 
-      const detectedLanguage = rawDetected ? this.whisperLanguageToCode(rawDetected) : undefined;
+      const detectedLanguage = this.resolveDetectedLanguage(rawDetected, sourceText || '');
       console.log(`📝 Transcribed: "${sourceText?.substring(0, 80)}" (detected: ${detectedLanguage})`);
 
       // Use detected language if source was auto.
@@ -274,6 +315,7 @@ export class RealtimeTranslationService {
       });
 
       let translatedText = '';
+      const translateStartedAt = Date.now();
       await this.translate(
         actualText,
         this.currentSourceLanguage,
@@ -288,6 +330,7 @@ export class RealtimeTranslationService {
           });
         }
       );
+      this.logDuration('translate', translateStartedAt);
 
       if (!translatedText.trim()) {
         throw new Error('Translation returned empty result');
@@ -306,9 +349,11 @@ export class RealtimeTranslationService {
         isRealtime: true,
       });
 
+      const ttsStartedAt = Date.now();
       const ttsUri = await ttsService.generateSpeech(
         translatedText, this.currentTargetLanguage, this.currentTtsProvider
       );
+      this.logDuration('tts_generate', ttsStartedAt);
 
       // Play audio (ttsUri is null for 'device' provider — expo-speech already spoke)
       await audioService.forceCleanup();
@@ -318,10 +363,13 @@ export class RealtimeTranslationService {
         translatedText,
         isRealtime: true,
       });
+      this.logDuration('time_to_first_audio', pipelineStartedAt);
 
       if (ttsUri) {
         try {
+          const playStartedAt = Date.now();
           await audioService.playAudio(ttsUri);
+          this.logDuration('playback', playStartedAt);
           console.log('✅ Audio playback complete');
         } catch (playError) {
           console.error('❌ Audio playback failed:', playError);
@@ -335,9 +383,12 @@ export class RealtimeTranslationService {
         actualText,
         translatedText,
         false,
+        audioUri,
+        ttsUri,
       );
 
       // Done
+      this.logDuration('total_turn', pipelineStartedAt);
       this.updateProgress({
         stage: 'complete',
         sourceText: actualText,
@@ -500,15 +551,19 @@ export class RealtimeTranslationService {
    * Returns true if turn was successful (should swap), false to retry same person.
    */
   private async processConversationTurn(audioUri: string): Promise<boolean> {
+    const pipelineStartedAt = Date.now();
+
     // ── 1. TRANSCRIBE ──
     this.updateProgress({ stage: 'transcribing', isRealtime: true });
 
+    const transcribeStartedAt = Date.now();
     const { text: sourceText, detectedLanguage: rawDetected } = await whisperService.transcribeWithFallback(
       audioUri, this.currentSourceLanguage
     );
+    this.logDuration('transcribe', transcribeStartedAt);
 
-    const detectedLanguage = rawDetected ? this.whisperLanguageToCode(rawDetected) : undefined;
     const actualText = (typeof sourceText === 'string' ? sourceText : '').trim();
+    const detectedLanguage = this.resolveDetectedLanguage(rawDetected, actualText);
 
     console.log(`📝 Transcribed: "${actualText.substring(0, 80)}" | Detected: ${detectedLanguage}`);
 
@@ -549,6 +604,7 @@ export class RealtimeTranslationService {
     });
 
     let translatedText = '';
+    const translateStartedAt = Date.now();
     await this.translate(
       actualText,
       this.currentSourceLanguage,
@@ -563,6 +619,7 @@ export class RealtimeTranslationService {
         });
       }
     );
+    this.logDuration('translate', translateStartedAt);
 
     if (!translatedText.trim()) {
       console.error('❌ Empty translation result');
@@ -579,9 +636,11 @@ export class RealtimeTranslationService {
       isRealtime: true,
     });
 
+    const ttsStartedAt = Date.now();
     const ttsUri = await ttsService.generateSpeech(
       translatedText, this.currentTargetLanguage, this.currentTtsProvider
     );
+    this.logDuration('tts_generate', ttsStartedAt);
     console.log(`✅ TTS generated`);
 
     // ── 4. PLAY AUDIO (MUST complete before next turn) ──
@@ -593,10 +652,13 @@ export class RealtimeTranslationService {
       translatedText,
       isRealtime: true,
     });
+    this.logDuration('time_to_first_audio', pipelineStartedAt);
 
     if (ttsUri) {
       try {
+        const playStartedAt = Date.now();
         await audioService.playAudio(ttsUri);
+        this.logDuration('playback', playStartedAt);
         console.log('✅ Audio playback complete');
       } catch (playError) {
         console.error('❌ Audio playback failed (translation was successful):', playError);
@@ -610,7 +672,11 @@ export class RealtimeTranslationService {
       actualText,
       translatedText,
       true,
+      audioUri,
+      ttsUri,
     );
+
+    this.logDuration('total_turn', pipelineStartedAt);
 
     // Turn processed successfully — don't set 'complete' here
     // (the conversation loop will set 'waiting' before the next turn,
@@ -622,15 +688,46 @@ export class RealtimeTranslationService {
   // History
   // ────────────────────────────────────────────────────────────────
 
+  /**
+   * Read a local recording/TTS file back into base64 for the history-upload
+   * request. Returns null (never throws) on web, for a null/undefined uri, or
+   * on any read failure — audio persistence is best-effort and must never
+   * block saving the text history entry itself.
+   */
+  private async readAudioForUpload(
+    uri: string | null | undefined
+  ): Promise<{ base64: string; contentType: string } | null> {
+    if (!uri || !FileSystem) return null;
+    try {
+      const extension = uri.split('.').pop()?.toLowerCase().split('?')[0] ?? '';
+      const contentType = AUDIO_EXTENSION_TO_MIME[extension];
+      if (!contentType) return null;
+
+      const base64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+      if (!base64) return null;
+      return { base64, contentType };
+    } catch (err) {
+      console.warn('[RealtimeTranslationService] Failed to read audio for history upload:', err);
+      return null;
+    }
+  }
+
   private async saveToHistory(
     sourceLanguage: string,
     targetLanguage: string,
     sourceText: string,
     translatedText: string,
     conversationMode: boolean,
+    sourceAudioUri?: string | null,
+    translatedAudioUri?: string | null,
   ): Promise<void> {
     if (!this.currentUserId || !dynamoService.isInitialized()) return;
     try {
+      const [sourceAudio, translatedAudio] = await Promise.all([
+        this.readAudioForUpload(sourceAudioUri),
+        this.readAudioForUpload(translatedAudioUri),
+      ]);
+
       await dynamoService.putConversationHistory({
         user_id: this.currentUserId,
         timestamp: new Date().toISOString(),
@@ -640,6 +737,14 @@ export class RealtimeTranslationService {
         translated_text: translatedText,
         conversation_mode: conversationMode,
         created_at: new Date().toISOString(),
+        ...(sourceAudio ? {
+          source_audio_base64: sourceAudio.base64,
+          source_audio_content_type: sourceAudio.contentType,
+        } : {}),
+        ...(translatedAudio ? {
+          translated_audio_base64: translatedAudio.base64,
+          translated_audio_content_type: translatedAudio.contentType,
+        } : {}),
       });
       console.log('✅ Saved to history');
     } catch (error) {

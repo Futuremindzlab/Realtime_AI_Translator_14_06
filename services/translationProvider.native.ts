@@ -1,4 +1,5 @@
 import { proxyPost } from '@/lib/apiProxy';
+import { HIGH_QUALITY_LANGUAGES } from '@/lib/constants';
 
 // Native (iOS/Android) version — @xenova/transformers is web-only (WASM + import.meta).
 // Metro automatically picks this file over translationProvider.ts on native platforms.
@@ -19,11 +20,6 @@ const LANG_NAMES: Record<string, string> = {
   he: 'Hebrew',     ca: 'Catalan',     fa: 'Persian',     ms: 'Malay',
   sw: 'Swahili',    hr: 'Croatian',    ne: 'Nepali',      si: 'Sinhala',
 };
-
-// Languages where gpt-4o-mini produces poor quality — use gpt-4o for these
-const HIGH_QUALITY_LANGUAGES = new Set([
-  'ml', 'kn', 'gu', 'pa', 'bn', 'mr', 'ur', 'si', 'ne',
-]);
 
 function langName(code: string): string {
   return LANG_NAMES[code] || code;

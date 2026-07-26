@@ -51,6 +51,11 @@ Parameters:
     Default: ""
     Description: Azure Speech region (e.g. eastus) — required only if AzureSpeechKey is set
 
+  AudioRetentionDays:
+    Type: Number
+    Default: 90
+    Description: Days to retain stored translation audio (source + TTS) in S3 before automatic expiration
+
 # ──────────────────────────────────────────────────────────
 # Globals — applied to every Lambda function
 # ──────────────────────────────────────────────────────────
@@ -100,6 +105,8 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - !Ref DynamoDBPolicy
         - !Ref CognitoAdminPolicy
+        - !Ref CostExplorerPolicy
+        - !Ref S3AudioPolicy
       Environment:
         Variables:
           USER_POOL_ID:        !Ref UserPoolId
@@ -107,6 +114,7 @@ Resources:
           ELEVENLABS_API_KEY:  !Ref ElevenLabsApiKey
           AZURE_SPEECH_KEY:    !Ref AzureSpeechKey
           AZURE_SPEECH_REGION: !Ref AzureSpeechRegion
+          AUDIO_BUCKET:        !Ref AudioBucket
       Events:
         # Catch-all proxy — routes every path+method to the single handler
         ProxyRoot:
@@ -219,6 +227,39 @@ Resources:
         AttributeName: ttl
         Enabled: true
 
+  # ── S3 Bucket — translation audio (source recordings + TTS output) ──
+  # Private (all public access blocked); the app reaches objects only via
+  # short-lived presigned GET URLs minted by the Lambda (see backend/src/s3.mjs).
+  AudioBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "ai-translator-audio-${Stage}-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls:       true
+        BlockPublicPolicy:     true
+        IgnorePublicAcls:      true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id:     ExpireAudioAfterRetention
+            Status: Enabled
+            ExpirationInDays: !Ref AudioRetentionDays
+      CorsConfiguration:
+        # Read-only — objects are fetched via presigned GET URLs from the Expo
+        # web build too, which is subject to browser CORS (native iOS/Android
+        # HTTP clients ignore this entirely).
+        CorsRules:
+          - AllowedMethods: [GET]
+            AllowedOrigins: ['*']
+            AllowedHeaders: ['*']
+            MaxAge: 3000
+
   UserSettingsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -257,6 +298,42 @@ Resources:
               - !Sub "${ConversationHistoryTable.Arn}/index/*"
               - !GetAtt UserSettingsTable.Arn
 
+  # ── IAM policy for Lambda → S3 audio bucket ─────────────
+  # Scoped to objects only (bucket/*), not the bucket itself — no ListBucket,
+  # no bucket-level actions. PutObject/GetObject back the upload + presign
+  # flows; DeleteObject backs cleanup when a history item (or all history) is
+  # deleted, so audio never outlives the DynamoDB record that references it.
+  S3AudioPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "ai-translator-s3-audio-${Stage}"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect:   Allow
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:DeleteObject
+            Resource:
+              - !Sub "${AudioBucket.Arn}/*"
+
+  # ── IAM policy for the dashboard-metrics route → Cost Explorer ──
+  # ce:GetCostAndUsage doesn't support resource-level scoping (account-wide API).
+  # Note: AWS bills $0.01 per Cost Explorer API request — dashboardMetrics.mjs
+  # caches the result in-memory per warm Lambda container to limit repeat calls.
+  CostExplorerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "ai-translator-cost-explorer-${Stage}"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect:   Allow
+            Action:
+              - ce:GetCostAndUsage
+            Resource: "*"
+
   # ── IAM policy for CreateAuthChallenge → SNS (OTP SMS) ──
   SnsPublishPolicy:
     Type: AWS::IAM::ManagedPolicy
@@ -271,7 +348,7 @@ Resources:
             # SNS direct-to-phone-number publishing doesn't support resource-level ARN scoping.
             Resource: "*"
 
-  # ── IAM policy for phone-OTP pre-provisioning (TranslatorFunction) ──
+  # ── IAM policy for phone-OTP pre-provisioning + admin analytics (TranslatorFunction) ──
   CognitoAdminPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -284,6 +361,7 @@ Resources:
               - cognito-idp:AdminCreateUser
               - cognito-idp:AdminGetUser
               - cognito-idp:AdminSetUserPassword
+              - cognito-idp:ListUsers
             Resource:
               - !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}"
 
@@ -298,6 +376,10 @@ Outputs:
   FunctionArn:
     Description: "Lambda function ARN"
     Value:        !GetAtt TranslatorFunction.Arn
+
+  AudioBucketName:
+    Description: "S3 bucket storing translation audio (source + TTS)"
+    Value:        !Ref AudioBucket
 
   DefineAuthChallengeFunctionArn:
     Description: "Cognito DefineAuthChallenge trigger ARN — needed for `aws cognito-idp update-user-pool --lambda-config`, see DOCUMENTATION.md"

@@ -55,6 +55,19 @@ export const SUPPORTED_LANGUAGES: Language[] = [
 export const DEFAULT_SOURCE_LANGUAGE = 'auto';
 export const DEFAULT_TARGET_LANGUAGE = 'es';
 
+/**
+ * Languages where gpt-4o-mini produces transliteration or wrong-script output — use gpt-4o.
+ * Includes all Indic scripts and right-to-left scripts, to ensure native-script accuracy.
+ * Shared by translationProvider.ts (web) and translationProvider.native.ts (iOS/Android)
+ * so translation quality doesn't silently diverge by platform.
+ */
+export const HIGH_QUALITY_LANGUAGES = new Set([
+  // Indic languages (all scripts)
+  'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ur', 'si', 'ne',
+  // Right-to-left scripts
+  'ar', 'fa', 'he',
+]);
+
 // Pre-built lookup maps for fast language resolution
 const _byCode = new Map(SUPPORTED_LANGUAGES.map(l => [l.code, l]));
 const _byNameLower = new Map(SUPPORTED_LANGUAGES.filter(l => l.code !== 'auto').map(l => [l.name.toLowerCase(), l]));
@@ -121,4 +134,18 @@ export function isCorrectScript(text: string, langCode: string): boolean {
   const pattern = SCRIPT_UNICODE_RANGES[langCode];
   if (!pattern) return true; // Latin-script languages — no check needed
   return pattern.test(text);
+}
+
+/**
+ * Best-effort script-based language detection. Used to cross-check Whisper's
+ * declared `language` field, which is unreliable for closely related Indic
+ * scripts (e.g. it frequently reports "tamil" for Malayalam audio even though
+ * the transcribed text itself is in the correct Malayalam Unicode range).
+ * Returns null if the text doesn't match any known non-Latin script.
+ */
+export function detectScriptLanguage(text: string): string | null {
+  for (const [code, pattern] of Object.entries(SCRIPT_UNICODE_RANGES)) {
+    if (pattern.test(text)) return code;
+  }
+  return null;
 }

@@ -8,8 +8,10 @@ export interface ConversationHistory {
   target_language: string;
   source_text: string;
   translated_text: string;
-  source_audio_url?: string;
-  translated_audio_url?: string;
+  // S3 object keys, not URLs — presigned GET URLs expire, so a fresh one is
+  // minted on demand via dynamoService.getAudioUrl() rather than stored here.
+  source_audio_key?: string;
+  translated_audio_key?: string;
   conversation_mode: boolean;
   favorite?: boolean;
   created_at: string;

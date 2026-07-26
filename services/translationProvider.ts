@@ -1,4 +1,5 @@
 import { proxyPost } from '@/lib/apiProxy';
+import { HIGH_QUALITY_LANGUAGES } from '@/lib/constants';
 
 export type TranslationProviderName = 'openai' | 'device';
 
@@ -17,15 +18,6 @@ const LANG_NAMES: Record<string, string> = {
   he: 'Hebrew',     ca: 'Catalan',     fa: 'Persian',     ms: 'Malay',
   sw: 'Swahili',    hr: 'Croatian',    ne: 'Nepali',      si: 'Sinhala',
 };
-
-// Languages where gpt-4o-mini produces transliteration or wrong-script output — use gpt-4o.
-// Includes all Indic scripts, RTL scripts, and CJK to ensure native-script accuracy.
-const HIGH_QUALITY_LANGUAGES = new Set([
-  // Indic languages (all scripts)
-  'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ur', 'si', 'ne',
-  // Right-to-left scripts
-  'ar', 'fa', 'he',
-]);
 
 function langName(code: string): string {
   return LANG_NAMES[code] || code;

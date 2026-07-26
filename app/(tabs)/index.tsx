@@ -21,6 +21,7 @@ import {
 } from '@/services/RealtimeTranslationService';
 import { audioService } from '@/services/audioService';
 import { ttsService } from '@/services/ttsService';
+import { whisperService } from '@/services/whisperService';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -56,6 +57,10 @@ export default function HomeScreen() {
     // Always keep the progress callback active (February pattern — never clears on tab change)
     realtimeTranslationService.setProgressCallback(setProgress);
     audioService.requestPermissions().catch(() => {});
+    // Preload on-device Whisper in the background so non-Indic/RTL transcriptions
+    // skip the cloud round trip once the (cached-after-first-run) model is ready.
+    // transcribeWithFallback() already falls back to cloud if this hasn't resolved yet.
+    whisperService.initialize().catch(() => {});
 
     const handleAppState = (next: AppStateStatus) => {
       if (next === 'background') {

@@ -11,6 +11,7 @@
  *   GET    /v1/translations/search                    searchTranslations
  *   GET    /v1/translations/favorites                 getFavorites
  *   GET    /v1/translations/{timestamp}               getTranslation
+ *   GET    /v1/translations/{timestamp}/audio-url     getTranslationAudioUrl
  *   DELETE /v1/translations                           clearAllTranslations
  *   DELETE /v1/translations/old                       deleteOldTranslations
  *   DELETE /v1/translations/{timestamp}               deleteTranslation
@@ -33,6 +34,10 @@
  *   POST   /v1/proxy/elevenlabs/voice-clone             proxyElevenLabsVoiceClone
  *   POST   /v1/proxy/azure/tts                          proxyAzureTts
  *
+ * Admin (OWNER role required)
+ *   GET    /v1/admin/user-analytics                    getUserAnalytics
+ *   GET    /v1/admin/dashboard-metrics                  getDashboardMetrics
+ *
  * Auth (unauthenticated — no token exists yet)
  *   POST   /v1/auth/phone/request-otp                 requestPhoneOtp
  */
@@ -45,6 +50,7 @@ import {
   searchTranslations,
   getFavorites,
   getTranslation,
+  getTranslationAudioUrl,
   deleteTranslation,
   clearAllTranslations,
   deleteOldTranslations,
@@ -59,6 +65,9 @@ import {
 } from './handlers/settings.mjs';
 
 import { requestPhoneOtp } from './handlers/phoneAuth.mjs';
+
+import { getUserAnalytics } from './handlers/adminAnalytics.mjs';
+import { getDashboardMetrics } from './handlers/dashboardMetrics.mjs';
 
 import {
   proxyOpenAIChat,
@@ -108,6 +117,10 @@ export const handler = async (event) => {
   if (method === 'POST' && path === '/v1/proxy/elevenlabs/voice-clone') return proxyElevenLabsVoiceClone(event);
   if (method === 'POST' && path === '/v1/proxy/azure/tts')             return proxyAzureTts(event);
 
+  // ── Admin (OWNER role enforced inside the handler) ─────
+  if (method === 'GET' && path === '/v1/admin/user-analytics')    return getUserAnalytics(event);
+  if (method === 'GET' && path === '/v1/admin/dashboard-metrics') return getDashboardMetrics(event);
+
   // ── Settings ──────────────────────────────────────────
   if (path === '/v1/settings') {
     if (method === 'GET')    return getSettings(event);
@@ -143,6 +156,13 @@ export const handler = async (event) => {
   if (favoriteMatch && method === 'PATCH') {
     event.pathParameters = { timestamp: decodeURIComponent(favoriteMatch[1]) };
     return toggleFavorite(event);
+  }
+
+  // ── Translations — audio presigned URL  /v1/translations/{ts}/audio-url ──
+  const audioUrlMatch = path.match(/^\/v1\/translations\/([^/]+)\/audio-url$/);
+  if (audioUrlMatch && method === 'GET') {
+    event.pathParameters = { timestamp: decodeURIComponent(audioUrlMatch[1]) };
+    return getTranslationAudioUrl(event);
   }
 
   return sendError(404, `Route not found: ${method} ${path}`);

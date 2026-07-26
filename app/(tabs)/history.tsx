@@ -85,12 +85,25 @@ export default function HistoryScreen() {
   const handleReplay = async (item: ConversationHistory) => {
     if (replayingId) return;
     const targetLang = getReplayLang(item);
+    const isDifferentLang = targetLang !== item.target_language;
     setReplayingId(item.id);
     try {
+      // Same language as originally translated + audio was persisted to S3 at
+      // save time — stream the stored clip instead of paying for re-synthesis.
+      if (!isDifferentLang && item.translated_audio_key) {
+        const url = await dynamoService.getAudioUrl(item.timestamp, 'translated');
+        if (url) {
+          await audioService.playAudio(url);
+          return;
+        }
+        // Fall through to re-synthesis if the stored audio couldn't be fetched
+        // (e.g. it expired out of S3 but the DynamoDB reference lagged behind).
+      }
+
       let text = item.translated_text;
 
       // Re-translate when user chose a different target language
-      if (targetLang !== item.target_language) {
+      if (isDifferentLang) {
         if (!item.source_text?.trim()) {
           throw new Error('Original text not available for re-translation');
         }

@@ -16,6 +16,17 @@ import { UserSettings, ConversationHistory } from '@/types';
 
 const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 
+// Request body for creating a history entry — audio travels as base64 (matching
+// this backend's existing TTS/transcribe proxy pattern) and is uploaded to S3
+// server-side; only the resulting S3 key comes back in the stored record, so
+// the *_key fields never belong in this input shape.
+type PutConversationHistoryInput = Omit<ConversationHistory, 'id' | 'source_audio_key' | 'translated_audio_key'> & {
+  source_audio_base64?: string;
+  source_audio_content_type?: string;
+  translated_audio_base64?: string;
+  translated_audio_content_type?: string;
+};
+
 class DynamoService {
   private idToken: string | null = null;
 
@@ -125,7 +136,7 @@ class DynamoService {
     }
   }
 
-  async putConversationHistory(item: Omit<ConversationHistory, 'id'>): Promise<void> {
+  async putConversationHistory(item: PutConversationHistoryInput): Promise<void> {
     try {
       await this.request('/v1/translations', {
         method: 'POST',
@@ -133,6 +144,24 @@ class DynamoService {
       });
     } catch (error) {
       console.error('❌ putConversationHistory error:', error);
+    }
+  }
+
+  /**
+   * Mint a fresh short-lived presigned S3 URL for a history item's stored
+   * audio. Returns null if no audio was stored for that item (device-TTS
+   * turns never persist audio) or the request otherwise fails — callers
+   * should treat null as "fall back to on-the-fly synthesis", not an error.
+   */
+  async getAudioUrl(timestamp: string, type: 'source' | 'translated' = 'translated'): Promise<string | null> {
+    try {
+      const data = await this.request<{ url: string; expiresIn: number }>(
+        `/v1/translations/${encodeURIComponent(timestamp)}/audio-url?type=${type}`,
+      );
+      return data.url;
+    } catch (error) {
+      console.error('❌ getAudioUrl error:', error);
+      return null;
     }
   }
 
