@@ -47,7 +47,9 @@ function isoDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
-async function getAwsCost() {
+// Exported so infraMetrics.mjs can reuse the same Cost Explorer call (and its
+// in-memory cache) instead of paying the $0.01/request fee a second time.
+export async function getAwsCost() {
   if (costCache && Date.now() - costCache.fetchedAt < COST_CACHE_TTL_MS) {
     return costCache.value;
   }

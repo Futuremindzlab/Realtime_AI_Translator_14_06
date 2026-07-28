@@ -81,6 +81,7 @@ Resources:
   TranslatorApi:
     Type: AWS::Serverless::Api
     Properties:
+      Name: !Sub "ai-translator-api-${Stage}"
       StageName: !Ref Stage
       Cors:
         AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
@@ -107,6 +108,7 @@ Resources:
         - !Ref CognitoAdminPolicy
         - !Ref CostExplorerPolicy
         - !Ref S3AudioPolicy
+        - !Ref InfraMetricsPolicy
       Environment:
         Variables:
           USER_POOL_ID:        !Ref UserPoolId
@@ -115,6 +117,7 @@ Resources:
           AZURE_SPEECH_KEY:    !Ref AzureSpeechKey
           AZURE_SPEECH_REGION: !Ref AzureSpeechRegion
           AUDIO_BUCKET:        !Ref AudioBucket
+          API_GATEWAY_NAME:    !Sub "ai-translator-api-${Stage}"
       Events:
         # Catch-all proxy — routes every path+method to the single handler
         ProxyRoot:
@@ -332,6 +335,27 @@ Resources:
           - Effect:   Allow
             Action:
               - ce:GetCostAndUsage
+            Resource: "*"
+
+  # ── IAM policy for the infra-metrics route → CloudWatch ──
+  # GetMetricData reads both AWS-native metrics (Lambda/DynamoDB/ApiGateway,
+  # namespace-scoped) and the custom per-route counters emitted via EMF
+  # (routeMetrics.mjs) — none of these support resource-level ARN scoping.
+  # DescribeLogGroups reads storedBytes for the function's own log group.
+  InfraMetricsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "ai-translator-infra-metrics-${Stage}"
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect:   Allow
+            Action:
+              - cloudwatch:GetMetricData
+            Resource: "*"
+          - Effect:   Allow
+            Action:
+              - logs:DescribeLogGroups
             Resource: "*"
 
   # ── IAM policy for CreateAuthChallenge → SNS (OTP SMS) ──

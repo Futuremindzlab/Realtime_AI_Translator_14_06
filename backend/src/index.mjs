@@ -37,6 +37,7 @@
  * Admin (OWNER role required)
  *   GET    /v1/admin/user-analytics                    getUserAnalytics
  *   GET    /v1/admin/dashboard-metrics                  getDashboardMetrics
+ *   GET    /v1/admin/infra-metrics                      getInfraMetrics
  *
  * Auth (unauthenticated — no token exists yet)
  *   POST   /v1/auth/phone/request-otp                 requestPhoneOtp
@@ -68,6 +69,8 @@ import { requestPhoneOtp } from './handlers/phoneAuth.mjs';
 
 import { getUserAnalytics } from './handlers/adminAnalytics.mjs';
 import { getDashboardMetrics } from './handlers/dashboardMetrics.mjs';
+import { getInfraMetrics } from './handlers/infraMetrics.mjs';
+import { recordRouteRequest } from './lib/routeMetrics.mjs';
 
 import {
   proxyOpenAIChat,
@@ -85,6 +88,18 @@ export const handler = async (event) => {
   const rawPath  = event.path || '';
   // Strip stage prefix if present (e.g. /prod/v1/... → /v1/...)
   const path = rawPath.replace(/^\/(prod|dev|staging)/, '');
+
+  // Per-route request counts for the infra dashboard's rate-limit section —
+  // see routeMetrics.mjs for why this exists instead of relying on API Gateway
+  // metrics. Only these four routes are tracked, to keep dimension cardinality low.
+  const TRACKED_ROUTES = new Set([
+    'POST /v1/proxy/openai/chat',
+    'POST /v1/proxy/openai/transcribe',
+    'POST /v1/proxy/elevenlabs/tts',
+    'POST /v1/translations',
+  ]);
+  const routeKey = `${method} ${path}`;
+  if (TRACKED_ROUTES.has(routeKey)) recordRouteRequest(routeKey);
 
   // CORS preflight
   if (method === 'OPTIONS') {
@@ -120,6 +135,7 @@ export const handler = async (event) => {
   // ── Admin (OWNER role enforced inside the handler) ─────
   if (method === 'GET' && path === '/v1/admin/user-analytics')    return getUserAnalytics(event);
   if (method === 'GET' && path === '/v1/admin/dashboard-metrics') return getDashboardMetrics(event);
+  if (method === 'GET' && path === '/v1/admin/infra-metrics')     return getInfraMetrics(event);
 
   // ── Settings ──────────────────────────────────────────
   if (path === '/v1/settings') {
