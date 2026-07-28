@@ -13,16 +13,34 @@ const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || '').replace(/\/$/, '')
 /** POST JSON to one of our backend's AI-provider proxy routes. Returns the raw Response
  *  so callers can keep their existing .ok / .status / .json() / .text() handling. */
 export async function proxyPost(path: string, body: Record<string, any>): Promise<Response> {
-  const idToken = dynamoService.getIdToken();
-  if (!idToken) throw new Error('Not signed in — cannot reach AI services');
   if (!API_BASE) throw new Error('EXPO_PUBLIC_API_BASE_URL is not set in .env');
 
-  return fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
-    },
-    body: JSON.stringify(body),
-  });
+  const doFetch = (token: string) =>
+    fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+  let idToken = dynamoService.getIdToken();
+  if (!idToken) throw new Error('Not signed in — cannot reach AI services');
+
+  let response = await doFetch(idToken);
+
+  // Cognito ID tokens expire after 1 hour and nothing else in the app refreshes
+  // them — a conversation-mode session left open past that window would
+  // otherwise have every transcribe/translate/TTS call fail from here on.
+  // Refresh once and retry transparently before giving up.
+  if (response.status === 401) {
+    const refreshed = await dynamoService.refreshSessionIfPossible();
+    if (refreshed) {
+      idToken = dynamoService.getIdToken();
+      if (idToken) response = await doFetch(idToken);
+    }
+  }
+
+  return response;
 }

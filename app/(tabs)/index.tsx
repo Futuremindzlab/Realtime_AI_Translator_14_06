@@ -105,13 +105,17 @@ export default function HomeScreen() {
 
     try {
       if (conversationMode) {
-        isConversationRunning
-          ? await handleStopConversation()
-          : handleStartConversation();
+        if (isConversationRunning) {
+          await handleStopConversation();
+        } else {
+          handleStartConversation();
+        }
       } else {
-        isRecording
-          ? await handleStopRecording()
-          : await handleStartRecording();
+        if (isRecording) {
+          await handleStopRecording();
+        } else {
+          await handleStartRecording();
+        }
       }
     } finally {
       setTimeout(() => setIsButtonDisabled(false), 800);
@@ -190,8 +194,12 @@ export default function HomeScreen() {
       case 'generating_speech': return 'Generating speech…';
       case 'playing':           return 'Playing translation…';
       case 'waiting':
+        // currentPerson is already the upcoming speaker by this point — the
+        // service flips isPersonATurn *before* emitting the 'waiting' update,
+        // so inverting it here (as this used to do) showed the person who had
+        // just finished instead of the one about to speak next.
         return conversationMode
-          ? `Ready for Person ${progress.currentPerson === 'A' ? 'B' : 'A'}…`
+          ? `Ready for Person ${progress.currentPerson}…`
           : 'Processing…';
       case 'complete':
         return conversationMode && isConversationRunning

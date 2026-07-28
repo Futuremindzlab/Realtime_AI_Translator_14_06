@@ -21,6 +21,7 @@ export default function SettingsScreen() {
     user, settings, signIn, signUp, confirmSignUp, signInWithPhone, confirmOtpCode, cancelPhoneVerification,
     signOut, completeNewPassword, updateSettings, loading,
     needsNewPassword, needsConfirmation, pendingEmail, needsOtpVerification, pendingPhone,
+    needsForgotPasswordCode, pendingForgotPasswordEmail, forgotPassword, confirmForgotPassword, cancelForgotPassword,
     viewMode, setViewMode,
   } = useAuth();
   const isUserView = user?.role === 'USER' || viewMode === 'user';
@@ -37,6 +38,12 @@ export default function SettingsScreen() {
   const [dialCode, setDialCode] = useState('+91');
   const [phoneNational, setPhoneNational] = useState('');
   const [otpCode, setOtpCode] = useState('');
+
+  const [showForgotPasswordEntry, setShowForgotPasswordEntry] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [newResetPassword, setNewResetPassword] = useState('');
+  const [confirmResetPassword, setConfirmResetPassword] = useState('');
 
   const [ttsProvider, setTtsProvider] = useState<'elevenlabs' | 'openai' | 'device' | 'azure'>('device');
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('female');
@@ -182,11 +189,70 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleSendResetCode = async () => {
+    if (!forgotPasswordEmail.trim()) {
+      setAuthError('Please enter your email');
+      return;
+    }
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      await forgotPassword(forgotPasswordEmail.trim());
+      // needsForgotPasswordCode + pendingForgotPasswordEmail flip via context on success
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Failed to send reset code');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleConfirmResetPassword = async () => {
+    if (!resetCode || !newResetPassword || !confirmResetPassword) {
+      setAuthError('Please fill in all fields');
+      return;
+    }
+    if (newResetPassword !== confirmResetPassword) {
+      setAuthError('Passwords do not match');
+      return;
+    }
+    if (newResetPassword.length < 8) {
+      setAuthError('Password must be at least 8 characters');
+      return;
+    }
+    const emailToReset = pendingForgotPasswordEmail || forgotPasswordEmail;
+    setAuthError(null);
+    setAuthLoading(true);
+    try {
+      await confirmForgotPassword(emailToReset, resetCode, newResetPassword);
+      Alert.alert('Password Reset', 'Your password has been reset. Please sign in with your new password.');
+      setShowForgotPasswordEntry(false);
+      setForgotPasswordEmail('');
+      setResetCode('');
+      setNewResetPassword('');
+      setConfirmResetPassword('');
+      setIsLogin(true);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Failed to reset password');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleCancelForgotPassword = () => {
+    setAuthError(null);
+    setShowForgotPasswordEntry(false);
+    setForgotPasswordEmail('');
+    setResetCode('');
+    setNewResetPassword('');
+    setConfirmResetPassword('');
+    cancelForgotPassword();
+  };
+
   const handleSignOut = async () => {
     try {
       await signOut();
       Alert.alert('Success', 'Signed out successfully');
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to sign out');
     }
   };
@@ -236,7 +302,7 @@ export default function SettingsScreen() {
           return prev + 1;
         });
       }, 1000);
-    } catch (error) {
+    } catch {
       setIsRecordingVoice(false);
       Alert.alert('Error', 'Failed to start recording');
     }
@@ -416,6 +482,92 @@ export default function SettingsScreen() {
             <Text style={styles.linkText}>Entered the wrong number? Start over</Text>
           </TouchableOpacity>
         </View>
+      ) : needsForgotPasswordCode ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Reset Password</Text>
+          <Text style={styles.sectionDescription}>
+            We emailed a 6-digit verification code to {pendingForgotPasswordEmail}. It&apos;s unrelated
+            to your new password below — enter both to finish resetting your account.
+          </Text>
+
+          <Text style={styles.fieldGroupLabel}>Verification code from email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="6-digit code"
+            value={resetCode}
+            onChangeText={setResetCode}
+            keyboardType="number-pad"
+            maxLength={6}
+            autoCapitalize="none"
+          />
+
+          <Text style={styles.fieldGroupLabel}>Choose a new password</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="New password"
+            value={newResetPassword}
+            onChangeText={setNewResetPassword}
+            secureTextEntry
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Confirm new password"
+            value={confirmResetPassword}
+            onChangeText={setConfirmResetPassword}
+            secureTextEntry
+          />
+          <Text style={styles.passwordHint}>
+            At least 8 characters, including uppercase, lowercase, a number, and a special character.
+          </Text>
+
+          {authError && <Text style={styles.authError}>{authError}</Text>}
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleConfirmResetPassword}
+            disabled={authLoading}>
+            {authLoading ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Reset Password</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={handleCancelForgotPassword}>
+            <Text style={styles.linkText}>Back to Sign In</Text>
+          </TouchableOpacity>
+        </View>
+      ) : showForgotPasswordEntry ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Forgot Password</Text>
+          <Text style={styles.sectionDescription}>
+            Enter your account email and we&apos;ll send you a code to reset your password.
+          </Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            value={forgotPasswordEmail}
+            onChangeText={setForgotPasswordEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+
+          {authError && <Text style={styles.authError}>{authError}</Text>}
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={handleSendResetCode}
+            disabled={authLoading}>
+            {authLoading ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Send Reset Code</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={handleCancelForgotPassword}>
+            <Text style={styles.linkText}>Back to Sign In</Text>
+          </TouchableOpacity>
+        </View>
       ) : !user ? (
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>
@@ -465,6 +617,13 @@ export default function SettingsScreen() {
                   </>
                 )}
               </TouchableOpacity>
+
+              {isLogin && (
+                <TouchableOpacity
+                  onPress={() => { setAuthError(null); setForgotPasswordEmail(email); setShowForgotPasswordEntry(true); }}>
+                  <Text style={styles.linkText}>Forgot password?</Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity onPress={() => setIsLogin(!isLogin)}>
                 <Text style={styles.linkText}>
@@ -919,6 +1078,15 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: -8,
     lineHeight: 18,
+  },
+  fieldGroupLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#9ca3af',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    marginTop: 4,
   },
   authError: {
     fontSize: 13,

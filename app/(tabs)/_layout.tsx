@@ -4,12 +4,10 @@ import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
 
-// 1. Polyfill must stay at the top (Removed duplicates)
+// Polyfill must stay at the top — fast-text-encoding self-installs
+// global.TextDecoder/TextEncoder as a side effect (it has no exports of its
+// own to pull from, so there's nothing to assign after this import).
 import 'fast-text-encoding';
-
-if (typeof TextDecoder === 'undefined') {
-  global.TextDecoder = require('fast-text-encoding').TextDecoder;
-}
 
 export default function TabLayout() {
   const { user, viewMode } = useAuth();

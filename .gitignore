@@ -44,3 +44,6 @@ node_modules/
 
 # AWS SAM build artefacts — generated, do not commit
 backend/.aws-sam/
+
+# local benchmark/test output — generated, do not commit
+test_audio_output/

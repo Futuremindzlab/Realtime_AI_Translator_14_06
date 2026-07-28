@@ -29,6 +29,14 @@ type PutConversationHistoryInput = Omit<ConversationHistory, 'id' | 'source_audi
 
 class DynamoService {
   private idToken: string | null = null;
+  // Registered by AuthContext on mount — lets any backend call transparently
+  // refresh an expired Cognito session instead of failing outright. Cognito ID
+  // tokens are valid for 1 hour with nothing elsewhere in the app refreshing
+  // them, so any request made after that window would otherwise keep failing
+  // silently for the rest of the session (most visible in conversation mode,
+  // whose auto-retry loop hides the failure behind the next "Listening…" state
+  // before a user can read it).
+  private sessionRefreshHandler: (() => Promise<boolean>) | null = null;
 
   initialize(idToken: string) {
     this.idToken = idToken;
@@ -44,6 +52,22 @@ class DynamoService {
     return this.idToken;
   }
 
+  setSessionRefreshHandler(handler: (() => Promise<boolean>) | null) {
+    this.sessionRefreshHandler = handler;
+  }
+
+  /** Attempt to refresh the Cognito session via the handler AuthContext registered.
+   *  Returns false (never throws) if there's no handler, no refresh token, or the
+   *  refresh itself fails — callers should treat false as "still unauthenticated." */
+  async refreshSessionIfPossible(): Promise<boolean> {
+    if (!this.sessionRefreshHandler) return false;
+    try {
+      return await this.sessionRefreshHandler();
+    } catch {
+      return false;
+    }
+  }
+
   // ── Internal HTTP helper ────────────────────────────────────────────────────
 
   private async request<T>(
@@ -53,7 +77,7 @@ class DynamoService {
     if (!this.idToken) throw new Error('DynamoService not initialized — call initialize(idToken) first');
     if (!API_BASE)    throw new Error('EXPO_PUBLIC_API_BASE_URL is not set in .env');
 
-    const response = await fetch(`${API_BASE}${path}`, {
+    const doFetch = () => fetch(`${API_BASE}${path}`, {
       ...options,
       headers: {
         'Content-Type':  'application/json',
@@ -61,6 +85,14 @@ class DynamoService {
         ...(options.headers || {}),
       },
     });
+
+    let response = await doFetch();
+
+    // Transparent one-shot refresh-and-retry on an expired token.
+    if (response.status === 401) {
+      const refreshed = await this.refreshSessionIfPossible();
+      if (refreshed) response = await doFetch();
+    }
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');

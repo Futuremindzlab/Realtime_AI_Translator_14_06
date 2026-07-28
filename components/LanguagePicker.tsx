@@ -1,7 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { ChevronDown } from 'lucide-react-native';
-import { Language } from '@/types';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
 
 interface LanguagePickerProps {

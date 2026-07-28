@@ -41,6 +41,15 @@ interface AuthContextType {
   completeNewPassword: (newPassword: string) => Promise<void>;
   updateSettings: (settings: Partial<UserSettings>) => Promise<void>;
   refreshSettings: () => Promise<void>;
+  /** Re-fetches the Cognito session, transparently refreshing an expired ID
+   *  token via the cached refresh token. Returns false if there's no signed-in
+   *  user or the refresh token itself is no longer valid (re-sign-in needed). */
+  refreshSession: () => Promise<boolean>;
+  needsForgotPasswordCode: boolean;
+  pendingForgotPasswordEmail: string | null;
+  forgotPassword: (email: string) => Promise<void>;
+  confirmForgotPassword: (email: string, code: string, newPassword: string) => Promise<void>;
+  cancelForgotPassword: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -81,6 +90,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [needsOtpVerification, setNeedsOtpVerification] = useState(false);
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
+  const [needsForgotPasswordCode, setNeedsForgotPasswordCode] = useState(false);
+  const [pendingForgotPasswordEmail, setPendingForgotPasswordEmail] = useState<string | null>(null);
   const [viewMode, setViewModeState] = useState<'admin' | 'user'>('admin');
 
   useEffect(() => {
@@ -127,6 +138,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } else {
       setLoading(false);
     }
+  }, []);
+
+  /**
+   * Re-fetches the Cognito session. amazon-cognito-identity-js's getSession()
+   * transparently calls refreshSession() under the hood via the cached refresh
+   * token when the cached ID/access token has expired, so this is enough to
+   * recover from the 1-hour ID token expiry without a full re-login — as long
+   * as the ~30-day refresh token itself is still valid.
+   */
+  const refreshSession = async (): Promise<boolean> => {
+    if (!userPool) return true; // offline mode — nothing to refresh
+    const currentUser = userPool.getCurrentUser();
+    if (!currentUser) return false;
+
+    return new Promise<boolean>((resolve) => {
+      currentUser.getSession((err: Error | null, session: CognitoUserSession | null) => {
+        if (err || !session || !session.isValid()) {
+          console.warn('⚠️ Session refresh failed — refresh token expired, re-sign-in needed');
+          resolve(false);
+          return;
+        }
+        const idToken = session.getIdToken().getJwtToken();
+        dynamoService.initialize(idToken);
+        console.log('🔄 Session refreshed');
+        resolve(true);
+      });
+    });
+  };
+
+  // Let any backend call (translations/settings CRUD, AI proxy) self-heal from
+  // an expired token instead of failing for the rest of the session.
+  useEffect(() => {
+    dynamoService.setSessionRefreshHandler(refreshSession);
+    return () => dynamoService.setSessionRefreshHandler(null);
   }, []);
 
   const setViewMode = (mode: 'admin' | 'user') => {
@@ -282,6 +327,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         resolve();
       });
     });
+  };
+
+  /** Kicks off Cognito's forgot-password flow — sends a verification code to
+   *  the account's email. Only applies to email accounts; phone accounts sign
+   *  in passwordlessly via OTP (see signInWithPhone) and have no password to reset. */
+  const forgotPassword = async (email: string) => {
+    if (!userPool) throw new Error('Offline mode — password reset not available');
+
+    return new Promise<void>((resolve, reject) => {
+      const cognitoUser = new CognitoUser({
+        Username: email,
+        Pool: userPool!,
+        Storage: cognitoStorage,
+      });
+
+      cognitoUser.forgotPassword({
+        onSuccess: () => {
+          // Cognito's ForgotPassword API always returns success even for an
+          // unknown username (anti user-enumeration) — same UX either way.
+          console.log(`📧 Password reset code requested for ${email}`);
+          setPendingForgotPasswordEmail(email);
+          setNeedsForgotPasswordCode(true);
+          resolve();
+        },
+        onFailure: (err: Error & { code?: string }) => {
+          console.error('❌ Forgot-password request failed:', err.message);
+          reject(err);
+        },
+      });
+    });
+  };
+
+  /** Completes the forgot-password flow with the emailed code + a new password. */
+  const confirmForgotPassword = async (email: string, code: string, newPassword: string) => {
+    if (!userPool) throw new Error('Offline mode — password reset not available');
+
+    return new Promise<void>((resolve, reject) => {
+      const cognitoUser = new CognitoUser({
+        Username: email,
+        Pool: userPool!,
+        Storage: cognitoStorage,
+      });
+
+      cognitoUser.confirmPassword(code, newPassword, {
+        onSuccess: () => {
+          console.log(`✅ Password reset for ${email}`);
+          setNeedsForgotPasswordCode(false);
+          setPendingForgotPasswordEmail(null);
+          resolve();
+        },
+        onFailure: (err: Error & { code?: string }) => {
+          console.error('❌ Password reset confirmation failed:', err.message);
+          reject(err);
+        },
+      });
+    });
+  };
+
+  /** Lets the user back out of the forgot-password flow (wrong email, changed mind). */
+  const cancelForgotPassword = () => {
+    setNeedsForgotPasswordCode(false);
+    setPendingForgotPasswordEmail(null);
   };
 
   const signInWithPhone = async (e164Phone: string) => {
@@ -482,6 +589,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     completeNewPassword,
     updateSettings,
     refreshSettings,
+    refreshSession,
+    needsForgotPasswordCode,
+    pendingForgotPasswordEmail,
+    forgotPassword,
+    confirmForgotPassword,
+    cancelForgotPassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

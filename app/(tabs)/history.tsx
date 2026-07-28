@@ -45,17 +45,7 @@ export default function HistoryScreen() {
     if (settings?.custom_voice_id !== undefined) ttsService.setCustomVoiceId(settings.custom_voice_id ?? null);
   }, [settings]);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (user) {
-        loadHistory();
-      } else {
-        setLoading(false);
-      }
-    }, [user])
-  );
-
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     if (!user || !dynamoService.isInitialized()) {
       setLoading(false);
       return;
@@ -70,7 +60,17 @@ export default function HistoryScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [user, isUserView]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        loadHistory();
+      } else {
+        setLoading(false);
+      }
+    }, [user, loadHistory])
+  );
 
   const handleRefresh = () => {
     setRefreshing(true);

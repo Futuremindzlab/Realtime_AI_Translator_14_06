@@ -476,16 +476,24 @@ export class RealtimeTranslationService {
 
         if (!audioUri) {
           consecutiveErrors++;
-          if (consecutiveErrors >= MAX_ERRORS) {
-            this.updateProgress({ stage: 'error', error: 'Recording failed. Please restart.', isRealtime: true });
-            break;
-          }
-          await new Promise(r => setTimeout(r, 500));
+          // Previously this only surfaced an error on the *final* (3rd) failure —
+          // the first two silently looped back into "recording", which is
+          // indistinguishable on screen from a genuinely stuck mic. Show it
+          // every time and hold it long enough to actually read.
+          this.updateProgress({
+            stage: 'error',
+            error: consecutiveErrors >= MAX_ERRORS
+              ? 'Recording failed. Please restart.'
+              : `Recording failed — retrying (${consecutiveErrors}/${MAX_ERRORS})…`,
+            isRealtime: true,
+          });
+          if (consecutiveErrors >= MAX_ERRORS) break;
+          await new Promise(r => setTimeout(r, 1800));
           continue;
         }
 
         // ── STEP 2: PROCESS (transcribe → translate → TTS → play) ──
-        const success = await this.processConversationTurn(audioUri);
+        const { success, reason } = await this.processConversationTurn(audioUri);
 
         if (!this.isActive || !this.autoContinueEnabled) break;
 
@@ -510,11 +518,16 @@ export class RealtimeTranslationService {
           await new Promise(r => setTimeout(r, 200));
         } else {
           consecutiveErrors++;
-          if (consecutiveErrors >= MAX_ERRORS) {
-            this.updateProgress({ stage: 'error', error: 'No speech detected. Please restart.', isRealtime: true });
-            break;
-          }
-          await new Promise(r => setTimeout(r, 500));
+          const baseMessage = reason || 'No speech detected';
+          this.updateProgress({
+            stage: 'error',
+            error: consecutiveErrors >= MAX_ERRORS
+              ? `${baseMessage}. Please restart.`
+              : `${baseMessage} — retrying (${consecutiveErrors}/${MAX_ERRORS})…`,
+            isRealtime: true,
+          });
+          if (consecutiveErrors >= MAX_ERRORS) break;
+          await new Promise(r => setTimeout(r, 1800));
         }
 
       } catch (error) {
@@ -523,20 +536,21 @@ export class RealtimeTranslationService {
         // Ensure we clean up any leftover audio state
         await audioService.forceCleanup().catch(() => {});
 
+        const errorMessage = error instanceof Error ? error.message : 'Conversation failed.';
         if (consecutiveErrors >= MAX_ERRORS) {
           this.updateProgress({
             stage: 'error',
-            error: error instanceof Error ? error.message : 'Conversation failed.',
+            error: errorMessage,
             isRealtime: true,
           });
           break;
         }
         this.updateProgress({
           stage: 'error',
-          error: error instanceof Error ? error.message : 'Error, retrying...',
+          error: `${errorMessage} — retrying (${consecutiveErrors}/${MAX_ERRORS})…`,
           isRealtime: true,
         });
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 1800));
       }
     }
 
@@ -548,9 +562,11 @@ export class RealtimeTranslationService {
 
   /**
    * Process one conversation turn: transcribe → translate → TTS → play audio.
-   * Returns true if turn was successful (should swap), false to retry same person.
+   * success=true means the turn worked (caller should swap); success=false means
+   * retry the same person, with `reason` surfaced to the user so a failed turn
+   * doesn't look identical to the app just still listening.
    */
-  private async processConversationTurn(audioUri: string): Promise<boolean> {
+  private async processConversationTurn(audioUri: string): Promise<{ success: boolean; reason?: string }> {
     const pipelineStartedAt = Date.now();
 
     // ── 1. TRANSCRIBE ──
@@ -570,8 +586,7 @@ export class RealtimeTranslationService {
     // Skip if no valid speech
     if (!actualText || actualText.length < 3) {
       console.log('⚠️ No valid speech, will retry');
-      this.updateProgress({ stage: 'waiting', isRealtime: true });
-      return false;
+      return { success: false, reason: 'No speech detected' };
     }
 
     // ── Resolve 'auto' source on Person A's first turn ──
@@ -623,7 +638,7 @@ export class RealtimeTranslationService {
 
     if (!translatedText.trim()) {
       console.error('❌ Empty translation result');
-      return false;
+      return { success: false, reason: 'Translation failed' };
     }
 
     console.log(`✅ Translated: "${translatedText.substring(0, 80)}"`);
@@ -681,7 +696,7 @@ export class RealtimeTranslationService {
     // Turn processed successfully — don't set 'complete' here
     // (the conversation loop will set 'waiting' before the next turn,
     //  and forceCleanup at the top of the next iteration handles resource release)
-    return true;
+    return { success: true };
   }
 
   // ────────────────────────────────────────────────────────────────
