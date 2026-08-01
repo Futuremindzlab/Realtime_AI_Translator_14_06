@@ -5,45 +5,21 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  TextInput,
   Alert,
   ActivityIndicator,
   Switch,
 } from 'react-native';
-import { LogIn, LogOut, Save, Mic, Trash2 } from 'lucide-react-native';
+import { LogOut, Save, Mic, Trash2 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { audioService } from '@/services/audioService';
 import { ttsService, TTSService } from '@/services/ttsService';
-import { CountryCodeSelector } from '@/components/CountryCodeSelector';
 
 export default function SettingsScreen() {
-  const {
-    user, settings, signIn, signUp, confirmSignUp, signInWithPhone, confirmOtpCode, cancelPhoneVerification,
-    signOut, completeNewPassword, updateSettings, loading,
-    needsNewPassword, needsConfirmation, pendingEmail, needsOtpVerification, pendingPhone,
-    needsForgotPasswordCode, pendingForgotPasswordEmail, forgotPassword, confirmForgotPassword, cancelForgotPassword,
-    viewMode, setViewMode,
-  } = useAuth();
+  // AuthGate (app/_layout.tsx) guarantees `user` is non-null by the time any
+  // screen renders — sign-in/sign-up/OTP/password-reset UI lives there now,
+  // not here.
+  const { user, settings, signOut, updateSettings, viewMode, setViewMode } = useAuth();
   const isUserView = user?.role === 'USER' || viewMode === 'user';
-
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmNewPassword, setConfirmNewPassword] = useState('');
-  const [confirmationCode, setConfirmationCode] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
-  const [authLoading, setAuthLoading] = useState(false);
-
-  const [authMode, setAuthMode] = useState<'email' | 'phone'>('email');
-  const [dialCode, setDialCode] = useState('+91');
-  const [phoneNational, setPhoneNational] = useState('');
-  const [otpCode, setOtpCode] = useState('');
-
-  const [showForgotPasswordEntry, setShowForgotPasswordEntry] = useState(false);
-  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
-  const [resetCode, setResetCode] = useState('');
-  const [newResetPassword, setNewResetPassword] = useState('');
-  const [confirmResetPassword, setConfirmResetPassword] = useState('');
 
   const [ttsProvider, setTtsProvider] = useState<'elevenlabs' | 'openai' | 'device' | 'azure'>('device');
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('female');
@@ -52,7 +28,6 @@ export default function SettingsScreen() {
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [isCloningVoice, setIsCloningVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [authError, setAuthError] = useState<string | null>(null);
   const recordingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Guard against the countdown interval outliving the component (e.g. user
@@ -78,175 +53,6 @@ export default function SettingsScreen() {
       ttsService.setSelectedVoiceId(settings.selected_voice_id || null);
     }
   }, [settings]);
-
-  const handleAuth = async () => {
-    if (!email || !password) {
-      setAuthError('Please enter both email and password');
-      return;
-    }
-    setAuthError(null);
-    setAuthLoading(true);
-    try {
-      if (isLogin) {
-        await signIn(email, password);
-        setEmail('');
-        setPassword('');
-      } else {
-        await signUp(email, password);
-        setPassword('');
-      }
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Authentication failed');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleNewPassword = async () => {
-    if (!newPassword || !confirmNewPassword) {
-      setAuthError('Please fill in both password fields');
-      return;
-    }
-    if (newPassword !== confirmNewPassword) {
-      setAuthError('Passwords do not match');
-      return;
-    }
-    if (newPassword.length < 8) {
-      setAuthError('Password must be at least 8 characters');
-      return;
-    }
-    setAuthError(null);
-    setAuthLoading(true);
-    try {
-      await completeNewPassword(newPassword);
-      setNewPassword('');
-      setConfirmNewPassword('');
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Failed to set new password');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleConfirmSignUp = async () => {
-    const emailToConfirm = pendingEmail || email;
-    if (!emailToConfirm || !confirmationCode) {
-      setAuthError('Please enter the verification code');
-      return;
-    }
-    setAuthError(null);
-    setAuthLoading(true);
-    try {
-      await confirmSignUp(emailToConfirm, confirmationCode);
-      setConfirmationCode('');
-      setIsLogin(true);
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Verification failed');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleSendOtp = async () => {
-    const trimmed = phoneNational.trim();
-    // If the user pasted an already-fully-qualified international number
-    // (e.g. copied from another app as "+919876543210"), use it as-is instead
-    // of also prepending the selected dial code — otherwise the country code
-    // gets duplicated (+91 + "+919876543210" digits → wrong number, silent).
-    const composed = trimmed.startsWith('+')
-      ? `+${trimmed.replace(/\D/g, '')}`
-      : `${dialCode}${trimmed.replace(/\D/g, '').replace(/^0+/, '')}`;
-
-    if (composed.replace(/\D/g, '').length === 0) {
-      setAuthError('Please enter your phone number');
-      return;
-    }
-    setAuthError(null);
-    setAuthLoading(true);
-    try {
-      await signInWithPhone(composed);
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Failed to send verification code');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleVerifyOtp = async () => {
-    if (!otpCode) {
-      setAuthError('Please enter the verification code');
-      return;
-    }
-    setAuthError(null);
-    setAuthLoading(true);
-    try {
-      await confirmOtpCode(otpCode);
-      setOtpCode('');
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Verification failed');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleSendResetCode = async () => {
-    if (!forgotPasswordEmail.trim()) {
-      setAuthError('Please enter your email');
-      return;
-    }
-    setAuthError(null);
-    setAuthLoading(true);
-    try {
-      await forgotPassword(forgotPasswordEmail.trim());
-      // needsForgotPasswordCode + pendingForgotPasswordEmail flip via context on success
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Failed to send reset code');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleConfirmResetPassword = async () => {
-    if (!resetCode || !newResetPassword || !confirmResetPassword) {
-      setAuthError('Please fill in all fields');
-      return;
-    }
-    if (newResetPassword !== confirmResetPassword) {
-      setAuthError('Passwords do not match');
-      return;
-    }
-    if (newResetPassword.length < 8) {
-      setAuthError('Password must be at least 8 characters');
-      return;
-    }
-    const emailToReset = pendingForgotPasswordEmail || forgotPasswordEmail;
-    setAuthError(null);
-    setAuthLoading(true);
-    try {
-      await confirmForgotPassword(emailToReset, resetCode, newResetPassword);
-      Alert.alert('Password Reset', 'Your password has been reset. Please sign in with your new password.');
-      setShowForgotPasswordEntry(false);
-      setForgotPasswordEmail('');
-      setResetCode('');
-      setNewResetPassword('');
-      setConfirmResetPassword('');
-      setIsLogin(true);
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Failed to reset password');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleCancelForgotPassword = () => {
-    setAuthError(null);
-    setShowForgotPasswordEntry(false);
-    setForgotPasswordEmail('');
-    setResetCode('');
-    setNewResetPassword('');
-    setConfirmResetPassword('');
-    cancelForgotPassword();
-  };
 
   const handleSignOut = async () => {
     try {
@@ -368,13 +174,9 @@ export default function SettingsScreen() {
     );
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2563eb" />
-      </View>
-    );
-  }
+  // AuthGate never mounts this screen without a signed-in user; this is just
+  // enough for TypeScript to narrow `user` below, not a reachable runtime path.
+  if (!user) return null;
 
   return (
     <ScrollView
@@ -387,289 +189,7 @@ export default function SettingsScreen() {
         <Text style={styles.subtitle}>Configure your preferences</Text>
       </View>
 
-      {needsNewPassword ? (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Set New Password</Text>
-          <Text style={styles.sectionDescription}>
-            Your account requires a new password. Please set one to continue.
-          </Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="New Password"
-            value={newPassword}
-            onChangeText={setNewPassword}
-            secureTextEntry
-          />
-
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm New Password"
-            value={confirmNewPassword}
-            onChangeText={setConfirmNewPassword}
-            secureTextEntry
-          />
-
-          {authError && <Text style={styles.authError}>{authError}</Text>}
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleNewPassword}
-            disabled={authLoading}>
-            {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Set Password & Sign In</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      ) : needsConfirmation ? (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Verify Your Email</Text>
-          <Text style={styles.sectionDescription}>
-            We sent a verification code to {pendingEmail || email}. Enter it below to complete registration.
-          </Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Verification Code"
-            value={confirmationCode}
-            onChangeText={setConfirmationCode}
-            keyboardType="number-pad"
-            autoCapitalize="none"
-          />
-
-          {authError && <Text style={styles.authError}>{authError}</Text>}
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleConfirmSignUp}
-            disabled={authLoading}>
-            {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Verify & Continue</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      ) : needsOtpVerification ? (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Enter Verification Code</Text>
-          <Text style={styles.sectionDescription}>
-            We sent a code via SMS to {pendingPhone}. Enter it below to sign in.
-          </Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="6-digit code"
-            value={otpCode}
-            onChangeText={setOtpCode}
-            keyboardType="number-pad"
-            autoCapitalize="none"
-          />
-
-          {authError && <Text style={styles.authError}>{authError}</Text>}
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleVerifyOtp}
-            disabled={authLoading}>
-            {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Verify & Continue</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => { setAuthError(null); setOtpCode(''); cancelPhoneVerification(); }}>
-            <Text style={styles.linkText}>Entered the wrong number? Start over</Text>
-          </TouchableOpacity>
-        </View>
-      ) : needsForgotPasswordCode ? (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Reset Password</Text>
-          <Text style={styles.sectionDescription}>
-            We emailed a 6-digit verification code to {pendingForgotPasswordEmail}. It&apos;s unrelated
-            to your new password below — enter both to finish resetting your account.
-          </Text>
-
-          <Text style={styles.fieldGroupLabel}>Verification code from email</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="6-digit code"
-            value={resetCode}
-            onChangeText={setResetCode}
-            keyboardType="number-pad"
-            maxLength={6}
-            autoCapitalize="none"
-          />
-
-          <Text style={styles.fieldGroupLabel}>Choose a new password</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="New password"
-            value={newResetPassword}
-            onChangeText={setNewResetPassword}
-            secureTextEntry
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Confirm new password"
-            value={confirmResetPassword}
-            onChangeText={setConfirmResetPassword}
-            secureTextEntry
-          />
-          <Text style={styles.passwordHint}>
-            At least 8 characters, including uppercase, lowercase, a number, and a special character.
-          </Text>
-
-          {authError && <Text style={styles.authError}>{authError}</Text>}
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleConfirmResetPassword}
-            disabled={authLoading}>
-            {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Reset Password</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={handleCancelForgotPassword}>
-            <Text style={styles.linkText}>Back to Sign In</Text>
-          </TouchableOpacity>
-        </View>
-      ) : showForgotPasswordEntry ? (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Forgot Password</Text>
-          <Text style={styles.sectionDescription}>
-            Enter your account email and we&apos;ll send you a code to reset your password.
-          </Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            value={forgotPasswordEmail}
-            onChangeText={setForgotPasswordEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-
-          {authError && <Text style={styles.authError}>{authError}</Text>}
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleSendResetCode}
-            disabled={authLoading}>
-            {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Send Reset Code</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={handleCancelForgotPassword}>
-            <Text style={styles.linkText}>Back to Sign In</Text>
-          </TouchableOpacity>
-        </View>
-      ) : !user ? (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>
-            {authMode === 'email' ? (isLogin ? 'Sign In' : 'Create Account') : 'Sign In with Phone'}
-          </Text>
-          <Text style={styles.sectionDescription}>
-            Sign in to save your translation history and settings
-          </Text>
-
-          {authMode === 'email' ? (
-            <>
-              <TextInput
-                style={styles.input}
-                placeholder="Email"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
-              {!isLogin && (
-                <Text style={styles.passwordHint}>
-                  Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.
-                </Text>
-              )}
-              {authError && <Text style={styles.authError}>{authError}</Text>}
-
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={handleAuth}
-                disabled={authLoading}>
-                {authLoading ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <>
-                    <LogIn size={20} color="#ffffff" />
-                    <Text style={styles.primaryButtonText}>
-                      {isLogin ? 'Sign In' : 'Sign Up'}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              {isLogin && (
-                <TouchableOpacity
-                  onPress={() => { setAuthError(null); setForgotPasswordEmail(email); setShowForgotPasswordEntry(true); }}>
-                  <Text style={styles.linkText}>Forgot password?</Text>
-                </TouchableOpacity>
-              )}
-
-              <TouchableOpacity onPress={() => setIsLogin(!isLogin)}>
-                <Text style={styles.linkText}>
-                  {isLogin ? "Don't have an account? Sign Up" : 'Already have an account? Sign In'}
-                </Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <View style={styles.phoneRow}>
-                <CountryCodeSelector selectedDialCode={dialCode} onSelect={setDialCode} />
-                <TextInput
-                  style={[styles.input, styles.phoneInput]}
-                  placeholder="Phone number"
-                  value={phoneNational}
-                  onChangeText={setPhoneNational}
-                  keyboardType="phone-pad"
-                />
-              </View>
-              {authError && <Text style={styles.authError}>{authError}</Text>}
-
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={handleSendOtp}
-                disabled={authLoading}>
-                {authLoading ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <>
-                    <LogIn size={20} color="#ffffff" />
-                    <Text style={styles.primaryButtonText}>Send Code</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </>
-          )}
-
-          <TouchableOpacity onPress={() => { setAuthError(null); setAuthMode(authMode === 'email' ? 'phone' : 'email'); }}>
-            <Text style={styles.linkText}>
-              {authMode === 'email' ? 'Sign in with phone instead' : 'Sign in with email instead'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <>
-          <View style={styles.card}>
+      <View style={styles.card}>
             <Text style={styles.sectionTitle}>Account</Text>
             <Text style={styles.userEmail}>{user.email}</Text>
             <TouchableOpacity style={styles.secondaryButton} onPress={handleSignOut}>
@@ -928,8 +448,6 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             )}
           </View>
-        </>
-      )}
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>Realtime Modern AI Translator</Text>
@@ -952,12 +470,6 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 20,
     paddingBottom: 150,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f9fafb',
   },
   header: {
     marginBottom: 24,
@@ -1072,28 +584,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#374151',
   },
-  passwordHint: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginBottom: 12,
-    marginTop: -8,
-    lineHeight: 18,
-  },
-  fieldGroupLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#9ca3af',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 6,
-    marginTop: 4,
-  },
-  authError: {
-    fontSize: 13,
-    color: '#ef4444',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
   voiceDesc: {
     fontSize: 12,
     color: '#6b7280',
@@ -1104,29 +594,6 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginBottom: 12,
     fontStyle: 'italic',
-  },
-  linkText: {
-    color: '#2563eb',
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 16,
-  },
-  input: {
-    backgroundColor: '#f9fafb',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    fontSize: 16,
-  },
-  phoneRow: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'flex-start',
-  },
-  phoneInput: {
-    flex: 1,
   },
   primaryButton: {
     backgroundColor: '#2563eb',

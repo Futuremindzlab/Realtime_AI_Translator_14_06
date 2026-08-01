@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { AuthGate } from '@/components/AuthGate';
 
 export default function RootLayout() {
   useFrameworkReady();
@@ -13,10 +14,12 @@ export default function RootLayout() {
     <ErrorBoundary>
       <SafeAreaProvider>
         <AuthProvider>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="+not-found" />
-          </Stack>
+          <AuthGate>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+          </AuthGate>
           <StatusBar barStyle="default" />
         </AuthProvider>
       </SafeAreaProvider>
