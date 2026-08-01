@@ -1,7 +1,8 @@
 import { Platform } from 'react-native';
 import * as Speech from 'expo-speech';
 import { proxyPost } from '@/lib/apiProxy';
-import { isNetworkError } from '@/lib/errors';
+import { errorMessage, isNetworkError } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 // expo-file-system is native-only. On web, saveBase64Audio() uses
 // URL.createObjectURL() instead, so FileSystem is never called.
@@ -12,6 +13,23 @@ const FileSystem: any = Platform.OS === 'web'
 export type TTSProvider = 'elevenlabs' | 'openai' | 'device' | 'azure';
 
 export type VoiceGender = 'male' | 'female';
+
+/**
+ * Every TTS provider in the fallback chain failed.
+ *
+ * generateSpeech() used to return null here, which is the same value the
+ * 'device' provider returns on success (expo-speech speaks inline, producing
+ * no file URI). Callers guard with `if (uri) playAudio(uri)`, so a total TTS
+ * outage was indistinguishable from a normal device-TTS turn: no audio, no
+ * error, nothing on screen. Throwing keeps the two apart; callers that can
+ * carry on without audio catch this explicitly.
+ */
+export class TTSUnavailableError extends Error {
+  constructor(public readonly causes: unknown[]) {
+    super(`All TTS providers failed: ${causes.map((c) => errorMessage(c, 'unknown error')).join('; ')}`);
+    this.name = 'TTSUnavailableError';
+  }
+}
 
 export interface VoiceOption {
   id: string;
@@ -186,6 +204,9 @@ export class TTSService {
    *
    * Returns null for the 'device' provider — expo-speech speaks inline and
    * no file URI is produced. Callers must guard: `if (uri) { playAudio(uri); }`
+   *
+   * Throws TTSUnavailableError if every provider in the fallback chain fails,
+   * or the underlying NetworkError if the device is offline.
    */
   async generateSpeech(
     text: string,
@@ -241,16 +262,26 @@ export class TTSService {
         await this.generateWithDevice(processedText, language);
         return null;
       } catch (deviceErr) {
-        console.warn(`⚠️ Device TTS failed for "${language}", falling back to cloud:`, deviceErr);
+        const failures: unknown[] = [deviceErr];
+        logger.warn('Device TTS failed, falling back to cloud', { language, error: errorMessage(deviceErr) });
+
         if (hasElevenLabs) {
-          try { return await this.generateWithElevenLabs(processedText, language); } catch {}
+          try {
+            return await this.generateWithElevenLabs(processedText, language);
+          } catch (elevenErr) {
+            failures.push(elevenErr);
+            logger.error('ElevenLabs TTS fallback failed', elevenErr, { language });
+          }
         }
         if (hasOpenAI) {
-          try { return await this.generateWithOpenAI(processedText, language); } catch {}
+          try {
+            return await this.generateWithOpenAI(processedText, language);
+          } catch (openaiErr) {
+            failures.push(openaiErr);
+            logger.error('OpenAI TTS fallback failed', openaiErr, { language });
+          }
         }
-        // Nothing worked — swallow the error so translation still completes
-        console.error('❌ All TTS providers failed; audio skipped');
-        return null;
+        throw this.ttsFailure(failures, language);
       }
     }
 
@@ -268,14 +299,16 @@ export class TTSService {
           return await this.generateWithOpenAI(processedText, language);
       }
     } catch (primaryError) {
-      console.error(`❌ TTS failed with ${effectiveProvider}:`, primaryError);
+      const failures: unknown[] = [primaryError];
+      logger.error('TTS failed with primary provider', primaryError, { provider: effectiveProvider, language });
 
       if (effectiveProvider === 'azure' && hasElevenLabs) {
         try {
           console.log('🔊 Fallback: ElevenLabs TTS...');
           return await this.generateWithElevenLabs(processedText, language);
         } catch (elevenErr) {
-          console.error('❌ ElevenLabs TTS fallback also failed:', elevenErr);
+          failures.push(elevenErr);
+          logger.error('ElevenLabs TTS fallback failed', elevenErr, { language });
         }
       }
 
@@ -284,19 +317,33 @@ export class TTSService {
           console.log('🔊 Fallback: OpenAI TTS...');
           return await this.generateWithOpenAI(processedText, language);
         } catch (openaiErr) {
-          console.error('❌ OpenAI TTS fallback also failed:', openaiErr);
+          failures.push(openaiErr);
+          logger.error('OpenAI TTS fallback failed', openaiErr, { language });
         }
       }
 
-      // Final fallback: device TTS (may not support all languages; swallow failures)
+      // Final fallback: device TTS (may not support all languages)
       console.log('🔊 Final fallback: device TTS');
       try {
         await this.generateWithDevice(processedText, language);
+        return null;
       } catch (deviceErr) {
-        console.error('❌ Device TTS also failed; audio skipped:', deviceErr);
+        failures.push(deviceErr);
+        logger.error('Device TTS fallback failed', deviceErr, { language });
       }
-      return null;
+
+      throw this.ttsFailure(failures, language);
     }
+  }
+
+  /** Collapse a failed fallback chain into one error. An offline device is
+   *  reported as the NetworkError itself so callers keep treating it as
+   *  "connection lost" rather than "this language has no voice". */
+  private ttsFailure(failures: unknown[], language: string): Error {
+    const networkFailure = failures.find(isNetworkError);
+    const error = networkFailure instanceof Error ? networkFailure : new TTSUnavailableError(failures);
+    logger.error('All TTS providers failed', error, { language });
+    return error;
   }
 
   /**

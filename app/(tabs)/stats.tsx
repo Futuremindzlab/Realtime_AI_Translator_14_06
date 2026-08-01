@@ -13,6 +13,8 @@ import { BarChart2, ArrowRight, Globe, TrendingUp, RefreshCw } from 'lucide-reac
 import { useAuth } from '@/contexts/AuthContext';
 import { dynamoService } from '@/services/dynamoService';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
+import { errorMessage } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -135,6 +137,7 @@ export default function StatsScreen() {
   const [pairList, setPairList]   = useState<PairStats[]>([]);
   const [bySource, setBySource]   = useState<LangCount[]>([]);
   const [byTarget, setByTarget]   = useState<LangCount[]>([]);
+  const [error, setError]         = useState<string | null>(null);
 
   const loadStats = useCallback(async () => {
     if (!user || !dynamoService.isInitialized()) {
@@ -148,8 +151,12 @@ export default function StatsScreen() {
       setPairList(parsed.pairList);
       setBySource(parsed.bySource);
       setByTarget(parsed.byTarget);
+      setError(null);
     } catch (err) {
-      console.error('Stats load error:', err);
+      // Without this the screen rendered the "No Data Yet" empty state, which
+      // reads as "you've never translated anything" rather than "load failed".
+      logger.error('Failed to load stats', err);
+      setError(errorMessage(err, 'Could not load your stats.'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -176,6 +183,21 @@ export default function StatsScreen() {
     return (
       <View style={styles.centerBox}>
         <ActivityIndicator size="large" color="#2563eb" />
+      </View>
+    );
+  }
+
+  // ── load failed ───────────────────────────────────────────────────────────
+  if (error) {
+    return (
+      <View style={styles.centerBox}>
+        <BarChart2 size={56} color="#d1d5db" />
+        <Text style={styles.emptyTitle}>Couldn&apos;t Load Stats</Text>
+        <Text style={styles.emptyText}>{error}</Text>
+        <TouchableOpacity onPress={handleRefresh} style={styles.retryBtn}>
+          <RefreshCw size={16} color="#2563eb" />
+          <Text style={styles.retryText}>Try again</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -305,6 +327,13 @@ const styles = StyleSheet.create({
 
   emptyTitle: { fontSize: 22, fontWeight: '600', color: '#374151', marginTop: 16, marginBottom: 8 },
   emptyText:  { fontSize: 15, color: '#6b7280', textAlign: 'center', lineHeight: 22 },
+
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 20,
+    paddingVertical: 10, paddingHorizontal: 18,
+    borderRadius: 8, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#eff6ff',
+  },
+  retryText: { fontSize: 15, fontWeight: '600', color: '#2563eb' },
 
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',

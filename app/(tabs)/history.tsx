@@ -21,6 +21,8 @@ import { audioService } from '@/services/audioService';
 import { ttsService } from '@/services/ttsService';
 import { translationProvider } from '@/services/translationProvider';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
+import { errorMessage } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 // Languages available for replay (no 'auto' option)
 const REPLAY_LANGUAGES = SUPPORTED_LANGUAGES.filter(l => l.code !== 'auto');
@@ -54,8 +56,8 @@ export default function HistoryScreen() {
       const data = await dynamoService.getConversationHistory(user.id, isUserView ? 5 : undefined);
       setHistory(data);
     } catch (error) {
-      console.error('Error in loadHistory:', error);
-      Alert.alert('Error', 'Failed to load history');
+      logger.error('Failed to load history', error, { userId: user.id });
+      Alert.alert('Error', errorMessage(error, 'Failed to load history'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -91,13 +93,23 @@ export default function HistoryScreen() {
       // Same language as originally translated + audio was persisted to S3 at
       // save time — stream the stored clip instead of paying for re-synthesis.
       if (!isDifferentLang && item.translated_audio_key) {
-        const url = await dynamoService.getAudioUrl(item.timestamp, 'translated');
-        if (url) {
-          await audioService.playAudio(url);
-          return;
-        }
         // Fall through to re-synthesis if the stored audio couldn't be fetched
-        // (e.g. it expired out of S3 but the DynamoDB reference lagged behind).
+        // (e.g. it expired out of S3 but the DynamoDB reference lagged behind),
+        // but log why — a failing bucket used to be indistinguishable from a
+        // clip that was simply never stored.
+        try {
+          const url = await dynamoService.getAudioUrl(item.timestamp, 'translated');
+          if (url) {
+            await audioService.playAudio(url);
+            return;
+          }
+          logger.warn('No stored audio for history item, re-synthesising', { timestamp: item.timestamp });
+        } catch (audioErr) {
+          logger.warn('Stored audio unavailable, re-synthesising', {
+            timestamp: item.timestamp,
+            error: errorMessage(audioErr),
+          });
+        }
       }
 
       let text = item.translated_text;
@@ -120,10 +132,11 @@ export default function HistoryScreen() {
       const provider = settings?.tts_provider ?? 'openai';
       const uri = await ttsService.generateSpeech(text, targetLang, provider as any);
       if (uri) await audioService.playAudio(uri);
-    } catch (err: any) {
+    } catch (err) {
+      logger.error('Replay failed', err, { itemId: item.id, targetLang });
       Alert.alert(
         'Replay Failed',
-        err?.message ?? 'Could not generate audio. Check your internet connection.'
+        errorMessage(err, 'Could not generate audio. Check your internet connection.')
       );
     } finally {
       setReplayingId(null);
@@ -150,8 +163,8 @@ export default function HistoryScreen() {
               }
               setHistory(history.filter((h) => h.id !== id));
             } catch (error) {
-              console.error('Error deleting item:', error);
-              Alert.alert('Error', 'Failed to delete translation');
+              logger.error('Failed to delete history item', error, { id });
+              Alert.alert('Error', errorMessage(error, 'Failed to delete translation'));
             }
           },
         },
@@ -174,8 +187,8 @@ export default function HistoryScreen() {
               await dynamoService.clearConversationHistory(user.id);
               setHistory([]);
             } catch (error) {
-              console.error('Error clearing history:', error);
-              Alert.alert('Error', 'Failed to clear history');
+              logger.error('Failed to clear history', error, { userId: user.id });
+              Alert.alert('Error', errorMessage(error, 'Failed to clear history'));
             }
           },
         },

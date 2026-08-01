@@ -13,12 +13,14 @@ import { LogOut, Save, Mic, Trash2 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { audioService } from '@/services/audioService';
 import { ttsService, TTSService } from '@/services/ttsService';
+import { errorMessage } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 export default function SettingsScreen() {
   // AuthGate (app/_layout.tsx) guarantees `user` is non-null by the time any
   // screen renders — sign-in/sign-up/OTP/password-reset UI lives there now,
   // not here.
-  const { user, settings, signOut, updateSettings, viewMode, setViewMode } = useAuth();
+  const { user, settings, settingsError, signOut, updateSettings, viewMode, setViewMode } = useAuth();
   const isUserView = user?.role === 'USER' || viewMode === 'user';
 
   const [ttsProvider, setTtsProvider] = useState<'elevenlabs' | 'openai' | 'device' | 'azure'>('device');
@@ -58,8 +60,9 @@ export default function SettingsScreen() {
     try {
       await signOut();
       Alert.alert('Success', 'Signed out successfully');
-    } catch {
-      Alert.alert('Error', 'Failed to sign out');
+    } catch (error) {
+      logger.error('Sign out failed', error, { userId: user?.id });
+      Alert.alert('Error', errorMessage(error, 'Failed to sign out'));
     }
   };
 
@@ -80,8 +83,8 @@ export default function SettingsScreen() {
       });
       Alert.alert('Success', 'Settings saved successfully!');
     } catch (error) {
-      console.error('Settings save error:', error);
-      Alert.alert('Error', 'Failed to save settings. Please try again.');
+      logger.error('Failed to save settings', error, { userId: user.id });
+      Alert.alert('Error', errorMessage(error, 'Failed to save settings. Please try again.'));
     }
   };
 
@@ -108,9 +111,10 @@ export default function SettingsScreen() {
           return prev + 1;
         });
       }, 1000);
-    } catch {
+    } catch (error) {
       setIsRecordingVoice(false);
-      Alert.alert('Error', 'Failed to start recording');
+      logger.error('Failed to start voice recording', error);
+      Alert.alert('Error', errorMessage(error, 'Failed to start recording'));
     }
   };
 
@@ -147,8 +151,8 @@ export default function SettingsScreen() {
 
       Alert.alert('Voice Applied', 'Your voice is now active. Future translations will sound like you.');
     } catch (error) {
-      console.error('Voice cloning error:', error);
-      Alert.alert('Error', error instanceof Error ? error.message : 'Voice cloning failed');
+      logger.error('Voice cloning failed', error, { userId: user?.id });
+      Alert.alert('Error', errorMessage(error, 'Voice cloning failed'));
     } finally {
       setIsCloningVoice(false);
       setRecordingSeconds(0);
@@ -188,6 +192,15 @@ export default function SettingsScreen() {
         <Text style={styles.title}>Settings</Text>
         <Text style={styles.subtitle}>Configure your preferences</Text>
       </View>
+
+      {/* The values below are local defaults, not the user's stored ones — saying
+          so beats silently presenting defaults as their saved preferences. */}
+      {settingsError && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerTitle}>Showing default settings</Text>
+          <Text style={styles.errorBannerText}>{settingsError}</Text>
+        </View>
+      )}
 
       <View style={styles.card}>
             <Text style={styles.sectionTitle}>Account</Text>
@@ -484,6 +497,24 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#6b7280',
+  },
+  errorBanner: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+  },
+  errorBannerTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#b91c1c',
+    marginBottom: 4,
+  },
+  errorBannerText: {
+    fontSize: 14,
+    color: '#991b1b',
   },
   card: {
     backgroundColor: '#ffffff',

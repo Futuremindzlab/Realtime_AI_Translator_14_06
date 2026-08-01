@@ -23,6 +23,8 @@ import { audioService } from '@/services/audioService';
 import { ttsService } from '@/services/ttsService';
 import { whisperService } from '@/services/whisperService';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
+import { errorMessage } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_MAX_WIDTH = Math.min(SCREEN_WIDTH, 600);
@@ -56,11 +58,15 @@ export default function HomeScreen() {
   useEffect(() => {
     // Always keep the progress callback active (February pattern — never clears on tab change)
     realtimeTranslationService.setProgressCallback(setProgress);
-    audioService.requestPermissions().catch(() => {});
+    audioService.requestPermissions().catch((err) =>
+      logger.warn('Microphone permission request failed at startup', { error: errorMessage(err) }));
     // Preload on-device Whisper in the background so non-Indic/RTL transcriptions
     // skip the cloud round trip once the (cached-after-first-run) model is ready.
     // transcribeWithFallback() already falls back to cloud if this hasn't resolved yet.
-    whisperService.initialize().catch(() => {});
+    whisperService.initialize().catch((err) =>
+      logger.warn('On-device Whisper preload failed — using cloud transcription', {
+        error: errorMessage(err),
+      }));
 
     const handleAppState = (next: AppStateStatus) => {
       if (next === 'background') {
@@ -71,7 +77,8 @@ export default function HomeScreen() {
         // at startup (permission dialog) or on any incoming notification.
         if (realtimeTranslationService.getIsActive()) {
           realtimeTranslationService.stopConversation();
-          audioService.forceCleanup().catch(() => {});
+          audioService.forceCleanup().catch((err) =>
+            logger.warn('Audio cleanup on backgrounding failed', { error: errorMessage(err) }));
           setIsRecording(false);
           setIsConversationRunning(false);
           setProgress(null);
@@ -93,7 +100,8 @@ export default function HomeScreen() {
       sub.remove();
       // Feb pattern: do NOT clear the progress callback on unmount so any in-flight
       // progress from a final cleanup cycle is still routed correctly.
-      realtimeTranslationService.cleanup().catch(() => {});
+      realtimeTranslationService.cleanup().catch((err) =>
+        logger.warn('Translation service cleanup failed on unmount', { error: errorMessage(err) }));
     };
   }, []);
 
@@ -132,12 +140,13 @@ export default function HomeScreen() {
         user?.id,
       );
       setIsRecording(true); // Set AFTER success so a failed start shows the error, not a red button
-    } catch (error: any) {
+    } catch (error) {
       setIsRecording(false);
       // Show error in status text so user knows what went wrong
+      logger.error('Failed to start recording', error);
       setProgress({
         stage: 'error',
-        error: error?.message || 'Could not start recording — check microphone permission',
+        error: errorMessage(error, 'Could not start recording — check microphone permission'),
       });
       await realtimeTranslationService.forceReset();
     }
@@ -147,7 +156,14 @@ export default function HomeScreen() {
     setIsRecording(false);
     try {
       await realtimeTranslationService.stopRealtimeRecording();
-    } catch {
+    } catch (error) {
+      // The reset used to be the only visible outcome: the screen fell back to
+      // idle as if the user had never spoken.
+      logger.error('Failed to finish the translation', error);
+      setProgress({
+        stage: 'error',
+        error: errorMessage(error, 'Translation failed. Please try again.'),
+      });
       await realtimeTranslationService.forceReset();
     }
   };
@@ -165,8 +181,13 @@ export default function HomeScreen() {
       .then(() => {
         setIsConversationRunning(false);
       })
-      .catch(async () => {
+      .catch(async (error) => {
         setIsConversationRunning(false);
+        logger.error('Conversation failed', error);
+        setProgress({
+          stage: 'error',
+          error: errorMessage(error, 'Conversation failed. Please try again.'),
+        });
         await realtimeTranslationService.forceReset();
       });
   };
@@ -357,6 +378,12 @@ export default function HomeScreen() {
                 <Text style={styles.textBoxContent}>{progress.translatedText}</Text>
               </View>
             )}
+
+            {/* Partial failure (no voice, playback died, history not saved) — the
+                translation itself succeeded, so it's a note, not an error state. */}
+            {progress.warning && (
+              <Text style={styles.warningText}>{progress.warning}</Text>
+            )}
           </View>
         )}
 
@@ -397,6 +424,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#64748b',
     marginTop: 4,
+  },
+  warningText: {
+    fontSize: 14,
+    color: '#b45309',
+    marginTop: 8,
   },
   card: {
     width: '100%',

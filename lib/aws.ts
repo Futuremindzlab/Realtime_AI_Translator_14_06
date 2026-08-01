@@ -6,6 +6,8 @@
  */
 import { CognitoUserPool, ICognitoStorage } from 'amazon-cognito-identity-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { errorMessage } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 const AWS_REGION          = process.env.EXPO_PUBLIC_AWS_REGION               || '';
 const USER_POOL_ID        = process.env.EXPO_PUBLIC_AWS_USER_POOL_ID         || '';
@@ -22,15 +24,20 @@ const cognitoStorage: ICognitoStorage = {
   },
   setItem(key: string, value: string): void {
     memoryCache[key] = value;
-    AsyncStorage.setItem(key, value).catch(() => {});
+    // Persisting is best-effort (the in-memory cache is authoritative for this
+    // session), but a failure means the session won't survive a restart.
+    AsyncStorage.setItem(key, value).catch((err) =>
+      logger.warn('Failed to persist Cognito session key', { key, error: errorMessage(err) }));
   },
   removeItem(key: string): void {
     delete memoryCache[key];
-    AsyncStorage.removeItem(key).catch(() => {});
+    AsyncStorage.removeItem(key).catch((err) =>
+      logger.warn('Failed to remove Cognito session key', { key, error: errorMessage(err) }));
   },
   clear(): void {
     Object.keys(memoryCache).forEach(k => delete memoryCache[k]);
-    AsyncStorage.clear().catch(() => {});
+    AsyncStorage.clear().catch((err) =>
+      logger.warn('Failed to clear Cognito session storage', { error: errorMessage(err) }));
   },
 };
 
@@ -45,8 +52,9 @@ async function hydrateCognitoStorage() {
         if (value !== null) memoryCache[key] = value;
       });
     }
-  } catch {
-    // Ignore hydration errors — fresh start
+  } catch (err) {
+    // Recoverable — the user just has to sign in again — but never invisible.
+    logger.warn('Cognito session hydration failed — starting fresh', { error: errorMessage(err) });
   }
 }
 hydrateCognitoStorage();

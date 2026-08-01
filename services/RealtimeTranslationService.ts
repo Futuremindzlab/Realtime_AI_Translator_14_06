@@ -5,7 +5,7 @@ import { ttsService, TTSProvider } from './ttsService';
 import { getCachedTranslation, cacheTranslation } from './translationCache';
 import { dynamoService } from './dynamoService';
 import { resolveLanguage, isCorrectScript, detectScriptLanguage } from '@/lib/constants';
-import { isNetworkError } from '@/lib/errors';
+import { errorMessage as toErrorMessage, isNetworkError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 
 // expo-file-system is native-only — audio history persistence is skipped on
@@ -30,6 +30,10 @@ export interface TranslationProgress {
   sourceText?: string;
   translatedText?: string;
   error?: string;
+  /** A part of the turn failed but the translation itself succeeded (e.g. no
+   *  voice could be synthesised, playback died, history couldn't be saved).
+   *  Reported alongside the result instead of being dropped. */
+  warning?: string;
   isRealtime?: boolean;
   currentPerson?: 'A' | 'B';
   currentSourceLanguage?: string;
@@ -218,7 +222,8 @@ export class RealtimeTranslationService {
     });
 
     // Persist to cache for future calls
-    cacheTranslation(text, sourceLanguage, targetLanguage, result).catch(() => {});
+    cacheTranslation(text, sourceLanguage, targetLanguage, result).catch((err) =>
+      logger.warn('Failed to cache translation', { error: toErrorMessage(err) }));
 
     console.log(`✅ Translation: "${result.substring(0, 80)}"`);
     return result;
@@ -365,10 +370,9 @@ export class RealtimeTranslationService {
       });
 
       const ttsStartedAt = Date.now();
-      const ttsUri = await ttsService.generateSpeech(
-        translatedText, this.currentTargetLanguage, this.currentTtsProvider
-      );
+      const { uri: ttsUri, warning: ttsWarning } = await this.synthesizeSpeech(translatedText);
       this.logDuration('tts_generate', ttsStartedAt);
+      let audioWarning = ttsWarning;
 
       // Play audio (ttsUri is null for 'device' provider — expo-speech already spoke)
       await audioService.forceCleanup();
@@ -376,6 +380,7 @@ export class RealtimeTranslationService {
         stage: 'playing',
         sourceText: actualText,
         translatedText,
+        warning: audioWarning,
         isRealtime: true,
       });
       this.logDuration('time_to_first_audio', pipelineStartedAt);
@@ -387,12 +392,14 @@ export class RealtimeTranslationService {
           this.logDuration('playback', playStartedAt);
           console.log('✅ Audio playback complete');
         } catch (playError) {
-          console.error('❌ Audio playback failed:', playError);
+          if (isNetworkError(playError)) throw playError;
+          logger.error('Audio playback failed', playError);
+          audioWarning = 'Could not play the translated audio.';
         }
       }
 
       // Save to history
-      await this.saveToHistory(
+      const historyWarning = await this.saveToHistory(
         this.currentSourceLanguage,
         this.currentTargetLanguage,
         actualText,
@@ -408,6 +415,7 @@ export class RealtimeTranslationService {
         stage: 'complete',
         sourceText: actualText,
         translatedText,
+        warning: [audioWarning, historyWarning].filter(Boolean).join(' ') || undefined,
         isRealtime: true,
       });
       this.isActive = false;
@@ -467,7 +475,8 @@ export class RealtimeTranslationService {
     this.isActive = false;
     this.autoContinueEnabled = false;
     // Stop any in-progress recording or playback immediately
-    audioService.forceCleanup().catch(() => {});
+    audioService.forceCleanup().catch((err) =>
+      logger.warn('Audio cleanup after stopConversation failed', { error: toErrorMessage(err) }));
   }
 
   /**
@@ -595,7 +604,8 @@ export class RealtimeTranslationService {
         // terminal: log it, surface a clear non-retryable message, and stop.
         if (isNetworkError(error)) {
           logger.error('Conversation turn aborted — network unreachable', error, { person });
-          await audioService.forceCleanup().catch(() => {});
+          await audioService.forceCleanup().catch((err) =>
+            logger.warn('Audio cleanup after network failure failed', { error: toErrorMessage(err) }));
           this.updateProgress({
             stage: 'error',
             error: 'Connection lost — check your internet connection and restart.',
@@ -607,7 +617,8 @@ export class RealtimeTranslationService {
         consecutiveErrors++;
         logger.error('Conversation turn failed', error, { person, attempt: consecutiveErrors, maxAttempts: MAX_ERRORS });
         // Ensure we clean up any leftover audio state
-        await audioService.forceCleanup().catch(() => {});
+        await audioService.forceCleanup().catch((err) =>
+          logger.warn('Audio cleanup after failed turn failed', { error: toErrorMessage(err) }));
 
         const errorMessage = error instanceof Error ? error.message : 'Conversation failed.';
         if (consecutiveErrors >= MAX_ERRORS) {
@@ -630,7 +641,8 @@ export class RealtimeTranslationService {
     console.log('🗣️ Conversation loop ended');
     this.isActive = false;
     this.autoContinueEnabled = false;
-    await audioService.forceCleanup().catch(() => {});
+    await audioService.forceCleanup().catch((err) =>
+      logger.warn('Audio cleanup after conversation loop failed', { error: toErrorMessage(err) }));
   }
 
   /**
@@ -725,11 +737,9 @@ export class RealtimeTranslationService {
     });
 
     const ttsStartedAt = Date.now();
-    const ttsUri = await ttsService.generateSpeech(
-      translatedText, this.currentTargetLanguage, this.currentTtsProvider
-    );
+    const { uri: ttsUri, warning: ttsWarning } = await this.synthesizeSpeech(translatedText);
     this.logDuration('tts_generate', ttsStartedAt);
-    console.log(`✅ TTS generated`);
+    let audioWarning = ttsWarning;
 
     // ── 4. PLAY AUDIO (MUST complete before next turn) ──
     // Recording is already stopped (stopRecording was called in conversationLoop).
@@ -738,6 +748,7 @@ export class RealtimeTranslationService {
       stage: 'playing',
       sourceText: actualText,
       translatedText,
+      warning: audioWarning,
       isRealtime: true,
     });
     this.logDuration('time_to_first_audio', pipelineStartedAt);
@@ -749,12 +760,16 @@ export class RealtimeTranslationService {
         this.logDuration('playback', playStartedAt);
         console.log('✅ Audio playback complete');
       } catch (playError) {
-        console.error('❌ Audio playback failed (translation was successful):', playError);
+        // A dead network is terminal for the whole conversation (handled by the
+        // loop's isNetworkError branch); anything else only cost us the audio.
+        if (isNetworkError(playError)) throw playError;
+        logger.error('Audio playback failed (translation was successful)', playError);
+        audioWarning = 'Could not play the translated audio.';
       }
     }
 
     // Save to history
-    await this.saveToHistory(
+    const historyWarning = await this.saveToHistory(
       this.currentSourceLanguage,
       this.currentTargetLanguage,
       actualText,
@@ -764,6 +779,17 @@ export class RealtimeTranslationService {
       ttsUri,
     );
 
+    const warning = [audioWarning, historyWarning].filter(Boolean).join(' ');
+    if (warning) {
+      this.updateProgress({
+        stage: 'playing',
+        sourceText: actualText,
+        translatedText,
+        warning,
+        isRealtime: true,
+      });
+    }
+
     this.logDuration('total_turn', pipelineStartedAt);
 
     // Turn processed successfully — don't set 'complete' here
@@ -772,8 +798,29 @@ export class RealtimeTranslationService {
     return { success: true };
   }
 
+  /**
+   * Synthesise the translated text, degrading to "no audio" rather than losing
+   * the turn: the text translation already succeeded, so a TTS outage is
+   * reported as a warning the UI shows next to the result. A NetworkError is
+   * rethrown — that one is terminal and handled by the conversation loop.
+   */
+  private async synthesizeSpeech(
+    translatedText: string,
+  ): Promise<{ uri: string | null; warning?: string }> {
+    try {
+      const uri = await ttsService.generateSpeech(
+        translatedText, this.currentTargetLanguage, this.currentTtsProvider
+      );
+      return { uri };
+    } catch (error) {
+      if (isNetworkError(error)) throw error;
+      logger.error('Speech synthesis failed', error, { language: this.currentTargetLanguage });
+      return { uri: null, warning: 'Text translated, but no voice could be generated.' };
+    }
+  }
+
   // ────────────────────────────────────────────────────────────────
-  // History
+  // History (see synthesizeSpeech above for the TTS degradation path)
   // ────────────────────────────────────────────────────────────────
 
   /**
@@ -795,7 +842,7 @@ export class RealtimeTranslationService {
       if (!base64) return null;
       return { base64, contentType };
     } catch (err) {
-      console.warn('[RealtimeTranslationService] Failed to read audio for history upload:', err);
+      logger.warn('Failed to read audio for history upload', { error: toErrorMessage(err), uri });
       return null;
     }
   }
@@ -808,8 +855,8 @@ export class RealtimeTranslationService {
     conversationMode: boolean,
     sourceAudioUri?: string | null,
     translatedAudioUri?: string | null,
-  ): Promise<void> {
-    if (!this.currentUserId || !dynamoService.isInitialized()) return;
+  ): Promise<string | undefined> {
+    if (!this.currentUserId || !dynamoService.isInitialized()) return undefined;
     try {
       const [sourceAudio, translatedAudio] = await Promise.all([
         this.readAudioForUpload(sourceAudioUri),
@@ -835,8 +882,12 @@ export class RealtimeTranslationService {
         } : {}),
       });
       console.log('✅ Saved to history');
+      return undefined;
     } catch (error) {
-      console.error('❌ Failed to save to history:', error);
+      // Non-fatal for the turn, but the user is told — otherwise the entry just
+      // never appears in History with no explanation.
+      logger.error('Failed to save translation to history', error, { userId: this.currentUserId });
+      return 'Translation was not saved to history.';
     }
   }
 

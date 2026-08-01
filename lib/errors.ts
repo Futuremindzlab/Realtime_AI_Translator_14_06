@@ -18,6 +18,23 @@ export class NetworkError extends Error {
   }
 }
 
+/**
+ * An HTTP error response from our own backend (4xx/5xx). Carries the status
+ * code and response body so callers can branch on it — a 404 from
+ * `/audio-url` means "nothing stored", while a 500 means "the request
+ * failed" and must not be presented to the user as an empty result.
+ */
+export class HttpError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly body: string,
+    message?: string,
+  ) {
+    super(message ?? `API ${status}: ${body.substring(0, 200)}`);
+    this.name = 'HttpError';
+  }
+}
+
 /** True for our own NetworkError, or a raw fetch-level TypeError we haven't wrapped yet. */
 export function isNetworkError(error: unknown): boolean {
   if (error instanceof NetworkError) return true;
@@ -32,4 +49,11 @@ export function isNetworkError(error: unknown): boolean {
     return message.includes('failed to fetch') || message.includes('network request failed');
   }
   return false;
+}
+
+/** Best-effort human-readable message for any thrown value. */
+export function errorMessage(error: unknown, fallback = 'Something went wrong'): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error) return error;
+  return fallback;
 }

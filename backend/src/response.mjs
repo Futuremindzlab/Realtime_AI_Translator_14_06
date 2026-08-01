@@ -18,9 +18,22 @@ export const sendNoContent  = ()        => ({ statusCode: 204, headers: CORS, bo
 export const sendError = (statusCode, message, detail) =>
   json(statusCode, { error: message, ...(detail ? { detail } : {}) });
 
-/** Convert caught errors into structured API responses */
-export function handleError(err) {
-  console.error('Lambda error:', err);
-  const code = err.statusCode || 500;
-  return sendError(code, err.message || 'Internal server error');
+/**
+ * Convert caught errors into structured API responses.
+ *
+ * `context` (route, userId, …) is logged alongside the stack so a 500 in
+ * CloudWatch can be tied back to the request that caused it instead of being
+ * an anonymous one-line message.
+ */
+export function handleError(err, context = {}) {
+  const code = err?.statusCode || 500;
+  console.error(JSON.stringify({
+    level: code >= 500 ? 'error' : 'warn',
+    message: 'Lambda error',
+    status: code,
+    error: err?.message ?? String(err),
+    stack: err?.stack,
+    ...context,
+  }));
+  return sendError(code, err?.message || 'Internal server error');
 }

@@ -13,7 +13,7 @@
  */
 
 import { UserSettings, ConversationHistory } from '@/types';
-import { NetworkError, isNetworkError } from '@/lib/errors';
+import { HttpError, NetworkError, isNetworkError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 
 const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
@@ -65,7 +65,8 @@ class DynamoService {
     if (!this.sessionRefreshHandler) return false;
     try {
       return await this.sessionRefreshHandler();
-    } catch {
+    } catch (error) {
+      logger.error('Cognito session refresh failed', error);
       return false;
     }
   }
@@ -110,7 +111,8 @@ class DynamoService {
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      throw new Error(`API ${response.status}: ${body.substring(0, 200)}`);
+      logger.error('Backend returned an error response', undefined, { path, status: response.status, body: body.substring(0, 200) });
+      throw new HttpError(response.status, body);
     }
 
     // 204 No Content — return void
@@ -121,12 +123,15 @@ class DynamoService {
 
   // ── USER SETTINGS ───────────────────────────────────────────────────────────
 
+  /** Throws on failure. A `null` return means "no settings stored yet" (HTTP 404)
+   *  — the caller creates defaults for that case, so a transient failure must
+   *  never be reported the same way or it would overwrite real settings. */
   async getUserSettings(userId: string): Promise<UserSettings | null> {
     try {
       return await this.request<UserSettings>('/v1/settings');
     } catch (error) {
-      console.error('❌ getUserSettings error:', error);
-      return null;
+      if (error instanceof HttpError && error.status === 404) return null;
+      throw error;
     }
   }
 
@@ -137,67 +142,59 @@ class DynamoService {
     });
   }
 
+  /** Throws on failure — a settings write that didn't happen must not look
+   *  like a successful save to the caller. */
   async updateUserSettings(
     userId: string,
     updates: Partial<UserSettings>,
-  ): Promise<UserSettings | null> {
-    try {
-      return await this.request<UserSettings>('/v1/settings', {
-        method: 'PATCH',
-        body:   JSON.stringify(updates),
-      });
-    } catch (error) {
-      console.error('❌ updateUserSettings error:', error);
-      return null;
-    }
+  ): Promise<UserSettings> {
+    return this.request<UserSettings>('/v1/settings', {
+      method: 'PATCH',
+      body:   JSON.stringify(updates),
+    });
   }
 
   // ── CONVERSATION HISTORY ────────────────────────────────────────────────────
 
+  /** Throws on failure — an empty array means the user genuinely has no history. */
   async getConversationHistory(userId: string, limit?: number): Promise<ConversationHistory[]> {
-    try {
-      const pageSize = limit ?? 200;
-      const allItems: ConversationHistory[] = [];
-      let nextKey: string | null = null;
+    const pageSize = limit ?? 200;
+    const allItems: ConversationHistory[] = [];
+    let nextKey: string | null = null;
 
-      do {
-        const qs: string = nextKey
-          ? `?limit=${pageSize}&lastKey=${encodeURIComponent(nextKey)}`
-          : `?limit=${pageSize}`;
+    do {
+      const qs: string = nextKey
+        ? `?limit=${pageSize}&lastKey=${encodeURIComponent(nextKey)}`
+        : `?limit=${pageSize}`;
 
-        type PageResult = { items: ConversationHistory[]; nextKey: string | null };
-        const data: PageResult = await this.request<PageResult>(`/v1/translations${qs}`);
+      type PageResult = { items: ConversationHistory[]; nextKey: string | null };
+      const data: PageResult = await this.request<PageResult>(`/v1/translations${qs}`);
 
-        allItems.push(...(data.items || []));
-        nextKey = data.nextKey;
+      allItems.push(...(data.items || []));
+      nextKey = data.nextKey;
 
-        // If a hard limit was requested, stop after the first page
-        if (limit !== undefined) break;
-      } while (nextKey);
+      // If a hard limit was requested, stop after the first page
+      if (limit !== undefined) break;
+    } while (nextKey);
 
-      return allItems;
-    } catch (error) {
-      console.error('❌ getConversationHistory error:', error);
-      return [];
-    }
+    return allItems;
   }
 
+  /** Throws on failure — the caller decides whether a lost history entry is
+   *  fatal (it isn't, mid-conversation) and how to surface it. */
   async putConversationHistory(item: PutConversationHistoryInput): Promise<void> {
-    try {
-      await this.request('/v1/translations', {
-        method: 'POST',
-        body:   JSON.stringify(item),
-      });
-    } catch (error) {
-      console.error('❌ putConversationHistory error:', error);
-    }
+    await this.request('/v1/translations', {
+      method: 'POST',
+      body:   JSON.stringify(item),
+    });
   }
 
   /**
    * Mint a fresh short-lived presigned S3 URL for a history item's stored
-   * audio. Returns null if no audio was stored for that item (device-TTS
-   * turns never persist audio) or the request otherwise fails — callers
-   * should treat null as "fall back to on-the-fly synthesis", not an error.
+   * audio. Returns null only when the backend reports no stored audio for that
+   * item (HTTP 404 — device-TTS turns never persist audio), which callers treat
+   * as "fall back to on-the-fly synthesis". Any other failure throws so the
+   * caller can tell a missing clip apart from a broken request.
    */
   async getAudioUrl(timestamp: string, type: 'source' | 'translated' = 'translated'): Promise<string | null> {
     try {
@@ -206,8 +203,8 @@ class DynamoService {
       );
       return data.url;
     } catch (error) {
-      console.error('❌ getAudioUrl error:', error);
-      return null;
+      if (error instanceof HttpError && error.status === 404) return null;
+      throw error;
     }
   }
 
@@ -230,30 +227,21 @@ class DynamoService {
     source_language?: string;
     target_language?: string;
   }): Promise<ConversationHistory[]> {
-    try {
-      const qs = new URLSearchParams();
-      if (params.q)               qs.set('q', params.q);
-      if (params.source_language) qs.set('source_language', params.source_language);
-      if (params.target_language) qs.set('target_language', params.target_language);
+    const qs = new URLSearchParams();
+    if (params.q)               qs.set('q', params.q);
+    if (params.source_language) qs.set('source_language', params.source_language);
+    if (params.target_language) qs.set('target_language', params.target_language);
 
-      const data = await this.request<{ items: ConversationHistory[] }>(
-        `/v1/translations/search?${qs}`,
-      );
-      return data.items || [];
-    } catch (error) {
-      console.error('❌ searchHistory error:', error);
-      return [];
-    }
+    const data = await this.request<{ items: ConversationHistory[] }>(
+      `/v1/translations/search?${qs}`,
+    );
+    return data.items || [];
   }
 
-  /** Return translation count + per-language-pair breakdown */
+  /** Return translation count + per-language-pair breakdown. Throws on failure —
+   *  a zeroed dashboard is indistinguishable from "no translations yet". */
   async getStats(): Promise<{ total: number; pairs: Record<string, number> }> {
-    try {
-      return await this.request('/v1/translations/stats');
-    } catch (error) {
-      console.error('❌ getStats error:', error);
-      return { total: 0, pairs: {} };
-    }
+    return this.request('/v1/translations/stats');
   }
 
   /** Toggle favorite on a translation */
@@ -266,29 +254,19 @@ class DynamoService {
 
   /** Return only favorited translations */
   async getFavorites(): Promise<ConversationHistory[]> {
-    try {
-      const data = await this.request<{ items: ConversationHistory[] }>(
-        '/v1/translations/favorites',
-      );
-      return data.items || [];
-    } catch (error) {
-      console.error('❌ getFavorites error:', error);
-      return [];
-    }
+    const data = await this.request<{ items: ConversationHistory[] }>(
+      '/v1/translations/favorites',
+    );
+    return data.items || [];
   }
 
   /** Delete all items older than a given ISO timestamp */
   async deleteOldHistory(before: string): Promise<number> {
-    try {
-      const data = await this.request<{ deleted: number }>(
-        `/v1/translations/old?before=${encodeURIComponent(before)}`,
-        { method: 'DELETE' },
-      );
-      return data.deleted || 0;
-    } catch (error) {
-      console.error('❌ deleteOldHistory error:', error);
-      return 0;
-    }
+    const data = await this.request<{ deleted: number }>(
+      `/v1/translations/old?before=${encodeURIComponent(before)}`,
+      { method: 'DELETE' },
+    );
+    return data.deleted || 0;
   }
 }
 
