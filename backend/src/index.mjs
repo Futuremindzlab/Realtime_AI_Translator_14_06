@@ -81,9 +81,26 @@ import {
   proxyAzureTts,
 } from './handlers/aiProxy.mjs';
 
-import { sendSuccess, sendError } from './response.mjs';
+import { sendSuccess, sendError, handleError } from './response.mjs';
 
+/**
+ * Top-level guard. Routing itself (path decoding, metrics) and any handler that
+ * throws outside its own try/catch used to escape as a raw Lambda failure —
+ * API Gateway then answered with an opaque 502/"Internal server error" and no
+ * CORS headers, so the app saw a network-level failure with nothing logged
+ * about the actual cause.
+ */
 export const handler = async (event) => {
+  try {
+    return await route(event);
+  } catch (err) {
+    return handleError(err, {
+      route: `${event?.httpMethod} ${event?.path}`,
+    });
+  }
+};
+
+const route = async (event) => {
   const method   = event.httpMethod;
   const rawPath  = event.path || '';
   // Strip stage prefix if present (e.g. /prod/v1/... → /v1/...)

@@ -11,6 +11,8 @@ import { dynamoService } from '@/services/dynamoService';
 import { ttsService } from '@/services/ttsService';
 import { UserSettings, UserRole } from '@/types';
 import { DEFAULT_SOURCE_LANGUAGE, DEFAULT_TARGET_LANGUAGE } from '@/lib/constants';
+import { errorMessage } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 const VIEW_MODE_KEY = '@rbac_view_mode';
 
@@ -23,6 +25,9 @@ interface AppUser {
 interface AuthContextType {
   user: AppUser | null;
   settings: UserSettings | null;
+  /** Non-null when the last settings load failed and `settings` therefore holds
+   *  local fallback values rather than the user's stored preferences. */
+  settingsError: string | null;
   loading: boolean;
   needsNewPassword: boolean;
   needsConfirmation: boolean;
@@ -93,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [needsForgotPasswordCode, setNeedsForgotPasswordCode] = useState(false);
   const [pendingForgotPasswordEmail, setPendingForgotPasswordEmail] = useState<string | null>(null);
   const [viewMode, setViewModeState] = useState<'admin' | 'user'>('admin');
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   useEffect(() => {
     // Hydrate persisted view mode preference
@@ -100,7 +106,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (stored === 'user' || stored === 'admin') {
         setViewModeState(stored);
       }
-    }).catch(() => {});
+    }).catch((err) => logger.warn('Failed to read persisted view mode', { error: errorMessage(err) }));
 
     // If Cognito is not available, use offline mode immediately
     if (!userPool) {
@@ -176,7 +182,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const setViewMode = (mode: 'admin' | 'user') => {
     setViewModeState(mode);
-    AsyncStorage.setItem(VIEW_MODE_KEY, mode).catch(() => {});
+    AsyncStorage.setItem(VIEW_MODE_KEY, mode).catch((err) =>
+      logger.warn('Failed to persist view mode', { error: errorMessage(err) }));
   };
 
   const loadUserSettings = async (userId: string) => {
@@ -203,9 +210,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ttsService.setVoiceGender(data.voice_gender || 'female');
         setSettings(data);
       }
+      setSettingsError(null);
     } catch (err) {
-      console.error('Error in loadUserSettings:', err);
+      // The app stays usable on local defaults, but the failure is recorded so
+      // the Settings screen can say so — silently showing defaults made a failed
+      // load look like the user's real, stored preferences.
+      logger.error('Failed to load user settings', err, { userId });
       setSettings(OFFLINE_SETTINGS);
+      setSettingsError(errorMessage(err, 'Could not load your saved settings.'));
     } finally {
       setLoading(false);
     }
@@ -543,7 +555,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setPendingPhone(null);
     // Reset view mode to admin when signing out
     setViewModeState('admin');
-    AsyncStorage.removeItem(VIEW_MODE_KEY).catch(() => {});
+    AsyncStorage.removeItem(VIEW_MODE_KEY).catch((err) =>
+      logger.warn('Failed to clear persisted view mode', { error: errorMessage(err) }));
     console.log('✅ Signed out');
   };
 
@@ -556,10 +569,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    // Throws if the write failed — callers surface it instead of reporting a
+    // save that never reached the backend as successful.
     const updated = await dynamoService.updateUserSettings(user.id, newSettings);
-    if (updated) {
-      setSettings(updated);
-    }
+    setSettings(updated);
+    setSettingsError(null);
   };
 
   const refreshSettings = async () => {
@@ -571,6 +585,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const value = {
     user,
     settings,
+    settingsError,
     loading,
     needsNewPassword,
     needsConfirmation,

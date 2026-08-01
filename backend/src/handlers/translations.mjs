@@ -115,13 +115,20 @@ export async function createTranslation(event) {
 
     // Upload audio best-effort — a failed upload (network blip, transient S3
     // error) must not lose the text history entry itself, so this never throws.
+    // The failures are reported back in `audio_upload_failed` so the client can
+    // tell "no audio was sent" from "the audio we sent wasn't stored".
+    const audioUploadFailed = [];
     if (sourceAudio) {
       try {
         const key = `audio/${userId}/${id}/source.${sourceAudio.extension}`;
         await uploadAudio(key, sourceAudio.buffer, sourceAudio.contentType);
         item.source_audio_key = key;
       } catch (err) {
-        console.error('Failed to upload source audio, continuing without it:', err);
+        audioUploadFailed.push('source');
+        console.error(JSON.stringify({
+          level: 'error', message: 'Failed to upload source audio, continuing without it',
+          userId, id, error: err?.message, stack: err?.stack,
+        }));
       }
     }
     if (translatedAudio) {
@@ -130,12 +137,18 @@ export async function createTranslation(event) {
         await uploadAudio(key, translatedAudio.buffer, translatedAudio.contentType);
         item.translated_audio_key = key;
       } catch (err) {
-        console.error('Failed to upload translated audio, continuing without it:', err);
+        audioUploadFailed.push('translated');
+        console.error(JSON.stringify({
+          level: 'error', message: 'Failed to upload translated audio, continuing without it',
+          userId, id, error: err?.message, stack: err?.stack,
+        }));
       }
     }
 
     await db.send(new PutCommand({ TableName: TRANSLATIONS_TABLE, Item: item }));
-    return sendCreated(item);
+    return sendCreated(
+      audioUploadFailed.length ? { ...item, audio_upload_failed: audioUploadFailed } : item
+    );
   } catch (err) {
     return handleError(err);
   }

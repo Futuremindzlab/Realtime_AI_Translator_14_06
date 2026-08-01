@@ -1,6 +1,8 @@
 import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
 import { preprocessForWhisper } from './audioProcessor';
+import { errorMessage } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 // expo-file-system is native-only. On web, TTS audio arrives as blob: URLs and
 // recording produces blob: URIs — neither path touches FileSystem, so a no-op
@@ -26,6 +28,7 @@ export class AudioService {
       const { status } = await Audio.requestPermissionsAsync();
       return status === 'granted';
     } catch (error) {
+      logger.error('Microphone permission request failed', error);
       return false;
     }
   }
@@ -39,11 +42,20 @@ export class AudioService {
 
       // Ensure no leftover audio objects from previous operations
       if (this.recording) {
-        try { await this.recording.stopAndUnloadAsync(); } catch (e) {}
+        try {
+          await this.recording.stopAndUnloadAsync();
+        } catch (e) {
+          logger.warn('Could not unload stale recording before starting a new one', { error: errorMessage(e) });
+        }
         this.recording = null;
       }
       if (this.sound) {
-        try { await this.sound.stopAsync(); await this.sound.unloadAsync(); } catch (e) {}
+        try {
+          await this.sound.stopAsync();
+          await this.sound.unloadAsync();
+        } catch (e) {
+          logger.warn('Could not unload stale sound before recording', { error: errorMessage(e) });
+        }
         this.sound = null;
       }
 
@@ -193,8 +205,11 @@ export class AudioService {
       }
     }
 
-    console.error('❌ All playback attempts failed:', lastError);
-    // Don't throw - let conversation continue even if audio fails
+    // Propagate: the caller decides whether missing audio is fatal (it isn't
+    // mid-conversation) and how to tell the user. Returning normally here made
+    // a dead speaker look like a completed playback to every caller.
+    logger.error('All playback attempts failed', lastError, { audioUrl });
+    throw lastError ?? new Error('Audio playback failed');
   }
 
   private async playAudioInternal(audioUrl: string): Promise<void> {
@@ -221,7 +236,11 @@ export class AudioService {
 
       // 2. Unload any existing sound
       if (this.sound) {
-        try { await this.sound.unloadAsync(); } catch (e) {}
+        try {
+          await this.sound.unloadAsync();
+        } catch (e) {
+          logger.warn('Could not unload previous sound before playback', { error: errorMessage(e) });
+        }
         this.sound = null;
       }
 
@@ -250,13 +269,11 @@ export class AudioService {
       );
       this.sound = sound;
 
-      if (status.isLoaded) {
-        console.log(`🔊 Loaded & playing! Duration: ${status.durationMillis}ms`);
-      } else {
-        console.error('❌ Sound failed to load');
+      if (!status.isLoaded) {
         this.audioMode = 'idle';
-        return;
+        throw new Error('Audio failed to load');
       }
+      console.log(`🔊 Loaded & playing! Duration: ${status.durationMillis}ms`);
 
       // 5. Wait for playback to finish
       await new Promise<void>((resolve) => {
@@ -272,7 +289,9 @@ export class AudioService {
               try {
                 await sound.unloadAsync();
                 this.sound = null;
-              } catch (e) {}
+              } catch (e) {
+                logger.warn('Could not unload sound after playback finished', { error: errorMessage(e) });
+              }
               this.audioMode = 'idle';
               resolve();
             }
@@ -288,7 +307,8 @@ export class AudioService {
           if (!resolved) {
             resolved = true;
             console.warn(`⚠️ Audio timeout after ${timeoutMs}ms, continuing...`);
-            try { sound.unloadAsync(); } catch (e) {}
+            sound.unloadAsync().catch((e) =>
+              logger.warn('Could not unload sound after playback timeout', { error: errorMessage(e) }));
             this.sound = null;
             this.audioMode = 'idle';
             resolve();
@@ -404,7 +424,7 @@ export class AudioService {
         recording.setProgressUpdateInterval(250);
         console.log('🎤 [AutoStop] Metering listener attached');
       } catch (e) {
-        console.warn('⚠️ [AutoStop] Metering not supported, using fixed timer only');
+        logger.warn('[AutoStop] Metering not supported, using fixed timer only', { error: errorMessage(e) });
       }
     });
   }
