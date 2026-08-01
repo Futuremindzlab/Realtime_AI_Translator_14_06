@@ -51,6 +51,13 @@ Parameters:
     Default: ""
     Description: Azure Speech region (e.g. eastus) — required only if AzureSpeechKey is set
 
+  # Comma-separated list of browser origins allowed to read API responses
+  # (the Expo web build / metrics dashboard). Leave blank to fall back to '*'.
+  CorsAllowedOrigins:
+    Type: String
+    Default: ""
+    Description: Comma-separated allowed browser origins for CORS (blank = allow any origin)
+
   AudioRetentionDays:
     Type: Number
     Default: 90
@@ -86,7 +93,17 @@ Resources:
       Cors:
         AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
         AllowHeaders: "'Content-Type,Authorization'"
+        # The Lambda emits the real per-request Access-Control-Allow-Origin from
+        # CorsAllowedOrigins (see backend/src/response.mjs); this only covers
+        # gateway-generated responses.
         AllowOrigin:  "'*'"
+      # Blanket throttle so no single caller — including on the unauthenticated
+      # OTP route — can flood the API (there is no usage plan on this stack).
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod:   "*"
+          ThrottlingRateLimit:  50
+          ThrottlingBurstLimit: 100
       Auth:
         DefaultAuthorizer: CognitoJwtAuthorizer
         AddDefaultAuthorizerToCorsPreflight: false
@@ -117,6 +134,8 @@ Resources:
           AZURE_SPEECH_KEY:    !Ref AzureSpeechKey
           AZURE_SPEECH_REGION: !Ref AzureSpeechRegion
           AUDIO_BUCKET:        !Ref AudioBucket
+          RATE_LIMIT_TABLE:    !Ref RateLimitTable
+          CORS_ALLOWED_ORIGINS: !Ref CorsAllowedOrigins
           API_GATEWAY_NAME:    !Sub "ai-translator-api-${Stage}"
       Events:
         # Catch-all proxy — routes every path+method to the single handler
@@ -263,6 +282,23 @@ Resources:
             AllowedHeaders: ['*']
             MaxAge: 3000
 
+  # ── DynamoDB Table — rate-limit counters (see src/lib/rateLimit.mjs) ──
+  # Short-lived, purely operational data: one item per key+window, removed by TTL.
+  RateLimitTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:   !Sub "ai-translator-rate-limits-${Stage}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: rate_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: rate_key
+          KeyType:        HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
   UserSettingsTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -300,6 +336,7 @@ Resources:
               - !GetAtt ConversationHistoryTable.Arn
               - !Sub "${ConversationHistoryTable.Arn}/index/*"
               - !GetAtt UserSettingsTable.Arn
+              - !GetAtt RateLimitTable.Arn
 
   # ── IAM policy for Lambda → S3 audio bucket ─────────────
   # Scoped to objects only (bucket/*), not the bucket itself — no ListBucket,

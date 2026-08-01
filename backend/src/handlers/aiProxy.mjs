@@ -14,24 +14,33 @@
  */
 
 import { getUserId } from '../auth.mjs';
-import { sendSuccess, sendError, handleError } from '../response.mjs';
-
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-  'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-};
+import { sendSuccess, sendError, handleError, corsHeaders } from '../response.mjs';
 
 /** Relay an upstream provider's non-2xx response verbatim (status + raw body). */
 function passthroughError(statusCode, rawBodyText) {
   return {
     statusCode,
-    headers: { 'Content-Type': 'application/json', ...CORS },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
     body: rawBodyText || JSON.stringify({ error: `Upstream error ${statusCode}` }),
   };
 }
 
 const MAX_AUDIO_BYTES = 6 * 1024 * 1024; // Lambda sync invocation payload ceiling (both directions)
+
+// Model/voice allow-lists. The API keys these routes spend live server-side, so
+// an authenticated client must not be able to pick an arbitrary (far more
+// expensive, or entirely unrelated) upstream model with them.
+const ALLOWED_CHAT_MODELS = new Set(['gpt-4o', 'gpt-4o-mini']);
+const ALLOWED_TTS_MODELS  = new Set(['tts-1', 'tts-1-hd', 'gpt-4o-mini-tts']);
+const ALLOWED_ELEVENLABS_MODELS = new Set([
+  'eleven_flash_v2_5', 'eleven_multilingual_v2', 'eleven_v3',
+]);
+
+// Chat is only ever used for short translation prompts — cap the request so a
+// single call can't run up an unbounded token bill.
+const MAX_CHAT_MESSAGES     = 8;
+const MAX_CHAT_CHARS         = 24000;
+const MAX_CHAT_OUTPUT_TOKENS = 2048;
 
 // ─────────────────────────────────────────────────────────
 // POST /v1/proxy/openai/chat  — translation (and any other chat completion)
@@ -48,6 +57,16 @@ export async function proxyOpenAIChat(event) {
     if (!model || !Array.isArray(messages) || messages.length === 0) {
       return sendError(400, 'model and messages[] are required');
     }
+    if (!ALLOWED_CHAT_MODELS.has(model)) {
+      return sendError(400, `model must be one of: ${[...ALLOWED_CHAT_MODELS].join(', ')}`);
+    }
+    if (messages.length > MAX_CHAT_MESSAGES) {
+      return sendError(400, `messages[] must contain at most ${MAX_CHAT_MESSAGES} entries`);
+    }
+    const totalChars = messages.reduce((sum, m) => sum + String(m?.content ?? '').length, 0);
+    if (totalChars > MAX_CHAT_CHARS) {
+      return sendError(400, `messages[] content must be under ${MAX_CHAT_CHARS} characters`);
+    }
 
     const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -56,7 +75,7 @@ export async function proxyOpenAIChat(event) {
         model,
         messages,
         temperature: temperature ?? 0.2,
-        max_tokens: max_tokens ?? 1024,
+        max_tokens: Math.min(Number(max_tokens) || 1024, MAX_CHAT_OUTPUT_TOKENS),
       }),
     });
 
@@ -84,6 +103,9 @@ export async function proxyOpenAITts(event) {
     const { model, voice, input, speed, response_format } = body;
     if (!voice || !input) return sendError(400, 'voice and input are required');
     if (input.length > 4096) return sendError(400, 'input exceeds 4096 characters');
+    if (model && !ALLOWED_TTS_MODELS.has(model)) {
+      return sendError(400, `model must be one of: ${[...ALLOWED_TTS_MODELS].join(', ')}`);
+    }
 
     const upstream = await fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
@@ -181,6 +203,10 @@ export async function proxyElevenLabsTts(event) {
     const body = JSON.parse(event.body || '{}');
     const { voiceId, text, model_id, voice_settings, language_code } = body;
     if (!voiceId || !text || !model_id) return sendError(400, 'voiceId, text and model_id are required');
+    if (!ALLOWED_ELEVENLABS_MODELS.has(model_id)) {
+      return sendError(400, `model_id must be one of: ${[...ALLOWED_ELEVENLABS_MODELS].join(', ')}`);
+    }
+    if (text.length > 4096) return sendError(400, 'text exceeds 4096 characters');
 
     const upstream = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
       method: 'POST',

@@ -4,6 +4,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 // Table names come from SAM environment variables injected at deploy time
 export const TRANSLATIONS_TABLE = process.env.TRANSLATIONS_TABLE || 'conversation_history';
 export const SETTINGS_TABLE     = process.env.SETTINGS_TABLE     || 'user_settings';
+export const RATE_LIMIT_TABLE   = process.env.RATE_LIMIT_TABLE   || '';
 
 // Singleton DynamoDB DocumentClient — reused across warm Lambda invocations
 const raw = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
