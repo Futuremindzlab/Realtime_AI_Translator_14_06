@@ -1,74 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import { StatCard } from "@/components/StatCard";
 import { SectionCard } from "@/components/SectionCard";
 import { BarList } from "@/components/BarList";
-import { signIn, type Session } from "@/lib/cognitoAuth";
+import { DashboardPage } from "@/components/DashboardPage";
+import { useDashboardData } from "@/lib/useDashboardData";
+import type { Session } from "@/lib/cognitoAuth";
 import { fetchUserAnalytics, type UserAnalyticsResponse } from "@/lib/userAnalyticsApi";
 import { fetchDashboardMetrics, type DashboardMetricsResponse } from "@/lib/dashboardMetricsApi";
 
-const SESSION_KEY = "ops_dashboard_session";
-
-function loadStoredSession(): Session | null {
-  if (typeof window === "undefined") return null;
-  const raw = sessionStorage.getItem(SESSION_KEY);
-  return raw ? (JSON.parse(raw) as Session) : null;
-}
-
-function SignInForm({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      const session = await signIn(email, password);
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-      onSignedIn(session);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="max-w-sm mx-auto mt-16">
-      <SectionCard title="Sign in" description="OWNER-role Cognito account required to view usage data">
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            required
-          />
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-brand-600 text-white text-sm font-medium py-2 disabled:opacity-50"
-          >
-            {loading ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-      </SectionCard>
-    </div>
-  );
+interface AnalyticsData {
+  usage: UserAnalyticsResponse;
+  metrics: DashboardMetricsResponse;
 }
 
 function UnavailableNote({ reason }: { reason: string }) {
@@ -81,78 +25,23 @@ function formatDate(iso: string | null) {
 }
 
 export default function UserAnalyticsPage() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [usage, setUsage] = useState<UserAnalyticsResponse | null>(null);
-  const [metrics, setMetrics] = useState<DashboardMetricsResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [checkedStorage, setCheckedStorage] = useState(false);
-
-  useEffect(() => {
-    setSession(loadStoredSession());
-    setCheckedStorage(true);
+  const load = useCallback(async (s: Session): Promise<AnalyticsData> => {
+    const [usage, metrics] = await Promise.all([
+      fetchUserAnalytics(s.idToken),
+      fetchDashboardMetrics(s.idToken),
+    ]);
+    return { usage, metrics };
   }, []);
-
-  const load = useCallback(async (s: Session) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [usageResult, metricsResult] = await Promise.all([
-        fetchUserAnalytics(s.idToken),
-        fetchDashboardMetrics(s.idToken),
-      ]);
-      setUsage(usageResult);
-      setMetrics(metricsResult);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load analytics");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (session) load(session);
-  }, [session, load]);
-
-  if (!checkedStorage) return null;
-
-  if (!session) {
-    return <SignInForm onSignedIn={setSession} />;
-  }
-
-  if (session.role !== "OWNER") {
-    return (
-      <div className="max-w-sm mx-auto mt-16">
-        <SectionCard title="Access restricted">
-          <p className="text-sm text-slate-600">
-            Signed in as {session.email}, but this dashboard requires the OWNER role.
-          </p>
-        </SectionCard>
-      </div>
-    );
-  }
+  const state = useDashboardData<AnalyticsData>(load, "Failed to load analytics");
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">User Analytics</h1>
-          <p className="text-sm text-slate-500">
-            {metrics && `Generated ${new Date(metrics.generatedAt).toLocaleString()}`}
-          </p>
-        </div>
-        <button
-          onClick={() => session && load(session)}
-          className="text-sm text-brand-600 border border-brand-600 rounded-lg px-3 py-1.5"
-        >
-          Refresh
-        </button>
-      </div>
-
-      {loading && !metrics && <p className="text-sm text-slate-500">Loading…</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
-
-      {metrics && usage && (
+    <DashboardPage
+      title="User Analytics"
+      signInDescription="OWNER-role Cognito account required to view usage data"
+      state={state}
+      subtitle={(data) => data && `Generated ${new Date(data.metrics.generatedAt).toLocaleString()}`}
+    >
+      {({ usage, metrics }) => (
         <>
           {/* ── 1. Revenue ── */}
           <SectionCard title="Revenue" description="By product tier">
@@ -283,6 +172,6 @@ export default function UserAnalyticsPage() {
           </SectionCard>
         </>
       )}
-    </div>
+    </DashboardPage>
   );
 }

@@ -14,13 +14,7 @@
  */
 
 import { getUserId } from '../auth.mjs';
-import { sendSuccess, sendError, handleError } from '../response.mjs';
-
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-  'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-};
+import { sendSuccess, sendError, handleError, CORS } from '../response.mjs';
 
 /** Relay an upstream provider's non-2xx response verbatim (status + raw body). */
 function passthroughError(statusCode, rawBodyText) {
@@ -33,6 +27,39 @@ function passthroughError(statusCode, rawBodyText) {
 
 const MAX_AUDIO_BYTES = 6 * 1024 * 1024; // Lambda sync invocation payload ceiling (both directions)
 
+/** Structured error helper — handleError turns these into the matching response. */
+function fail(statusCode, message) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+}
+
+/** Server-side provider credential, or a 500 when the provider isn't configured. */
+function requireProviderKey(envName, providerLabel) {
+  const value = process.env[envName];
+  if (!value) throw fail(500, `${providerLabel} is not configured on the server`);
+  return value;
+}
+
+/** Decode a base64 audio upload, rejecting empty and oversized payloads. */
+function decodeAudioUpload(base64, emptyMessage) {
+  const buffer = Buffer.from(base64, 'base64');
+  if (buffer.length === 0) throw fail(400, emptyMessage);
+  if (buffer.length > MAX_AUDIO_BYTES) throw fail(400, 'Audio file is too large (max 6MB via this API)');
+  return buffer;
+}
+
+/** Return an upstream TTS audio body as the standard base64 payload. */
+async function sendUpstreamAudio(upstream) {
+  const arrayBuffer = await upstream.arrayBuffer();
+  if (arrayBuffer.byteLength > MAX_AUDIO_BYTES) return sendError(502, 'TTS audio too large to return');
+
+  return sendSuccess({
+    audioBase64: Buffer.from(arrayBuffer).toString('base64'),
+    contentType: 'audio/mpeg',
+  });
+}
+
 // ─────────────────────────────────────────────────────────
 // POST /v1/proxy/openai/chat  — translation (and any other chat completion)
 // Body: { model, messages, temperature?, max_tokens? }
@@ -40,8 +67,7 @@ const MAX_AUDIO_BYTES = 6 * 1024 * 1024; // Lambda sync invocation payload ceili
 export async function proxyOpenAIChat(event) {
   try {
     getUserId(event);
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return sendError(500, 'OpenAI is not configured on the server');
+    const apiKey = requireProviderKey('OPENAI_API_KEY', 'OpenAI');
 
     const body = JSON.parse(event.body || '{}');
     const { model, messages, temperature, max_tokens } = body;
@@ -77,8 +103,7 @@ export async function proxyOpenAIChat(event) {
 export async function proxyOpenAITts(event) {
   try {
     getUserId(event);
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return sendError(500, 'OpenAI is not configured on the server');
+    const apiKey = requireProviderKey('OPENAI_API_KEY', 'OpenAI');
 
     const body = JSON.parse(event.body || '{}');
     const { model, voice, input, speed, response_format } = body;
@@ -99,13 +124,7 @@ export async function proxyOpenAITts(event) {
 
     if (!upstream.ok) return passthroughError(upstream.status, await upstream.text());
 
-    const arrayBuffer = await upstream.arrayBuffer();
-    if (arrayBuffer.byteLength > MAX_AUDIO_BYTES) return sendError(502, 'TTS audio too large to return');
-
-    return sendSuccess({
-      audioBase64: Buffer.from(arrayBuffer).toString('base64'),
-      contentType: 'audio/mpeg',
-    });
+    return await sendUpstreamAudio(upstream);
   } catch (err) {
     return handleError(err);
   }
@@ -119,16 +138,13 @@ export async function proxyOpenAITts(event) {
 export async function proxyOpenAITranscribe(event) {
   try {
     getUserId(event);
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return sendError(500, 'OpenAI is not configured on the server');
+    const apiKey = requireProviderKey('OPENAI_API_KEY', 'OpenAI');
 
     const body = JSON.parse(event.body || '{}');
     const { audioBase64, fileName, mimeType, language, prompt } = body;
     if (!audioBase64) return sendError(400, 'audioBase64 is required');
 
-    const buffer = Buffer.from(audioBase64, 'base64');
-    if (buffer.length === 0) return sendError(400, 'Audio file is empty');
-    if (buffer.length > MAX_AUDIO_BYTES) return sendError(400, 'Audio file is too large (max 6MB via this API)');
+    const buffer = decodeAudioUpload(audioBase64, 'Audio file is empty');
 
     const blob = new Blob([buffer], { type: mimeType || 'audio/wav' });
 
@@ -175,8 +191,7 @@ export async function proxyOpenAITranscribe(event) {
 export async function proxyElevenLabsTts(event) {
   try {
     getUserId(event);
-    const apiKey = process.env.ELEVENLABS_API_KEY;
-    if (!apiKey) return sendError(500, 'ElevenLabs is not configured on the server');
+    const apiKey = requireProviderKey('ELEVENLABS_API_KEY', 'ElevenLabs');
 
     const body = JSON.parse(event.body || '{}');
     const { voiceId, text, model_id, voice_settings, language_code } = body;
@@ -190,13 +205,7 @@ export async function proxyElevenLabsTts(event) {
 
     if (!upstream.ok) return passthroughError(upstream.status, await upstream.text());
 
-    const arrayBuffer = await upstream.arrayBuffer();
-    if (arrayBuffer.byteLength > MAX_AUDIO_BYTES) return sendError(502, 'TTS audio too large to return');
-
-    return sendSuccess({
-      audioBase64: Buffer.from(arrayBuffer).toString('base64'),
-      contentType: 'audio/mpeg',
-    });
+    return await sendUpstreamAudio(upstream);
   } catch (err) {
     return handleError(err);
   }
@@ -210,16 +219,13 @@ export async function proxyElevenLabsTts(event) {
 export async function proxyElevenLabsVoiceClone(event) {
   try {
     getUserId(event);
-    const apiKey = process.env.ELEVENLABS_API_KEY;
-    if (!apiKey) return sendError(500, 'ElevenLabs is not configured on the server');
+    const apiKey = requireProviderKey('ELEVENLABS_API_KEY', 'ElevenLabs');
 
     const body = JSON.parse(event.body || '{}');
     const { name, audioBase64, mimeType, fileName } = body;
     if (!name || !audioBase64) return sendError(400, 'name and audioBase64 are required');
 
-    const buffer = Buffer.from(audioBase64, 'base64');
-    if (buffer.length === 0) return sendError(400, 'Audio is empty');
-    if (buffer.length > MAX_AUDIO_BYTES) return sendError(400, 'Audio file is too large (max 6MB via this API)');
+    const buffer = decodeAudioUpload(audioBase64, 'Audio is empty');
 
     const blob = new Blob([buffer], { type: mimeType || 'audio/m4a' });
     const fd = new FormData();
@@ -250,9 +256,8 @@ export async function proxyElevenLabsVoiceClone(event) {
 export async function proxyAzureTts(event) {
   try {
     getUserId(event);
-    const apiKey = process.env.AZURE_SPEECH_KEY;
-    const region = process.env.AZURE_SPEECH_REGION;
-    if (!apiKey || !region) return sendError(500, 'Azure Speech is not configured on the server');
+    const apiKey = requireProviderKey('AZURE_SPEECH_KEY', 'Azure Speech');
+    const region = requireProviderKey('AZURE_SPEECH_REGION', 'Azure Speech');
 
     const body = JSON.parse(event.body || '{}');
     const { ssml } = body;
@@ -273,13 +278,7 @@ export async function proxyAzureTts(event) {
       return sendError(upstream.status, `Azure TTS failed: ${errText.substring(0, 200)}`);
     }
 
-    const arrayBuffer = await upstream.arrayBuffer();
-    if (arrayBuffer.byteLength > MAX_AUDIO_BYTES) return sendError(502, 'TTS audio too large to return');
-
-    return sendSuccess({
-      audioBase64: Buffer.from(arrayBuffer).toString('base64'),
-      contentType: 'audio/mpeg',
-    });
+    return await sendUpstreamAudio(upstream);
   } catch (err) {
     return handleError(err);
   }

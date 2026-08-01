@@ -66,6 +66,25 @@ function validateAudioUpload(base64, contentType, label) {
   return { buffer, contentType, extension };
 }
 
+/**
+ * Delete every queried history item (in DynamoDB's 25-item BatchWrite chunks)
+ * together with the S3 audio objects they reference.
+ */
+async function deleteTranslationItems(items) {
+  for (let i = 0; i < items.length; i += 25) {
+    const chunk = items.slice(i, i + 25);
+    await db.send(new BatchWriteCommand({
+      RequestItems: {
+        [TRANSLATIONS_TABLE]: chunk.map(item => ({
+          DeleteRequest: { Key: { user_id: item.user_id, timestamp: item.timestamp } },
+        })),
+      },
+    }));
+  }
+
+  await deleteAudioObjects(items.flatMap(i => [i.source_audio_key, i.translated_audio_key]));
+}
+
 // ─────────────────────────────────────────────────────────
 // POST /v1/translations
 // Body: { timestamp, source_language, target_language,
@@ -385,23 +404,7 @@ export async function clearAllTranslations(event) {
     const items = result.Items || [];
     if (items.length === 0) return sendNoContent();
 
-    // BatchWrite in chunks of 25 (DynamoDB limit)
-    const chunks = [];
-    for (let i = 0; i < items.length; i += 25) {
-      chunks.push(items.slice(i, i + 25));
-    }
-
-    for (const chunk of chunks) {
-      await db.send(new BatchWriteCommand({
-        RequestItems: {
-          [TRANSLATIONS_TABLE]: chunk.map(item => ({
-            DeleteRequest: { Key: { user_id: item.user_id, timestamp: item.timestamp } },
-          })),
-        },
-      }));
-    }
-
-    await deleteAudioObjects(items.flatMap(i => [i.source_audio_key, i.translated_audio_key]));
+    await deleteTranslationItems(items);
 
     return sendNoContent();
   } catch (err) {
@@ -432,22 +435,7 @@ export async function deleteOldTranslations(event) {
     const items = result.Items || [];
     if (items.length === 0) return sendSuccess({ deleted: 0 });
 
-    const chunks = [];
-    for (let i = 0; i < items.length; i += 25) {
-      chunks.push(items.slice(i, i + 25));
-    }
-
-    for (const chunk of chunks) {
-      await db.send(new BatchWriteCommand({
-        RequestItems: {
-          [TRANSLATIONS_TABLE]: chunk.map(item => ({
-            DeleteRequest: { Key: { user_id: item.user_id, timestamp: item.timestamp } },
-          })),
-        },
-      }));
-    }
-
-    await deleteAudioObjects(items.flatMap(i => [i.source_audio_key, i.translated_audio_key]));
+    await deleteTranslationItems(items);
 
     return sendSuccess({ deleted: items.length });
   } catch (err) {

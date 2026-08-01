@@ -11,6 +11,7 @@ import {
 import { LogIn } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { CountryCodeSelector } from '@/components/CountryCodeSelector';
+import { PrimaryButton } from '@/components/PrimaryButton';
 
 /**
  * Blocks the whole app (every tab, not just Settings) behind sign-in.
@@ -265,16 +266,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           />
 
           {authError && <Text style={styles.authError}>{authError}</Text>}
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleNewPassword}
-            disabled={authLoading}>
-            {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Set Password & Sign In</Text>
-            )}
-          </TouchableOpacity>
+          <PrimaryButton title="Set Password & Sign In" onPress={handleNewPassword} loading={authLoading} />
         </View>
       ) : needsConfirmation ? (
         <View style={styles.card}>
@@ -293,16 +285,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           />
 
           {authError && <Text style={styles.authError}>{authError}</Text>}
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleConfirmSignUp}
-            disabled={authLoading}>
-            {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Verify & Continue</Text>
-            )}
-          </TouchableOpacity>
+          <PrimaryButton title="Verify & Continue" onPress={handleConfirmSignUp} loading={authLoading} />
         </View>
       ) : needsOtpVerification ? (
         <View style={styles.card}>
@@ -321,16 +304,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           />
 
           {authError && <Text style={styles.authError}>{authError}</Text>}
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleVerifyOtp}
-            disabled={authLoading}>
-            {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Verify & Continue</Text>
-            )}
-          </TouchableOpacity>
+          <PrimaryButton title="Verify & Continue" onPress={handleVerifyOtp} loading={authLoading} />
 
           <TouchableOpacity onPress={() => { setAuthError(null); setOtpCode(''); cancelPhoneVerification(); }}>
             <Text style={styles.linkText}>Entered the wrong number? Start over</Text>
@@ -375,16 +349,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           </Text>
 
           {authError && <Text style={styles.authError}>{authError}</Text>}
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleConfirmResetPassword}
-            disabled={authLoading}>
-            {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Reset Password</Text>
-            )}
-          </TouchableOpacity>
+          <PrimaryButton title="Reset Password" onPress={handleConfirmResetPassword} loading={authLoading} />
 
           <TouchableOpacity onPress={handleCancelForgotPassword}>
             <Text style={styles.linkText}>Back to Sign In</Text>
@@ -407,16 +372,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           />
 
           {authError && <Text style={styles.authError}>{authError}</Text>}
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={handleSendResetCode}
-            disabled={authLoading}>
-            {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={styles.primaryButtonText}>Send Reset Code</Text>
-            )}
-          </TouchableOpacity>
+          <PrimaryButton title="Send Reset Code" onPress={handleSendResetCode} loading={authLoading} />
 
           <TouchableOpacity onPress={handleCancelForgotPassword}>
             <Text style={styles.linkText}>Back to Sign In</Text>
@@ -456,21 +412,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               )}
               {authError && <Text style={styles.authError}>{authError}</Text>}
 
-              <TouchableOpacity
-                style={styles.primaryButton}
+              <PrimaryButton
+                title={isLogin ? 'Sign In' : 'Sign Up'}
                 onPress={handleAuth}
-                disabled={authLoading}>
-                {authLoading ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <>
-                    <LogIn size={20} color="#ffffff" />
-                    <Text style={styles.primaryButtonText}>
-                      {isLogin ? 'Sign In' : 'Sign Up'}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
+                loading={authLoading}
+                icon={<LogIn size={20} color="#ffffff" />}
+              />
 
               {isLogin && (
                 <TouchableOpacity
@@ -499,19 +446,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               </View>
               {authError && <Text style={styles.authError}>{authError}</Text>}
 
-              <TouchableOpacity
-                style={styles.primaryButton}
+              <PrimaryButton
+                title="Send Code"
                 onPress={handleSendOtp}
-                disabled={authLoading}>
-                {authLoading ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
-                ) : (
-                  <>
-                    <LogIn size={20} color="#ffffff" />
-                    <Text style={styles.primaryButtonText}>Send Code</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+                loading={authLoading}
+                icon={<LogIn size={20} color="#ffffff" />}
+              />
             </>
           )}
 
@@ -622,19 +562,5 @@ const styles = StyleSheet.create({
   },
   phoneInput: {
     flex: 1,
-  },
-  primaryButton: {
-    backgroundColor: '#2563eb',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 14,
-    borderRadius: 8,
-    gap: 8,
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

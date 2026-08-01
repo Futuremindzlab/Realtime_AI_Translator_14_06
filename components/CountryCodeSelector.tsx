@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { ChevronDown } from 'lucide-react-native';
+import { PickerSheet, pickerStyles } from '@/components/PickerSheet';
 
 export interface CountryCode {
   dialCode: string;
@@ -47,101 +48,43 @@ export const CountryCodeSelector: React.FC<CountryCodeSelectorProps> = ({
         <ChevronDown size={18} color="#6b7280" />
       </TouchableOpacity>
 
-      <Modal
+      <PickerSheet
         visible={modalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Country Code</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Text style={styles.doneButton}>Done</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
-              {COUNTRY_CODES.map((c) => (
-                <TouchableOpacity
-                  key={c.dialCode + c.name}
-                  style={[
-                    styles.item,
-                    selectedDialCode === c.dialCode && styles.itemSelected,
-                  ]}
-                  onPress={() => {
-                    onSelect(c.dialCode);
-                    setModalVisible(false);
-                  }}>
-                  <Text style={styles.itemText}>{c.flag}  {c.name}</Text>
-                  <Text style={styles.itemDialCode}>{c.dialCode}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+        title="Country Code"
+        onClose={() => setModalVisible(false)}>
+        {COUNTRY_CODES.map((c) => (
+          <TouchableOpacity
+            key={c.dialCode + c.name}
+            style={[styles.item, selectedDialCode === c.dialCode && pickerStyles.itemSelected]}
+            onPress={() => {
+              onSelect(c.dialCode);
+              setModalVisible(false);
+            }}>
+            <Text style={styles.itemText}>{c.flag}  {c.name}</Text>
+            <Text style={styles.itemDialCode}>{c.dialCode}</Text>
+          </TouchableOpacity>
+        ))}
+      </PickerSheet>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   selector: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 12,
+    ...pickerStyles.selector,
     paddingVertical: 14,
     paddingHorizontal: 14,
     minWidth: 100,
   },
   selectedText: {
-    fontSize: 16,
-    color: '#111827',
+    ...pickerStyles.selectedText,
     marginRight: 6,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    height: 500,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  doneButton: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2563eb',
-  },
   item: {
+    ...pickerStyles.item,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  itemSelected: {
-    backgroundColor: '#eff6ff',
   },
   itemText: {
     fontSize: 16,
