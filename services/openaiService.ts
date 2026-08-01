@@ -1,5 +1,7 @@
 import { Platform } from 'react-native';
 import { proxyPost } from '@/lib/apiProxy';
+import { NetworkError, isNetworkError } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 // Script-specific seed prompts: bias Whisper toward the correct Unicode block
 // so it does not transliterate or fall back to a similar language.
@@ -114,16 +116,24 @@ export class OpenAIService {
 
       return { text: data.text, detectedLanguage: data.detectedLanguage };
     } catch (error: any) {
-      console.error('Error transcribing audio:', error);
+      logger.error('Error transcribing audio', error);
 
-      if (error.status === 401 || error.message?.includes('API key')) {
+      // Bug fix: a raw fetch-level failure (offline, DNS, CORS, backend down) threw
+      // a bare `TypeError: Failed to fetch`, which matched none of the branches
+      // below (they only checked for the *string* "network") and fell through to
+      // the generic "Failed to transcribe audio: Failed to fetch" message. That
+      // message was indistinguishable from any other soft failure, so the caller
+      // (RealtimeTranslationService) treated it as retryable and looped back into
+      // Listening mode instead of stopping. isNetworkError() catches this case
+      // (and our own wrapped NetworkError) before it can be mislabeled.
+      if (isNetworkError(error)) {
+        throw new NetworkError('Network error. Please check your internet connection.', error);
+      } else if (error.status === 401 || error.message?.includes('API key')) {
         throw new Error('Transcription service is temporarily unavailable. Please try again shortly.');
       } else if (error.status === 429 || error.message?.includes('quota') || error.message?.includes('rate limit')) {
         throw new Error('Transcription quota exceeded or rate limited. Please try again later.');
       } else if (error.status === 400) {
         throw new Error(`Bad request to transcription service: ${error.message}`);
-      } else if (error.message?.includes('network') || error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') {
-        throw new Error('Network error. Please check your internet connection.');
       } else {
         throw new Error(`Failed to transcribe audio: ${error.message || 'Unknown error'}`);
       }

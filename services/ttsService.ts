@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as Speech from 'expo-speech';
 import { proxyPost } from '@/lib/apiProxy';
+import { isNetworkError } from '@/lib/errors';
 
 // expo-file-system is native-only. On web, saveBase64Audio() uses
 // URL.createObjectURL() instead, so FileSystem is never called.
@@ -360,6 +361,9 @@ export class TTSService {
       return fileUri;
     } catch (error) {
       console.error('OpenAI TTS error:', error);
+      // Preserve NetworkError identity instead of flattening it into a generic
+      // Error string — callers need isNetworkError() to still recognize it.
+      if (isNetworkError(error)) throw error;
       throw new Error(`OpenAI TTS failed: ${error}`);
     }
   }
@@ -394,6 +398,7 @@ export class TTSService {
       return fileUri;
     } catch (error) {
       console.error('Azure TTS error:', error);
+      if (isNetworkError(error)) throw error;
       throw new Error(`Azure TTS failed: ${error}`);
     }
   }
@@ -526,6 +531,7 @@ export class TTSService {
       return await this.saveBase64Audio(data.audioBase64, data.contentType || 'audio/mpeg', 'elevenlabs_tts');
     } catch (error) {
       console.error('ElevenLabs TTS error:', error);
+      if (isNetworkError(error)) throw error;
       throw new Error(`ElevenLabs TTS failed: ${error}`);
     }
   }

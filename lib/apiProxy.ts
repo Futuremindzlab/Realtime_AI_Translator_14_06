@@ -7,16 +7,34 @@
  * request-specific JSON body; auth + base URL are handled here.
  */
 import { dynamoService } from '@/services/dynamoService';
+import { NetworkError, isNetworkError } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 
+/** Wraps a raw fetch() call and re-throws transport-level failures (offline, DNS,
+ *  CORS, backend unreachable) as a typed NetworkError instead of letting the
+ *  browser's bare `TypeError: Failed to fetch` propagate unclassified. */
+async function safeFetch(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (err) {
+    logger.error('Network request failed', err, { url });
+    if (isNetworkError(err)) {
+      throw new NetworkError('Unable to reach the server — check your internet connection.', err);
+    }
+    throw err;
+  }
+}
+
 /** POST JSON to one of our backend's AI-provider proxy routes. Returns the raw Response
- *  so callers can keep their existing .ok / .status / .json() / .text() handling. */
+ *  so callers can keep their existing .ok / .status / .json() / .text() handling.
+ *  Throws NetworkError (see lib/errors.ts) if the request never reaches the server. */
 export async function proxyPost(path: string, body: Record<string, any>): Promise<Response> {
   if (!API_BASE) throw new Error('EXPO_PUBLIC_API_BASE_URL is not set in .env');
 
   const doFetch = (token: string) =>
-    fetch(`${API_BASE}${path}`, {
+    safeFetch(`${API_BASE}${path}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

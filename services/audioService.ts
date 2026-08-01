@@ -16,6 +16,10 @@ export class AudioService {
   private chunkTimer: any = null;
   private onChunkReady: ((uri: string) => void) | null = null;
   private audioMode: 'idle' | 'recording' | 'playback' = 'idle';
+  // Feature: immediate-stop control. Holds the pending auto-stop recording's
+  // finalizer while one is in flight, so interruptAutoStop() can end the turn
+  // right now instead of waiting for the silence/fixed-duration timers.
+  private pendingAutoStopFinish: (() => void) | null = null;
 
   async requestPermissions(): Promise<boolean> {
     try {
@@ -338,6 +342,7 @@ export class AudioService {
         if (resolved) return;
         resolved = true;
         clearTimeout(fallbackTimer);
+        this.pendingAutoStopFinish = null;
         console.log(`🎤 [AutoStop] Finishing recording (hasSpeech=${hasSpeech})`);
         if (this.recording === recording) {
           const uri = await this.stopRecording();
@@ -346,6 +351,11 @@ export class AudioService {
           resolve(null);
         }
       };
+
+      // Expose this turn's finalizer so interruptAutoStop() (feature: immediate
+      // stop, e.g. a "stop talking" button) can end it early — same finalize path
+      // as the silence timer, just triggered on demand instead of by elapsed time.
+      this.pendingAutoStopFinish = finish;
 
       // Fallback: fixed duration timer (always works, even without metering)
       const fallbackTimer = setTimeout(() => {
@@ -367,6 +377,7 @@ export class AudioService {
             if (!resolved) {
               resolved = true;
               clearTimeout(fallbackTimer);
+              this.pendingAutoStopFinish = null;
               resolve(null);
             }
             return;
@@ -399,6 +410,21 @@ export class AudioService {
   }
 
   isRecording(): boolean { return this.recording !== null; }
+
+  /**
+   * Feature: immediate-stop control. Ends the in-flight startRecordingWithAutoStop()
+   * turn right now — same finalize path as a silence-timeout, just triggered on
+   * demand (e.g. a "stop talking" button) instead of by elapsed time. No-op if no
+   * auto-stop recording is currently in flight.
+   */
+  interruptAutoStop(): void {
+    if (this.pendingAutoStopFinish) {
+      console.log('⏭️ [AutoStop] Interrupted externally — finishing turn now');
+      this.pendingAutoStopFinish();
+    } else {
+      console.log('⏭️ [AutoStop] Interrupt requested but no auto-stop recording is in flight');
+    }
+  }
 }
 
 export const audioService = new AudioService();

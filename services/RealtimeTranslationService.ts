@@ -5,6 +5,8 @@ import { ttsService, TTSProvider } from './ttsService';
 import { getCachedTranslation, cacheTranslation } from './translationCache';
 import { dynamoService } from './dynamoService';
 import { resolveLanguage, isCorrectScript, detectScriptLanguage } from '@/lib/constants';
+import { isNetworkError } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 // expo-file-system is native-only — audio history persistence is skipped on
 // web, where recording/TTS URIs are blob: URLs FileSystem can't read anyway.
@@ -54,6 +56,19 @@ export class RealtimeTranslationService {
   // proxy's ~6MB Lambda payload ceiling. 90s of 16kHz mono audio stays comfortably
   // under that limit on both the WAV (iOS) and compressed m4a (Android) paths.
   private static readonly SINGLE_MODE_MAX_DURATION_MS = 90_000;
+
+  // Feature: configurable silence/waiting timeout for conversation mode. If the
+  // current speaker says nothing within this window, control automatically hands
+  // over to the other person (see conversationLoop's silence-timeout branch)
+  // instead of re-prompting the same person indefinitely. Overridable per-session
+  // via startConversation()'s `silenceTimeoutMs` param.
+  private static readonly DEFAULT_SILENCE_TIMEOUT_MS = 10_000;
+  private silenceTimeoutMs = RealtimeTranslationService.DEFAULT_SILENCE_TIMEOUT_MS;
+
+  // Consecutive silence handovers without either person producing real speech —
+  // capped so a conversation with no one talking doesn't ping-pong forever.
+  private consecutiveSilenceHandovers = 0;
+  private static readonly MAX_CONSECUTIVE_SILENCE_HANDOVERS = 6;
 
   private clearSingleModeMaxDurationTimer() {
     if (this.singleModeMaxDurationTimer) {
@@ -422,7 +437,10 @@ export class RealtimeTranslationService {
     sourceLanguage: string,
     targetLanguage: string,
     ttsProvider: TTSProvider = 'openai',
-    userId?: string
+    userId?: string,
+    // Feature: configurable silence/waiting timeout (ms) before control auto-hands
+    // over to Person B. Defaults to DEFAULT_SILENCE_TIMEOUT_MS (10s) if omitted.
+    silenceTimeoutMs: number = RealtimeTranslationService.DEFAULT_SILENCE_TIMEOUT_MS,
   ): Promise<void> {
     this.isActive = true;
     this.autoContinueEnabled = true;
@@ -433,9 +451,11 @@ export class RealtimeTranslationService {
     this.currentTargetLanguage = targetLanguage;
     this.currentTtsProvider = ttsProvider;
     this.currentUserId = userId;
+    this.silenceTimeoutMs = silenceTimeoutMs > 0 ? silenceTimeoutMs : RealtimeTranslationService.DEFAULT_SILENCE_TIMEOUT_MS;
+    this.consecutiveSilenceHandovers = 0;
 
     console.log('🗣️ ═══════════════════════════════════');
-    console.log(`🗣️ CONVERSATION STARTED: ${sourceLanguage} ↔ ${targetLanguage}`);
+    console.log(`🗣️ CONVERSATION STARTED: ${sourceLanguage} ↔ ${targetLanguage} (silence timeout: ${this.silenceTimeoutMs}ms)`);
     console.log('🗣️ ═══════════════════════════════════');
 
     // Run the conversation loop (blocks until stopped)
@@ -450,6 +470,38 @@ export class RealtimeTranslationService {
     audioService.forceCleanup().catch(() => {});
   }
 
+  /**
+   * Feature: immediate-stop control. Lets the UI (a "stop talking" button, a
+   * push-to-talk release, etc.) end the current speaker's turn right now instead
+   * of waiting out the silence timeout — the in-flight recording is finalized
+   * exactly as if silence had just been detected, so the pipeline (transcribe →
+   * translate → TTS) proceeds immediately with whatever was captured.
+   * No-op if nothing is currently recording.
+   */
+  interruptCurrentTurn(): void {
+    console.log('⏭️ Interrupt requested — ending current turn immediately');
+    audioService.interruptAutoStop();
+  }
+
+  /** Flip speaker + swap source/target languages, then settle audio state before the next turn. */
+  private async swapTurnToNextPerson(): Promise<void> {
+    this.isPersonATurn = !this.isPersonATurn;
+    if (this.isPersonATurn) {
+      this.currentSourceLanguage = this.originalSourceLanguage;
+      this.currentTargetLanguage = this.originalTargetLanguage;
+    } else {
+      this.currentSourceLanguage = this.originalTargetLanguage;
+      this.currentTargetLanguage = this.originalSourceLanguage;
+    }
+    console.log(`🔄 Next → Person ${this.isPersonATurn ? 'A' : 'B'}: ${this.currentSourceLanguage} → ${this.currentTargetLanguage}`);
+
+    // Brief pause, then ensure audio resources are released before next recording
+    this.updateProgress({ stage: 'waiting', isRealtime: true });
+    await new Promise(r => setTimeout(r, 1000));
+    await audioService.forceCleanup();
+    await new Promise(r => setTimeout(r, 200));
+  }
+
   private async conversationLoop(): Promise<void> {
     let consecutiveErrors = 0;
     const MAX_ERRORS = 3;
@@ -461,15 +513,15 @@ export class RealtimeTranslationService {
         console.log(`\n═══ Person ${person}'s turn ═══`);
         console.log(`   ${this.currentSourceLanguage} → ${this.currentTargetLanguage}`);
 
-        // ── STEP 1: RECORD (auto-stops on silence, max 10s) ──
+        // ── STEP 1: RECORD (auto-stops on silence, hard-caps at silenceTimeoutMs) ──
         this.updateProgress({ stage: 'recording', isRealtime: true });
-        console.log(`🎤 Recording for Person ${person} (max 10s, auto-stops on 2.5s silence)...`);
+        console.log(`🎤 Recording for Person ${person} (max ${this.silenceTimeoutMs / 1000}s, auto-stops on 2.5s silence)...`);
 
         // startRecordingWithAutoStop starts the recording and returns its URI when done:
         // - stops automatically after 2.5s of silence following at least 1.5s of speech
-        // - hard-caps at 10s regardless
+        // - hard-caps at this.silenceTimeoutMs regardless (feature: configurable timeout)
         // - returns null if forceCleanup() was called externally (e.g. stopConversation())
-        const audioUri = await audioService.startRecordingWithAutoStop(10000, -45, 2500, 1500);
+        const audioUri = await audioService.startRecordingWithAutoStop(this.silenceTimeoutMs, -45, 2500, 1500);
         console.log(`🎤 Recording: ${audioUri ? 'OK' : 'null'}`);
 
         if (!this.isActive || !this.autoContinueEnabled) break;
@@ -499,40 +551,61 @@ export class RealtimeTranslationService {
 
         if (success) {
           consecutiveErrors = 0;
-
-          // ── STEP 3: SWAP languages ──
-          this.isPersonATurn = !this.isPersonATurn;
-          if (this.isPersonATurn) {
-            this.currentSourceLanguage = this.originalSourceLanguage;
-            this.currentTargetLanguage = this.originalTargetLanguage;
-          } else {
-            this.currentSourceLanguage = this.originalTargetLanguage;
-            this.currentTargetLanguage = this.originalSourceLanguage;
-          }
-          console.log(`🔄 Next → Person ${this.isPersonATurn ? 'A' : 'B'}: ${this.currentSourceLanguage} → ${this.currentTargetLanguage}`);
-
-          // Brief pause, then ensure audio resources are released before next recording
-          this.updateProgress({ stage: 'waiting', isRealtime: true });
-          await new Promise(r => setTimeout(r, 1000));
-          await audioService.forceCleanup();
-          await new Promise(r => setTimeout(r, 200));
-        } else {
-          consecutiveErrors++;
-          const baseMessage = reason || 'No speech detected';
-          this.updateProgress({
-            stage: 'error',
-            error: consecutiveErrors >= MAX_ERRORS
-              ? `${baseMessage}. Please restart.`
-              : `${baseMessage} — retrying (${consecutiveErrors}/${MAX_ERRORS})…`,
-            isRealtime: true,
-          });
-          if (consecutiveErrors >= MAX_ERRORS) break;
-          await new Promise(r => setTimeout(r, 1800));
+          this.consecutiveSilenceHandovers = 0;
+          await this.swapTurnToNextPerson();
+          continue;
         }
 
-      } catch (error) {
+        // Feature: timeout & control handover. A "No speech detected" result means
+        // the silenceTimeoutMs window elapsed with nothing said — that's expected
+        // behavior (the person chose not to speak), not an error, so hand control to
+        // Person B immediately instead of re-prompting the same person and burning
+        // the shared MAX_ERRORS budget. Capped so an empty room doesn't ping-pong forever.
+        if (reason === 'No speech detected') {
+          this.consecutiveSilenceHandovers++;
+          console.log(`⏭️ Silence timeout for Person ${person} — handing control to Person ${this.isPersonATurn ? 'B' : 'A'}`);
+          if (this.consecutiveSilenceHandovers >= RealtimeTranslationService.MAX_CONSECUTIVE_SILENCE_HANDOVERS) {
+            this.updateProgress({ stage: 'error', error: 'No one is speaking. Please restart.', isRealtime: true });
+            break;
+          }
+          this.updateProgress({ stage: 'waiting', error: `No input from Person ${person} — passing to Person ${this.isPersonATurn ? 'B' : 'A'}`, isRealtime: true });
+          await this.swapTurnToNextPerson();
+          continue;
+        }
+
+        // Any other soft failure (e.g. transcription/translation came back empty) — bounded retry, same person.
         consecutiveErrors++;
-        console.error(`❌ Turn error (${consecutiveErrors}/${MAX_ERRORS}):`, error);
+        const baseMessage = reason || 'Turn failed';
+        this.updateProgress({
+          stage: 'error',
+          error: consecutiveErrors >= MAX_ERRORS
+            ? `${baseMessage}. Please restart.`
+            : `${baseMessage} — retrying (${consecutiveErrors}/${MAX_ERRORS})…`,
+          isRealtime: true,
+        });
+        if (consecutiveErrors >= MAX_ERRORS) break;
+        await new Promise(r => setTimeout(r, 1800));
+
+      } catch (error) {
+        // Bug fix: a fetch-level failure (offline, DNS, CORS, backend unreachable)
+        // used to fall through to the generic retry path below, which `continue`s
+        // the while loop and immediately re-enters `stage: 'recording'` — i.e. the
+        // UI silently went back into "Listening" right after saying the request
+        // failed. A dead network won't recover a moment later, so treat it as
+        // terminal: log it, surface a clear non-retryable message, and stop.
+        if (isNetworkError(error)) {
+          logger.error('Conversation turn aborted — network unreachable', error, { person });
+          await audioService.forceCleanup().catch(() => {});
+          this.updateProgress({
+            stage: 'error',
+            error: 'Connection lost — check your internet connection and restart.',
+            isRealtime: true,
+          });
+          break; // do NOT continue the loop / do NOT re-enter Listening mode
+        }
+
+        consecutiveErrors++;
+        logger.error('Conversation turn failed', error, { person, attempt: consecutiveErrors, maxAttempts: MAX_ERRORS });
         // Ensure we clean up any leftover audio state
         await audioService.forceCleanup().catch(() => {});
 

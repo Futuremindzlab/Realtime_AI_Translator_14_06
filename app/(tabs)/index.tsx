@@ -176,6 +176,12 @@ export default function HomeScreen() {
     setIsConversationRunning(false);
   };
 
+  // Feature: immediate-stop control (Person B handover). Ends the current
+  // speaker's turn right now instead of waiting for the silence timeout to elapse.
+  const handleInterruptTurn = () => {
+    realtimeTranslationService.interruptCurrentTurn();
+  };
+
   const getLangName = (code: string) =>
     SUPPORTED_LANGUAGES.find(l => l.code === code)?.name ?? code.toUpperCase();
 
@@ -311,6 +317,15 @@ export default function HomeScreen() {
             {getStatusText()}
           </Text>
         </View>
+
+        {/* Feature: immediate-stop control — ends the current speaker's turn right
+            now instead of waiting out the silence timeout. Only shown mid-recording
+            in conversation mode, where waiting for the timeout is otherwise the only option. */}
+        {conversationMode && isConversationRunning && progress?.stage === 'recording' && (
+          <TouchableOpacity style={styles.interruptButton} onPress={handleInterruptTurn}>
+            <Text style={styles.interruptButtonText}>Done talking — pass to next person</Text>
+          </TouchableOpacity>
+        )}
 
         {/* ── Results ── */}
         {progress && (progress.sourceText || progress.translatedText) && (
@@ -454,6 +469,20 @@ const styles = StyleSheet.create({
     color: '#1e40af',
     fontWeight: '500',
     lineHeight: 18,
+  },
+  interruptButton: {
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: '#2563eb',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  interruptButtonText: {
+    color: '#2563eb',
+    fontSize: 13,
+    fontWeight: '600',
   },
   micSection: {
     alignItems: 'center',

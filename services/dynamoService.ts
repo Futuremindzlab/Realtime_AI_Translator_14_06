@@ -13,6 +13,8 @@
  */
 
 import { UserSettings, ConversationHistory } from '@/types';
+import { NetworkError, isNetworkError } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || '').replace(/\/$/, '');
 
@@ -77,14 +79,26 @@ class DynamoService {
     if (!this.idToken) throw new Error('DynamoService not initialized — call initialize(idToken) first');
     if (!API_BASE)    throw new Error('EXPO_PUBLIC_API_BASE_URL is not set in .env');
 
-    const doFetch = () => fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${this.idToken}`,
-        ...(options.headers || {}),
-      },
-    });
+    // Wrap so a transport-level failure (offline, DNS, CORS) surfaces as a typed
+    // NetworkError instead of a bare, unclassified `TypeError: Failed to fetch`.
+    const doFetch = async () => {
+      try {
+        return await fetch(`${API_BASE}${path}`, {
+          ...options,
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${this.idToken}`,
+            ...(options.headers || {}),
+          },
+        });
+      } catch (err) {
+        logger.error('DynamoService request failed', err, { path });
+        if (isNetworkError(err)) {
+          throw new NetworkError('Unable to reach the server — check your internet connection.', err);
+        }
+        throw err;
+      }
+    };
 
     let response = await doFetch();
 
