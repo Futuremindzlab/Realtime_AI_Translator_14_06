@@ -10,6 +10,8 @@ import {
   Switch,
 } from 'react-native';
 import { LogOut, Save, Mic, Trash2 } from 'lucide-react-native';
+import { PrimaryButton } from '@/components/PrimaryButton';
+import { RadioOption } from '@/components/RadioOption';
 import { useAuth } from '@/contexts/AuthContext';
 import { audioService } from '@/services/audioService';
 import { ttsService, TTSService } from '@/services/ttsService';
@@ -223,144 +225,66 @@ export default function SettingsScreen() {
               <>
                 <Text style={styles.inputLabel}>TTS Provider</Text>
                 <View style={styles.radioGroup}>
-                  <TouchableOpacity
-                    style={styles.radioOption}
-                    onPress={() => setTtsProvider('openai')}>
-                    <View style={[styles.radio, ttsProvider === 'openai' && styles.radioSelected]}>
-                      {ttsProvider === 'openai' && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>OpenAI TTS</Text>
-                      <Text style={styles.voiceDesc}>Cloud · High quality · Requires API key</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.radioOption}
-                    onPress={() => setTtsProvider('elevenlabs')}>
-                    <View style={[styles.radio, ttsProvider === 'elevenlabs' && styles.radioSelected]}>
-                      {ttsProvider === 'elevenlabs' && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>ElevenLabs</Text>
-                      <Text style={styles.voiceDesc}>Cloud · Best for Indian & Arabic · Requires API key</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.radioOption}
-                    onPress={() => setTtsProvider('azure')}>
-                    <View style={[styles.radio, ttsProvider === 'azure' && styles.radioSelected]}>
-                      {ttsProvider === 'azure' && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>Azure Speech</Text>
-                      <Text style={styles.voiceDesc}>Cloud · Native Malayalam voices · Requires API key</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.radioOption}
-                    onPress={() => setTtsProvider('device')}>
-                    <View style={[styles.radio, ttsProvider === 'device' && styles.radioSelected]}>
-                      {ttsProvider === 'device' && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>Device TTS</Text>
-                      <Text style={styles.voiceDesc}>Free · Offline · Indian/Arabic auto-upgrade to ElevenLabs</Text>
-                    </View>
-                  </TouchableOpacity>
+                  <RadioOption
+                    label="OpenAI TTS"
+                    description="Cloud · High quality · Requires API key"
+                    selected={ttsProvider === 'openai'}
+                    onPress={() => setTtsProvider('openai')}
+                  />
+                  <RadioOption
+                    label="ElevenLabs"
+                    description="Cloud · Best for Indian & Arabic · Requires API key"
+                    selected={ttsProvider === 'elevenlabs'}
+                    onPress={() => setTtsProvider('elevenlabs')}
+                  />
+                  <RadioOption
+                    label="Azure Speech"
+                    description="Cloud · Native Malayalam voices · Requires API key"
+                    selected={ttsProvider === 'azure'}
+                    onPress={() => setTtsProvider('azure')}
+                  />
+                  <RadioOption
+                    label="Device TTS"
+                    description="Free · Offline · Indian/Arabic auto-upgrade to ElevenLabs"
+                    selected={ttsProvider === 'device'}
+                    onPress={() => setTtsProvider('device')}
+                  />
                 </View>
               </>
             )}
 
             <Text style={styles.inputLabel}>Voice</Text>
-            {ttsProvider === 'openai' && (
+            {(ttsProvider === 'openai' || ttsProvider === 'elevenlabs') && (
               <View style={styles.radioGroup}>
-                {TTSService.OPENAI_VOICES.map(v => (
-                  <TouchableOpacity
+                {(ttsProvider === 'openai' ? TTSService.OPENAI_VOICES : TTSService.ELEVENLABS_VOICES).map(v => (
+                  <RadioOption
                     key={v.id}
-                    style={styles.radioOption}
-                    onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}>
-                    <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
-                      {selectedVoiceId === v.id && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>{v.label}</Text>
-                      <Text style={styles.voiceDesc}>{v.desc}</Text>
-                    </View>
-                  </TouchableOpacity>
+                    label={v.label}
+                    description={v.desc}
+                    selected={selectedVoiceId === v.id}
+                    onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}
+                  />
                 ))}
               </View>
             )}
-            {ttsProvider === 'elevenlabs' && (
+            {(ttsProvider === 'device' || ttsProvider === 'azure') && (
               <View style={styles.radioGroup}>
-                {TTSService.ELEVENLABS_VOICES.map(v => (
-                  <TouchableOpacity
-                    key={v.id}
-                    style={styles.radioOption}
-                    onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}>
-                    <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
-                      {selectedVoiceId === v.id && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>{v.label}</Text>
-                      <Text style={styles.voiceDesc}>{v.desc}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            {ttsProvider === 'device' && (
-              <View style={styles.radioGroup}>
-                <TouchableOpacity
-                  style={styles.radioOption}
-                  onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
-                  <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
-                    {voiceGender === 'female' && <View style={styles.radioDot} />}
-                  </View>
-                  <View>
-                    <Text style={styles.radioLabel}>Female Voice</Text>
-                    <Text style={styles.voiceDesc}>Higher pitch · Device TTS · OpenAI Shimmer / ElevenLabs George</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.radioOption}
-                  onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
-                  <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
-                    {voiceGender === 'male' && <View style={styles.radioDot} />}
-                  </View>
-                  <View>
-                    <Text style={styles.radioLabel}>Male Voice</Text>
-                    <Text style={styles.voiceDesc}>Lower pitch · Device TTS · George (ElevenLabs) for Indian/Arabic</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            )}
-            {ttsProvider === 'azure' && (
-              <View style={styles.radioGroup}>
-                <TouchableOpacity
-                  style={styles.radioOption}
-                  onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
-                  <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
-                    {voiceGender === 'female' && <View style={styles.radioDot} />}
-                  </View>
-                  <View>
-                    <Text style={styles.radioLabel}>Female Voice</Text>
-                    <Text style={styles.voiceDesc}>Sobhana · Native Malayalam neural voice</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.radioOption}
-                  onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
-                  <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
-                    {voiceGender === 'male' && <View style={styles.radioDot} />}
-                  </View>
-                  <View>
-                    <Text style={styles.radioLabel}>Male Voice</Text>
-                    <Text style={styles.voiceDesc}>Midhun · Native Malayalam neural voice</Text>
-                  </View>
-                </TouchableOpacity>
+                <RadioOption
+                  label="Female Voice"
+                  description={ttsProvider === 'device'
+                    ? 'Higher pitch · Device TTS · OpenAI Shimmer / ElevenLabs George'
+                    : 'Sobhana · Native Malayalam neural voice'}
+                  selected={voiceGender === 'female'}
+                  onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}
+                />
+                <RadioOption
+                  label="Male Voice"
+                  description={ttsProvider === 'device'
+                    ? 'Lower pitch · Device TTS · George (ElevenLabs) for Indian/Arabic'
+                    : 'Midhun · Native Malayalam neural voice'}
+                  selected={voiceGender === 'male'}
+                  onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}
+                />
               </View>
             )}
 
@@ -426,26 +350,22 @@ export default function SettingsScreen() {
                       : `Recording... ${recordingSeconds}s / 60s`}
                   </Text>
                 </View>
-                <TouchableOpacity
-                  style={[styles.primaryButton, { backgroundColor: '#dc2626', marginTop: 12 }]}
-                  onPress={handleStopVoiceRecording}>
-                  <Mic size={20} color="#ffffff" />
-                  <Text style={styles.primaryButtonText}>
-                    {isUserView
-                      ? 'Stop & Apply Voice'
-                      : `Stop Recording ${recordingSeconds >= 10 ? '& Clone Voice' : '(min 10s)'}`}
-                  </Text>
-                </TouchableOpacity>
+                <PrimaryButton
+                  style={{ backgroundColor: '#dc2626', marginTop: 12 }}
+                  onPress={handleStopVoiceRecording}
+                  icon={<Mic size={20} color="#ffffff" />}
+                  title={isUserView
+                    ? 'Stop & Apply Voice'
+                    : `Stop Recording ${recordingSeconds >= 10 ? '& Clone Voice' : '(min 10s)'}`}
+                />
               </View>
             ) : (
-              <TouchableOpacity
-                style={[styles.primaryButton, { backgroundColor: '#7c3aed' }]}
-                onPress={handleStartVoiceRecording}>
-                <Mic size={20} color="#ffffff" />
-                <Text style={styles.primaryButtonText}>
-                  {isUserView ? 'Record & Apply My Voice' : 'Record My Voice'}
-                </Text>
-              </TouchableOpacity>
+              <PrimaryButton
+                style={{ backgroundColor: '#7c3aed' }}
+                onPress={handleStartVoiceRecording}
+                icon={<Mic size={20} color="#ffffff" />}
+                title={isUserView ? 'Record & Apply My Voice' : 'Record My Voice'}
+              />
             )}
           </View>
 
@@ -554,60 +474,11 @@ const styles = StyleSheet.create({
   radioRowSelected: {
     backgroundColor: '#eef2ff',
   },
-  radioOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#f9fafb',
-    borderRadius: 8,
-    gap: 12,
-  },
-  radio: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#d1d5db',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  radioSelected: {
-    borderColor: '#2563eb',
-  },
-  radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#2563eb',
-  },
-  radioLabel: {
-    fontSize: 16,
-    color: '#374151',
-  },
-  voiceDesc: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginTop: 1,
-  },
   voiceHint: {
     fontSize: 13,
     color: '#6b7280',
     marginBottom: 12,
     fontStyle: 'italic',
-  },
-  primaryButton: {
-    backgroundColor: '#2563eb',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 14,
-    borderRadius: 8,
-    gap: 8,
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   saveButton: {
     backgroundColor: '#2563eb',

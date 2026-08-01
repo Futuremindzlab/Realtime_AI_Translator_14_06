@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { ChevronDown } from 'lucide-react-native';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
+import { PickerSheet, pickerStyles } from '@/components/PickerSheet';
 
 interface LanguagePickerProps {
   label: string;
@@ -45,47 +46,31 @@ export const LanguagePicker: React.FC<LanguagePickerProps> = ({
         <ChevronDown size={20} color="#6b7280" />
       </TouchableOpacity>
 
-      <Modal
+      <PickerSheet
         visible={modalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{label}</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Text style={styles.doneButton}>Done</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView
-              style={styles.languageList}
-              contentContainerStyle={styles.languageListContent}
-              showsVerticalScrollIndicator={true}
-            >
-              {availableLanguages.length === 0 ? (
-                <Text style={styles.noLanguagesText}>No languages available</Text>
-              ) : (
-                availableLanguages.map((language) => (
-                  <TouchableOpacity
-                    key={language.code}
-                    style={[
-                      styles.languageItem,
-                      selectedLanguage === language.code && styles.languageItemSelected,
-                    ]}
-                    onPress={() => {
-                      onSelectLanguage(language.code);
-                      setModalVisible(false);
-                    }}>
-                    <Text style={styles.languageName}>{language.nativeName}</Text>
-                    <Text style={styles.languageEnglishName}>{language.name}</Text>
-                  </TouchableOpacity>
-                ))
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+        title={label}
+        onClose={() => setModalVisible(false)}
+        listStyle={styles.languageList}>
+        {availableLanguages.length === 0 ? (
+          <Text style={styles.noLanguagesText}>No languages available</Text>
+        ) : (
+          availableLanguages.map((language) => (
+            <TouchableOpacity
+              key={language.code}
+              style={[
+                styles.languageItem,
+                selectedLanguage === language.code && pickerStyles.itemSelected,
+              ]}
+              onPress={() => {
+                onSelectLanguage(language.code);
+                setModalVisible(false);
+              }}>
+              <Text style={styles.languageName}>{language.nativeName}</Text>
+              <Text style={styles.languageEnglishName}>{language.name}</Text>
+            </TouchableOpacity>
+          ))
+        )}
+      </PickerSheet>
     </View>
   );
 };
@@ -101,13 +86,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   selector: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 12,
+    ...pickerStyles.selector,
     padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -116,45 +95,11 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   selectedText: {
-    fontSize: 16,
-    color: '#111827',
+    ...pickerStyles.selectedText,
     flex: 1,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    height: 500,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  doneButton: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2563eb',
   },
   languageList: {
     flex: 1,
-  },
-  languageListContent: {
-    paddingBottom: 20,
   },
   noLanguagesText: {
     padding: 20,
@@ -163,13 +108,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   languageItem: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    ...pickerStyles.item,
     backgroundColor: '#ffffff',
-  },
-  languageItemSelected: {
-    backgroundColor: '#eff6ff',
   },
   languageName: {
     fontSize: 16,

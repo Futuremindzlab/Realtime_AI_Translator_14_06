@@ -81,7 +81,7 @@ import {
   proxyAzureTts,
 } from './handlers/aiProxy.mjs';
 
-import { sendSuccess, sendError } from './response.mjs';
+import { sendSuccess, sendError, CORS } from './response.mjs';
 
 export const handler = async (event) => {
   const method   = event.httpMethod;
@@ -103,15 +103,7 @@ export const handler = async (event) => {
 
   // CORS preflight
   if (method === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin':  '*',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-      },
-      body: '',
-    };
+    return { statusCode: 200, headers: CORS, body: '' };
   }
 
   // ── Health check ──────────────────────────────────────
