@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Design D — Studio Bold</title>
+<link rel="stylesheet" href="shared.css" />
+<script src="icons.js"></script>
+<style>
+  .phone .viewport { background: #fdf8f3; color: #191423; }
+  .statusbar { color: #191423; }
+  .scroll { padding: 4px 16px 12px; }
+
+  .hero {
+    border-radius: 28px; padding: 18px; color: #fff; position: relative; overflow: hidden;
+    background: linear-gradient(145deg, #4c1d95 0%, #7c3aed 45%, #db2777 100%);
+    box-shadow: 0 18px 34px rgba(124,58,237,0.32);
+  }
+  .hero::after {
+    content: ''; position: absolute; width: 180px; height: 180px; border-radius: 50%;
+    right: -60px; top: -70px; background: rgba(251,191,36,0.35); filter: blur(6px);
+  }
+  .hero .row { display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 2; }
+  .hero .badge {
+    font-size: 10px; font-weight: 800; letter-spacing: 1.4px; text-transform: uppercase;
+    background: rgba(255,255,255,0.22); padding: 6px 10px; border-radius: 999px;
+  }
+  .hero .avatar { width: 34px; height: 34px; border-radius: 12px; background: #fbbf24; color: #4c1d95; display: grid; place-items: center; font-weight: 850; font-size: 13px; }
+  .hero h2 { font-size: 27px; line-height: 1.08; letter-spacing: -1.2px; margin: 16px 0 6px; position: relative; z-index: 2; font-weight: 850; }
+  .hero p { font-size: 13px; opacity: 0.85; position: relative; z-index: 2; }
+  .hero .langs { display: flex; align-items: center; gap: 10px; margin-top: 16px; position: relative; z-index: 2; }
+  .hero .lg { flex: 1; background: rgba(255,255,255,0.16); border-radius: 18px; padding: 11px 13px; }
+  .hero .lg .k { font-size: 9.5px; letter-spacing: 1.3px; text-transform: uppercase; opacity: 0.75; font-weight: 800; }
+  .hero .lg .v { font-size: 15.5px; font-weight: 800; margin-top: 3px; }
+  .hero .sw { width: 38px; height: 38px; border-radius: 14px; background: #fbbf24; color: #4c1d95; display: grid; place-items: center; }
+  .hero .sw svg { width: 17px; height: 17px; stroke-width: 2.6; }
+
+  .grid2 { display: flex; gap: 12px; margin: 14px 0; }
+  .tile { flex: 1; border-radius: 22px; padding: 14px; border: 2px solid #efe6f7; background: #fff; }
+  .tile.on { background: #191423; border-color: #191423; color: #fff; }
+  .tile .ico { width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; background: #f5edff; color: #7c3aed; margin-bottom: 10px; }
+  .tile.on .ico { background: #fbbf24; color: #191423; }
+  .tile .ico svg { width: 17px; height: 17px; }
+  .tile b { font-size: 13.5px; display: block; }
+  .tile span { font-size: 11px; color: #8a8296; display: block; margin-top: 3px; line-height: 1.4; }
+  .tile.on span { color: #b6adc6; }
+
+  .bigmic {
+    border-radius: 28px; padding: 20px; background: #191423; color: #fff; display: flex; align-items: center; gap: 16px;
+    box-shadow: 0 16px 30px rgba(25,20,35,0.28);
+  }
+  .bigmic .btn {
+    width: 78px; height: 78px; border-radius: 26px; display: grid; place-items: center; flex: 0 0 78px;
+    background: linear-gradient(150deg, #fbbf24, #f97316); color: #191423;
+    box-shadow: 0 12px 24px rgba(249,115,22,0.4);
+  }
+  .bigmic .btn svg { width: 32px; height: 32px; stroke-width: 2.3; }
+  .bigmic.rec .btn { background: linear-gradient(150deg, #fb7185, #e11d48); color: #fff; }
+  .bigmic.rec .btn svg { fill: #fff; }
+  .bigmic b { font-size: 16.5px; letter-spacing: -0.3px; display: block; }
+  .bigmic span { font-size: 12px; color: #b6adc6; display: block; margin-top: 4px; line-height: 1.45; }
+
+  .wave { display: flex; align-items: center; gap: 3px; height: 34px; margin-top: 10px; }
+  .wave i { width: 3px; border-radius: 3px; background: linear-gradient(180deg,#fbbf24,#f97316); display: block; }
+
+  .sect { display: flex; align-items: center; justify-content: space-between; margin: 18px 4px 10px; }
+  .sect b { font-size: 17px; letter-spacing: -0.5px; font-weight: 800; }
+  .sect span { font-size: 12px; font-weight: 750; color: #7c3aed; }
+
+  .out {
+    border-radius: 26px; padding: 18px; background: #fff; border: 2px solid #efe6f7; margin-bottom: 12px;
+  }
+  .out .k { font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase; font-weight: 850; color: #8a8296;
+            display: flex; justify-content: space-between; align-items: center; }
+  .out .k .tag { background: #f5edff; color: #7c3aed; padding: 4px 8px; border-radius: 8px; letter-spacing: 0.6px; }
+  .out p { font-size: 16px; line-height: 1.5; margin-top: 10px; font-weight: 550; }
+  .out.hi { background: linear-gradient(150deg, #fbbf24, #f59e0b); border-color: #f59e0b; }
+  .out.hi .k { color: #7c4a03; } .out.hi .k .tag { background: rgba(255,255,255,0.45); color: #7c4a03; }
+  .out.hi p { font-size: 19px; font-weight: 750; color: #2b1a02; letter-spacing: -0.3px; }
+  .rowbtns { display: flex; gap: 8px; margin-top: 14px; }
+  .rb { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; border-radius: 14px;
+        font-size: 11.5px; font-weight: 800; background: rgba(25,20,35,0.1); color: #191423; }
+  .rb svg { width: 13px; height: 13px; }
+  .rb.dark { background: #191423; color: #fff; }
+
+  /* settings */
+  .srow { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 20px; background: #fff; border: 2px solid #efe6f7; margin-bottom: 10px; }
+  .srow .ico { width: 36px; height: 36px; border-radius: 13px; display: grid; place-items: center; background: #f5edff; color: #7c3aed; }
+  .srow .ico svg { width: 17px; height: 17px; }
+  .srow .t { flex: 1; }
+  .srow .t b { font-size: 13.5px; display: block; }
+  .srow .t span { font-size: 11.5px; color: #8a8296; display: block; margin-top: 3px; }
+  .toggle { width: 44px; height: 26px; border-radius: 999px; background: #191423; position: relative; }
+  .toggle::after { content: ''; position: absolute; width: 20px; height: 20px; border-radius: 50%; background: #fbbf24; top: 3px; right: 3px; }
+  .toggle.off { background: #e6dced; } .toggle.off::after { background: #fff; left: 3px; right: auto; }
+
+  .voices { display: flex; gap: 10px; margin-bottom: 12px; }
+  .voice { flex: 1; border-radius: 20px; padding: 13px 11px; text-align: center; border: 2px solid #efe6f7; background: #fff; }
+  .voice .av { width: 40px; height: 40px; border-radius: 50%; margin: 0 auto 9px; display: grid; place-items: center; font-weight: 850; font-size: 14px; }
+  .voice b { font-size: 12.5px; display: block; }
+  .voice span { font-size: 10.5px; color: #8a8296; }
+  .voice.sel { border-color: #191423; background: #191423; color: #fff; }
+  .voice.sel span { color: #b6adc6; }
+  .voice.one .av { background: #fde68a; color: #7c4a03; }
+  .voice.two .av { background: #ddd6fe; color: #4c1d95; }
+  .voice.three .av { background: #bbf7d0; color: #065f46; }
+
+  .tabbar {
+    margin: 0 16px 14px; flex: 0 0 64px; border-radius: 26px; background: #191423; padding: 0;
+    box-shadow: 0 14px 26px rgba(25,20,35,0.3);
+  }
+  .tab { color: #8d84a0; }
+  .tab.on { color: #fbbf24; }
+</style>
+</head>
+<body>
+<div class="page-head">
+  <div class="eyebrow">Design direction D</div>
+  <h1>Studio Bold</h1>
+  <p>High-contrast and consumer-friendly: a violet→pink hero that carries the language pair, amber action colour,
+     oversized rounded shapes and a floating dark tab bar. The translation output is the loudest thing on the
+     screen, which reads well at arm's length and across a table.</p>
+  <div class="tags">
+    <span>Warm light theme</span><span>Duotone brand colours</span><span>Oversized output type</span>
+    <span>Mode tiles</span><span>Voice picker</span><span>Floating dark tab bar</span>
+  </div>
+</div>
+
+<div class="gallery">
+
+  <!-- Screen 1 — idle -->
+  <div class="screen">
+    <div class="phone"><div class="viewport">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i><i></i></span></div>
+      <div class="body"><div class="scroll">
+        <div class="hero">
+          <div class="row"><div class="badge">Ready</div><div class="avatar">MS</div></div>
+          <h2>Speak.<br/>We'll handle<br/>the rest.</h2>
+          <p>Voice in, voice out — 47 languages.</p>
+          <div class="langs">
+            <div class="lg"><div class="k">From</div><div class="v">Auto detect</div></div>
+            <div class="sw"><svg><use href="#i-swap"/></svg></div>
+            <div class="lg"><div class="k">To</div><div class="v">Malayalam</div></div>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="tile on">
+            <div class="ico"><svg><use href="#i-user"/></svg></div>
+            <b>Single</b><span>One phrase at a time</span>
+          </div>
+          <div class="tile">
+            <div class="ico"><svg><use href="#i-users"/></svg></div>
+            <b>Conversation</b><span>Auto speaker swap</span>
+          </div>
+        </div>
+
+        <div class="bigmic">
+          <div class="btn"><svg><use href="#i-mic"/></svg></div>
+          <div>
+            <b>Tap to talk</b>
+            <span>Whisper on-device · ~1.4s round trip</span>
+          </div>
+        </div>
+
+        <div class="sect"><b>Recent</b><span>See all</span></div>
+        <div class="out" style="padding:14px 16px">
+          <div class="k"><span>EN → ML · 9:38</span><span class="tag">Replay</span></div>
+          <p style="font-size:14.5px">Where is the train station?</p>
+        </div>
+      </div></div>
+      <div class="tabbar">
+        <div class="tab on"><svg><use href="#i-home"/></svg>Home</div>
+        <div class="tab"><svg><use href="#i-history"/></svg>History</div>
+        <div class="tab"><svg><use href="#i-chart"/></svg>Stats</div>
+        <div class="tab"><svg><use href="#i-settings"/></svg>Settings</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Home · idle</b>Hero owns the language pair; mode tiles replace the toggle switch.</div>
+  </div>
+
+  <!-- Screen 2 — listening + output -->
+  <div class="screen">
+    <div class="phone"><div class="viewport">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i><i></i></span></div>
+      <div class="body"><div class="scroll">
+        <div class="hero" style="background:linear-gradient(145deg,#7f1d1d,#e11d48 55%,#f97316); padding:16px">
+          <div class="row"><div class="badge">● Recording · 0:06</div><div class="avatar" style="background:#fff;color:#e11d48">A</div></div>
+          <h2 style="font-size:23px; margin:12px 0 2px">Person A is speaking…</h2>
+          <div class="wave" id="wave"></div>
+        </div>
+
+        <div class="bigmic rec" style="margin-top:12px; padding:16px">
+          <div class="btn" style="width:64px;height:64px;flex:0 0 64px;border-radius:22px"><svg><use href="#i-stop"/></svg></div>
+          <div>
+            <b>Tap to stop</b>
+            <span>Or stay silent and we'll pass the turn to Person B.</span>
+          </div>
+        </div>
+
+        <div class="sect"><b>Translation</b><span>1.4s</span></div>
+
+        <div class="out" style="padding:14px 16px">
+          <div class="k"><span>English · heard</span><span class="tag">98%</span></div>
+          <p style="font-size:14.5px; margin-top:8px">Could you tell me how much the ticket costs?</p>
+        </div>
+
+        <div class="out hi">
+          <div class="k"><span>Malayalam</span><span class="tag">ElevenLabs · Aria</span></div>
+          <p>ടിക്കറ്റിന് എത്ര രൂപയാകും എന്ന് പറയാമോ?</p>
+          <div class="rowbtns">
+            <div class="rb dark"><svg><use href="#i-volume"/></svg> Replay</div>
+            <div class="rb"><svg><use href="#i-copy"/></svg> Copy</div>
+            <div class="rb"><svg><use href="#i-share"/></svg> Share</div>
+          </div>
+        </div>
+      </div></div>
+      <div class="tabbar">
+        <div class="tab on"><svg><use href="#i-home"/></svg>Home</div>
+        <div class="tab"><svg><use href="#i-history"/></svg>History</div>
+        <div class="tab"><svg><use href="#i-chart"/></svg>Stats</div>
+        <div class="tab"><svg><use href="#i-settings"/></svg>Settings</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Home · live</b>Hero turns red while capturing; output is the biggest type on screen.</div>
+  </div>
+
+  <!-- Screen 3 — settings -->
+  <div class="screen">
+    <div class="phone"><div class="viewport">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i><i></i></span></div>
+      <div class="body"><div class="scroll">
+        <div class="hero" style="background:linear-gradient(145deg,#1e1b4b,#4c1d95 60%,#7c3aed); padding:16px 18px">
+          <div class="row"><div class="badge">Account</div><div class="avatar">MS</div></div>
+          <h2 style="font-size:24px; margin:14px 0 4px">Settings</h2>
+          <p>Voices, providers and privacy</p>
+        </div>
+
+        <div class="sect"><b>Voice</b><span>Preview</span></div>
+        <div class="voices">
+          <div class="voice one sel"><div class="av">A</div><b>Aria</b><span>Female</span></div>
+          <div class="voice two"><div class="av">G</div><b>George</b><span>Male</span></div>
+          <div class="voice three"><div class="av">+</div><b>Clone</b><span>Your voice</span></div>
+        </div>
+
+        <div class="srow">
+          <div class="ico"><svg><use href="#i-bolt"/></svg></div>
+          <div class="t"><b>Speech provider</b><span>ElevenLabs · auto-upgrade for Indic</span></div>
+          <svg style="width:16px;height:16px;color:#8a8296"><use href="#i-chevron"/></svg>
+        </div>
+        <div class="srow">
+          <div class="ico"><svg><use href="#i-globe"/></svg></div>
+          <div class="t"><b>Default pair</b><span>Auto detect → Malayalam</span></div>
+          <svg style="width:16px;height:16px;color:#8a8296"><use href="#i-chevron"/></svg>
+        </div>
+        <div class="srow">
+          <div class="ico"><svg><use href="#i-users"/></svg></div>
+          <div class="t"><b>Start in conversation mode</b><span>Skip the toggle each time</span></div>
+          <div class="toggle"></div>
+        </div>
+        <div class="srow">
+          <div class="ico"><svg><use href="#i-history"/></svg></div>
+          <div class="t"><b>Save history</b><span>Stored in your account</span></div>
+          <div class="toggle off"></div>
+        </div>
+      </div></div>
+      <div class="tabbar">
+        <div class="tab"><svg><use href="#i-home"/></svg>Home</div>
+        <div class="tab"><svg><use href="#i-history"/></svg>History</div>
+        <div class="tab"><svg><use href="#i-chart"/></svg>Stats</div>
+        <div class="tab on"><svg><use href="#i-settings"/></svg>Settings</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Settings</b>Voice picker with preview; provider routing surfaced instead of hidden.</div>
+  </div>
+
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const h = [6,12,20,28,34,24,14,20,30,34,26,16,10,14,22,30,26,18,12,8,14,20,26,20,14,10,6,12,18,24,16,10];
+    document.getElementById('wave').innerHTML = h.map(x => `<i style="height:${x}px"></i>`).join('');
+  });
+</script>
+</body>
+</html>

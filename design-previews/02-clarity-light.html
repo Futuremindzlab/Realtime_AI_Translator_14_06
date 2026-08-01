@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Design B — Clarity Light</title>
+<link rel="stylesheet" href="shared.css" />
+<script src="icons.js"></script>
+<style>
+  .phone .viewport { background: #f6f7fb; color: #0f172a; }
+  .statusbar { color: #0f172a; }
+
+  .card {
+    background: #ffffff; border-radius: 20px; border: 1px solid #e8ebf3;
+    box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.05);
+  }
+
+  .top { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 14px; }
+  .top h2 { font-size: 26px; letter-spacing: -0.9px; }
+  .top .sub { font-size: 12.5px; color: #64748b; margin-top: 3px; }
+  .iconbtn { width: 38px; height: 38px; border-radius: 13px; background: #ffffff; border: 1px solid #e8ebf3; display: grid; place-items: center; color: #475569; }
+  .iconbtn svg { width: 18px; height: 18px; }
+
+  /* Language pair as one continuous control */
+  .pair { padding: 6px; display: flex; align-items: stretch; position: relative; margin-bottom: 12px; }
+  .side { flex: 1; padding: 14px 12px; border-radius: 16px; max-width: 46%; }
+  .side .v { white-space: nowrap; }
+  .pair .side:first-child { padding-right: 26px; }
+  .pair .side:last-child { padding-left: 26px; }
+  .side.active { background: #f1f5ff; }
+  .side .k { font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase; color: #94a3b8; font-weight: 800; }
+  .side .v { font-size: 17px; font-weight: 750; margin-top: 5px; letter-spacing: -0.3px; }
+  .side .n { font-size: 11.5px; color: #94a3b8; margin-top: 2px; }
+  .swap {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+    width: 40px; height: 40px; border-radius: 50%; background: #4f46e5; color: #fff;
+    display: grid; place-items: center; box-shadow: 0 6px 16px rgba(79,70,229,0.35); border: 3px solid #fff;
+  }
+  .swap svg { width: 17px; height: 17px; stroke-width: 2.5; }
+
+  .seg { display: flex; gap: 6px; padding: 5px; border-radius: 16px; background: #eceffa; margin-bottom: 14px; }
+  .seg div { flex: 1; text-align: center; padding: 9px; border-radius: 12px; font-size: 12.5px; font-weight: 700; color: #64748b;
+             display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .seg svg { width: 15px; height: 15px; }
+  .seg .on { background: #ffffff; color: #4f46e5; box-shadow: 0 2px 6px rgba(15,23,42,0.08); }
+
+  .note { display: flex; gap: 9px; padding: 11px 13px; border-radius: 14px; background: #eef2ff; margin-bottom: 16px; }
+  .note svg { width: 15px; height: 15px; color: #4f46e5; flex: 0 0 15px; margin-top: 1px; }
+  .note p { font-size: 12px; line-height: 1.5; color: #3730a3; font-weight: 550; }
+
+  .micwrap { display: grid; place-items: center; height: 160px; margin: 10px 0 0; position: relative; }
+  .ripple { position: absolute; width: 150px; height: 150px; border-radius: 50%; background: #e0e7ff; }
+  .ripple.two { width: 118px; height: 118px; background: #c7d2fe; }
+  .mic { width: 92px; height: 92px; border-radius: 50%; display: grid; place-items: center; position: relative;
+         background: linear-gradient(160deg, #6366f1, #4f46e5); box-shadow: 0 14px 28px rgba(79,70,229,0.38); }
+  .mic svg { width: 36px; height: 36px; color: #fff; stroke-width: 2.2; }
+  .mic.rec { background: linear-gradient(160deg, #f87171, #dc2626); box-shadow: 0 14px 28px rgba(220,38,38,0.35); }
+  .mic.rec svg { fill: #fff; }
+  .status { text-align: center; font-size: 13.5px; font-weight: 650; color: #475569; margin-top: 8px; position: relative; z-index: 3; }
+  .status.rec { color: #dc2626; }
+
+  .steps { display: flex; align-items: center; gap: 6px; justify-content: center; margin: 14px 0 4px; }
+  .step { display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 750; color: #94a3b8; }
+  .step i { width: 16px; height: 16px; border-radius: 50%; background: #e2e8f0; display: grid; place-items: center; }
+  .step i svg { width: 10px; height: 10px; color: #fff; stroke-width: 3; }
+  .step.done { color: #16a34a; } .step.done i { background: #16a34a; }
+  .step.now { color: #4f46e5; } .step.now i { background: #4f46e5; }
+  .steps .line { width: 14px; height: 2px; background: #e2e8f0; border-radius: 2px; }
+
+  .quote { padding: 16px; margin-bottom: 12px; }
+  .quote .k { font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase; color: #94a3b8; font-weight: 800; display: flex; justify-content: space-between; }
+  .quote p { font-size: 16px; line-height: 1.55; margin-top: 9px; }
+  .quote.out { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+  .quote.out .k { color: #c7d2fe; }
+  .quote.out p { font-size: 18px; font-weight: 600; }
+  .actions { display: flex; gap: 8px; margin-top: 14px; }
+  .act { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px; border-radius: 12px;
+         background: rgba(255,255,255,0.16); font-size: 11.5px; font-weight: 750; }
+  .act svg { width: 13px; height: 13px; }
+  .act.solid { background: #fff; color: #4f46e5; }
+
+  .sect { display: flex; align-items: center; justify-content: space-between; margin: 18px 2px 10px; }
+  .sect b { font-size: 15.5px; letter-spacing: -0.3px; }
+  .sect span { font-size: 12px; color: #4f46e5; font-weight: 700; }
+
+  .search { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border-radius: 15px; background: #fff;
+            border: 1px solid #e8ebf3; margin-bottom: 11px; }
+  .search svg { width: 16px; height: 16px; color: #94a3b8; }
+  .search span { font-size: 13px; color: #94a3b8; flex: 1; }
+  .search .f { width: 26px; height: 26px; border-radius: 9px; background: #eef2ff; display: grid; place-items: center; color: #4f46e5; }
+  .search .f svg { width: 13px; height: 13px; color: #4f46e5; }
+
+  .fchips { display: flex; gap: 7px; margin-bottom: 14px; }
+  .fchip { font-size: 11.5px; font-weight: 700; padding: 7px 12px; border-radius: 999px; background: #fff; border: 1px solid #e8ebf3; color: #64748b; }
+  .fchip.on { background: #0f172a; border-color: #0f172a; color: #fff; }
+
+  .daylabel { font-size: 11px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; color: #94a3b8; margin: 4px 2px 8px; }
+  .hrow { padding: 13px 14px; margin-bottom: 9px; display: flex; gap: 11px; align-items: center; }
+  .hrow .pill { font-size: 10px; font-weight: 800; padding: 4px 7px; border-radius: 7px; background: #eef2ff; color: #4f46e5; }
+  .hrow .txt { flex: 1; min-width: 0; }
+  .hrow .txt b { font-size: 13.5px; display: block; font-weight: 650; }
+  .hrow .txt span { font-size: 12.5px; color: #64748b; display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hrow .time { font-size: 11px; color: #94a3b8; font-weight: 650; }
+  .hrow .play { width: 30px; height: 30px; border-radius: 10px; background: #f1f5ff; display: grid; place-items: center; color: #4f46e5; }
+  .hrow .play svg { width: 13px; height: 13px; fill: #4f46e5; }
+
+  .tabbar { background: #fff; border-top: 1px solid #e8ebf3; flex: 0 0 74px; }
+  .tab { color: #94a3b8; }
+  .tab.on { color: #4f46e5; }
+  .tab.on i { position: absolute; }
+</style>
+</head>
+<body>
+<div class="page-head">
+  <div class="eyebrow">Design direction B</div>
+  <h1>Clarity Light</h1>
+  <p>An evolution of what you have today rather than a rewrite: same light theme and card layout, but with an
+     editorial type scale, a single joined language control with a swap pill, and a visible pipeline tracker
+     (Heard → Translating → Speaking) so the wait never feels like a hang. Lowest-risk option to ship.</p>
+  <div class="tags">
+    <span>Light / accessible</span><span>Closest to current code</span><span>Pipeline stepper</span>
+    <span>Grouped history + search</span><span>Indigo accent</span>
+  </div>
+</div>
+
+<div class="gallery">
+
+  <!-- Screen 1 — idle -->
+  <div class="screen">
+    <div class="phone"><div class="viewport">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i><i></i></span></div>
+      <div class="body"><div class="scroll">
+        <div class="top">
+          <div><h2>AI Translator</h2><div class="sub">Real-time voice translation</div></div>
+          <div class="iconbtn"><svg><use href="#i-settings"/></svg></div>
+        </div>
+
+        <div class="card pair">
+          <div class="side active">
+            <div class="k">From</div><div class="v">Auto detect</div><div class="n">47 languages</div>
+          </div>
+          <div class="swap"><svg><use href="#i-swap"/></svg></div>
+          <div class="side" style="text-align:right">
+            <div class="k">To</div><div class="v">Malayalam</div><div class="n">മലയാളം</div>
+          </div>
+        </div>
+
+        <div class="seg">
+          <div class="on"><svg><use href="#i-user"/></svg> Single</div>
+          <div><svg><use href="#i-users"/></svg> Conversation</div>
+        </div>
+
+        <div class="note">
+          <svg><use href="#i-bolt"/></svg>
+          <p>On-device transcription is warm — short phrases skip the network entirely.</p>
+        </div>
+
+        <div class="micwrap">
+          <div class="ripple"></div><div class="ripple two"></div>
+          <div class="mic"><svg><use href="#i-mic"/></svg></div>
+        </div>
+        <div class="status">Tap the mic to start speaking</div>
+
+        <div class="sect"><b>Recent</b><span>See all</span></div>
+        <div class="card hrow">
+          <div class="pill">EN→ML</div>
+          <div class="txt"><b>Where is the train station?</b><span>ട്രെയിൻ സ്റ്റേഷൻ എവിടെയാണ്?</span></div>
+          <div class="play"><svg><use href="#i-play"/></svg></div>
+        </div>
+        <div class="card hrow">
+          <div class="pill">EN→ES</div>
+          <div class="txt"><b>Two coffees, please.</b><span>Dos cafés, por favor.</span></div>
+          <div class="play"><svg><use href="#i-play"/></svg></div>
+        </div>
+      </div></div>
+      <div class="tabbar">
+        <div class="tab on"><svg><use href="#i-home"/></svg>Home</div>
+        <div class="tab"><svg><use href="#i-history"/></svg>History</div>
+        <div class="tab"><svg><use href="#i-chart"/></svg>Dashboard</div>
+        <div class="tab"><svg><use href="#i-settings"/></svg>Settings</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Home · idle</b>Joined language control with swap; recents are one tap from the mic.</div>
+  </div>
+
+  <!-- Screen 2 — result -->
+  <div class="screen">
+    <div class="phone"><div class="viewport">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i><i></i></span></div>
+      <div class="body"><div class="scroll">
+        <div class="top">
+          <div><h2>AI Translator</h2><div class="sub">English → Malayalam</div></div>
+          <div class="iconbtn"><svg><use href="#i-settings"/></svg></div>
+        </div>
+
+        <div class="micwrap">
+          <div class="ripple" style="background:#fee2e2"></div><div class="ripple two" style="background:#fecaca"></div>
+          <div class="mic rec"><svg><use href="#i-stop"/></svg></div>
+        </div>
+        <div class="status rec">Speaking translation…</div>
+
+        <div class="steps">
+          <div class="step done"><i><svg><use href="#i-check"/></svg></i> Heard</div>
+          <div class="line"></div>
+          <div class="step done"><i><svg><use href="#i-check"/></svg></i> Translated</div>
+          <div class="line"></div>
+          <div class="step now"><i><svg><use href="#i-volume"/></svg></i> Speaking</div>
+        </div>
+
+        <div class="sect"><b>Result</b><span>1.4s</span></div>
+
+        <div class="card quote">
+          <div class="k"><span>English · heard</span><span>98% confidence</span></div>
+          <p>Could you tell me how much the ticket costs?</p>
+        </div>
+
+        <div class="card quote out">
+          <div class="k"><span>Malayalam · translation</span><span>gpt-4o</span></div>
+          <p>ടിക്കറ്റിന് എത്ര രൂപയാകും എന്ന് പറയാമോ?</p>
+          <div class="actions">
+            <div class="act solid"><svg><use href="#i-volume"/></svg> Replay</div>
+            <div class="act"><svg><use href="#i-copy"/></svg> Copy</div>
+            <div class="act"><svg><use href="#i-star"/></svg> Save</div>
+          </div>
+        </div>
+      </div></div>
+      <div class="tabbar">
+        <div class="tab on"><svg><use href="#i-home"/></svg>Home</div>
+        <div class="tab"><svg><use href="#i-history"/></svg>History</div>
+        <div class="tab"><svg><use href="#i-chart"/></svg>Dashboard</div>
+        <div class="tab"><svg><use href="#i-settings"/></svg>Settings</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Home · result</b>Pipeline stepper replaces the single status line; result carries provider + latency.</div>
+  </div>
+
+  <!-- Screen 3 — history -->
+  <div class="screen">
+    <div class="phone"><div class="viewport">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i><i></i></span></div>
+      <div class="body"><div class="scroll">
+        <div class="top">
+          <div><h2>History</h2><div class="sub">1,284 saved translations</div></div>
+          <div class="iconbtn"><svg><use href="#i-trash"/></svg></div>
+        </div>
+
+        <div class="search">
+          <svg><use href="#i-search"/></svg><span>Search text or language…</span>
+          <div class="f"><svg><use href="#i-filter"/></svg></div>
+        </div>
+
+        <div class="fchips">
+          <div class="fchip on">All</div><div class="fchip">Starred</div><div class="fchip">EN → ML</div><div class="fchip">Today</div>
+        </div>
+
+        <div class="daylabel">Today</div>
+        <div class="card hrow">
+          <div class="pill">EN→ML</div>
+          <div class="txt"><b>Could you tell me the price?</b><span>ടിക്കറ്റിന് എത്ര രൂപയാകും?</span></div>
+          <div class="time">9:38</div>
+        </div>
+        <div class="card hrow">
+          <div class="pill">ML→EN</div>
+          <div class="txt"><b>ഇവിടെ അടുത്ത് ഒരു ആശുപത്രി ഉണ്ടോ?</b><span>Is there a hospital nearby?</span></div>
+          <div class="time">9:31</div>
+        </div>
+        <div class="card hrow">
+          <div class="pill">EN→ES</div>
+          <div class="txt"><b>Two coffees, please.</b><span>Dos cafés, por favor.</span></div>
+          <div class="time">8:52</div>
+        </div>
+
+        <div class="daylabel" style="margin-top:14px">Yesterday</div>
+        <div class="card hrow">
+          <div class="pill">HI→EN</div>
+          <div class="txt"><b>यह कितने का है?</b><span>How much is this?</span></div>
+          <div class="time">21:14</div>
+        </div>
+        <div class="card hrow">
+          <div class="pill">EN→TA</div>
+          <div class="txt"><b>Thank you for your help.</b><span>உங்கள் உதவிக்கு நன்றி.</span></div>
+          <div class="time">20:02</div>
+        </div>
+      </div></div>
+      <div class="tabbar">
+        <div class="tab"><svg><use href="#i-home"/></svg>Home</div>
+        <div class="tab on"><svg><use href="#i-history"/></svg>History</div>
+        <div class="tab"><svg><use href="#i-chart"/></svg>Dashboard</div>
+        <div class="tab"><svg><use href="#i-settings"/></svg>Settings</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>History</b>Search, filter chips and day grouping over the records you already store.</div>
+  </div>
+
+</div>
+</body>
+</html>
