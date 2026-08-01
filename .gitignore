@@ -47,3 +47,6 @@ backend/.aws-sam/
 
 # local benchmark/test output — generated, do not commit
 test_audio_output/
+
+# jest coverage output — generated, do not commit
+coverage/
