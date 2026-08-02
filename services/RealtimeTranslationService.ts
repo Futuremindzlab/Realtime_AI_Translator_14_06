@@ -587,43 +587,56 @@ export class RealtimeTranslationService {
         await new Promise(r => setTimeout(r, 1800));
 
       } catch (error) {
-        // Bug fix: a fetch-level failure (offline, DNS, CORS, backend unreachable)
-        // used to fall through to the generic retry path below, which `continue`s
-        // the while loop and immediately re-enters `stage: 'recording'` — i.e. the
-        // UI silently went back into "Listening" right after saying the request
-        // failed. A dead network won't recover a moment later, so treat it as
-        // terminal: log it, surface a clear non-retryable message, and stop.
-        if (isNetworkError(error)) {
-          logger.error('Conversation turn aborted — network unreachable', error, { person });
-          await audioService.forceCleanup().catch(() => {});
-          this.updateProgress({
-            stage: 'error',
-            error: 'Connection lost — check your internet connection and restart.',
-            isRealtime: true,
-          });
-          break; // do NOT continue the loop / do NOT re-enter Listening mode
-        }
-
+        // Bug fix (original report): a fetch-level failure (offline, DNS, CORS,
+        // backend unreachable) used to fall through to the generic retry path,
+        // which `continue`s the while loop and immediately re-enters
+        // `stage: 'recording'` — i.e. the UI silently went back into "Listening"
+        // right after saying the request had failed, with no bound on how long
+        // that could keep happening.
+        //
+        // First attempt at this fix made NetworkError terminal on the very first
+        // occurrence (immediate `break`). That is correct for a truly dead
+        // connection, but on a real mobile device (APK) a "Network request
+        // failed" is often just a momentary radio/Wi-Fi-handoff blip — far more
+        // common than on a wired web dev machine — and hard-stopping the whole
+        // conversation on the first blip made conversation mode effectively
+        // unusable on-device even though the connection recovered a second later.
+        // Correct behavior: still bounded (never loops forever, never silently
+        // re-enters Listening without explanation), but network failures now get
+        // the same bounded-retry-with-backoff treatment as any other soft error —
+        // they're just logged and messaged distinctly so a real outage is still
+        // easy to tell apart from a translation/transcription bug in the logs.
+        const networkFailure = isNetworkError(error);
         consecutiveErrors++;
-        logger.error('Conversation turn failed', error, { person, attempt: consecutiveErrors, maxAttempts: MAX_ERRORS });
+        logger.error(
+          networkFailure ? 'Conversation turn failed — network unreachable' : 'Conversation turn failed',
+          error,
+          { person, attempt: consecutiveErrors, maxAttempts: MAX_ERRORS, networkFailure }
+        );
         // Ensure we clean up any leftover audio state
         await audioService.forceCleanup().catch(() => {});
 
-        const errorMessage = error instanceof Error ? error.message : 'Conversation failed.';
+        const errorMessage = networkFailure
+          ? 'Connection issue — check your internet connection.'
+          : (error instanceof Error ? error.message : 'Conversation failed.');
+
         if (consecutiveErrors >= MAX_ERRORS) {
           this.updateProgress({
             stage: 'error',
-            error: errorMessage,
+            error: networkFailure ? `${errorMessage} Please restart.` : errorMessage,
             isRealtime: true,
           });
-          break;
+          break; // bound reached — stop, do not re-enter Listening mode
         }
         this.updateProgress({
           stage: 'error',
           error: `${errorMessage} — retrying (${consecutiveErrors}/${MAX_ERRORS})…`,
           isRealtime: true,
         });
-        await new Promise(r => setTimeout(r, 1800));
+        // Back off longer for network failures — retrying an unreachable host
+        // instantly just repeats the same failure; give a transient blip a
+        // moment to actually resolve before the next attempt.
+        await new Promise(r => setTimeout(r, networkFailure ? 3000 : 1800));
       }
     }
 

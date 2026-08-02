@@ -11,6 +11,8 @@ import { dynamoService } from '@/services/dynamoService';
 import { ttsService } from '@/services/ttsService';
 import { UserSettings, UserRole } from '@/types';
 import { DEFAULT_SOURCE_LANGUAGE, DEFAULT_TARGET_LANGUAGE } from '@/lib/constants';
+import { isNetworkError } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
 const VIEW_MODE_KEY = '@rbac_view_mode';
 
@@ -352,7 +354,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           resolve();
         },
         onFailure: (err: Error & { code?: string }) => {
-          console.error('❌ Forgot-password request failed:', err.message);
+          // amazon-cognito-identity-js makes a raw HTTP call here — on a native
+          // (APK) device a transient connectivity blip surfaces as an opaque
+          // "Network error" from the SDK, easy to mistake for the feature being
+          // broken. Log it distinctly (code + message) and give the user an
+          // actionable message instead of whatever raw string the SDK produced.
+          logger.error('Forgot-password request failed', err, { email, code: err.code });
+          if (isNetworkError(err)) {
+            reject(new Error('Unable to reach the server — check your internet connection and try again.'));
+            return;
+          }
           reject(err);
         },
       });
@@ -378,7 +389,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           resolve();
         },
         onFailure: (err: Error & { code?: string }) => {
-          console.error('❌ Password reset confirmation failed:', err.message);
+          logger.error('Password reset confirmation failed', err, { email, code: err.code });
+          if (isNetworkError(err)) {
+            reject(new Error('Unable to reach the server — check your internet connection and try again.'));
+            return;
+          }
           reject(err);
         },
       });
