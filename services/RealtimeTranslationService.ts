@@ -523,6 +523,7 @@ export class RealtimeTranslationService {
         // - returns null if forceCleanup() was called externally (e.g. stopConversation())
         const audioUri = await audioService.startRecordingWithAutoStop(this.silenceTimeoutMs, -45, 2500, 1500);
         console.log(`🎤 Recording: ${audioUri ? 'OK' : 'null'}`);
+        logger.info('Turn recording finished', { person, platform: Platform.OS, hasAudio: !!audioUri });
 
         if (!this.isActive || !this.autoContinueEnabled) break;
 
@@ -546,6 +547,7 @@ export class RealtimeTranslationService {
 
         // ── STEP 2: PROCESS (transcribe → translate → TTS → play) ──
         const { success, reason } = await this.processConversationTurn(audioUri);
+        logger.info('Turn processed', { person, success, reason, platform: Platform.OS });
 
         if (!this.isActive || !this.autoContinueEnabled) break;
 
@@ -668,6 +670,7 @@ export class RealtimeTranslationService {
     const detectedLanguage = this.resolveDetectedLanguage(rawDetected, actualText);
 
     console.log(`📝 Transcribed: "${actualText.substring(0, 80)}" | Detected: ${detectedLanguage}`);
+    logger.info('Transcribe stage complete', { textLength: actualText.length, detectedLanguage, platform: Platform.OS });
 
     // Skip if no valid speech
     if (!actualText || actualText.length < 3) {
@@ -723,11 +726,14 @@ export class RealtimeTranslationService {
     this.logDuration('translate', translateStartedAt);
 
     if (!translatedText.trim()) {
-      console.error('❌ Empty translation result');
+      logger.error('Empty translation result', undefined, {
+        sourceLanguage: this.currentSourceLanguage, targetLanguage: this.currentTargetLanguage, platform: Platform.OS,
+      });
       return { success: false, reason: 'Translation failed' };
     }
 
     console.log(`✅ Translated: "${translatedText.substring(0, 80)}"`);
+    logger.info('Translate stage complete', { translatedLength: translatedText.length, platform: Platform.OS });
 
     // ── 3. GENERATE TTS ──
     this.updateProgress({
@@ -743,6 +749,7 @@ export class RealtimeTranslationService {
     );
     this.logDuration('tts_generate', ttsStartedAt);
     console.log(`✅ TTS generated`);
+    logger.info('TTS stage complete', { provider: this.currentTtsProvider, hasAudioUri: !!ttsUri, platform: Platform.OS });
 
     // ── 4. PLAY AUDIO (MUST complete before next turn) ──
     // Recording is already stopped (stopRecording was called in conversationLoop).
@@ -762,7 +769,11 @@ export class RealtimeTranslationService {
         this.logDuration('playback', playStartedAt);
         console.log('✅ Audio playback complete');
       } catch (playError) {
-        console.error('❌ Audio playback failed (translation was successful):', playError);
+        // Not fatal to the turn (translation already succeeded), but a silent
+        // playback failure — heard as "nothing happened" — is otherwise
+        // indistinguishable from every other stage succeeding, so log it
+        // distinctly rather than only console.error (invisible on-device).
+        logger.error('Audio playback failed (translation succeeded)', playError, { platform: Platform.OS, ttsProvider: this.currentTtsProvider });
       }
     }
 

@@ -8,11 +8,14 @@ import {
   Alert,
   ActivityIndicator,
   Switch,
+  Share,
+  Platform,
 } from 'react-native';
-import { LogOut, Save, Mic, Trash2 } from 'lucide-react-native';
+import { LogOut, Save, Mic, Trash2, Bug } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { audioService } from '@/services/audioService';
 import { ttsService, TTSService } from '@/services/ttsService';
+import { logger } from '@/lib/logger';
 
 export default function SettingsScreen() {
   // AuthGate (app/_layout.tsx) guarantees `user` is non-null by the time any
@@ -152,6 +155,21 @@ export default function SettingsScreen() {
     } finally {
       setIsCloningVoice(false);
       setRecordingSeconds(0);
+    }
+  };
+
+  // There's no way to pull `adb logcat` off a user's real device — this is the
+  // only practical way to see what actually happened on-device (which stage of
+  // a conversation turn ran, what error was thrown, network vs. non-network)
+  // instead of guessing from a secondhand description of the symptom.
+  const handleShareDiagnostics = async () => {
+    const buildSha = process.env.EXPO_PUBLIC_BUILD_SHA ? process.env.EXPO_PUBLIC_BUILD_SHA.substring(0, 7) : 'dev';
+    const header = `Realtime AI Translator diagnostics\nBuild: ${buildSha}  Platform: ${Platform.OS} ${Platform.Version}\nGenerated: ${new Date().toISOString()}\n${'-'.repeat(40)}\n`;
+    const body = header + logger.formatRecentEntries();
+    try {
+      await Share.share({ message: body });
+    } catch {
+      Alert.alert('Error', 'Failed to share diagnostics');
     }
   };
 
@@ -447,6 +465,21 @@ export default function SettingsScreen() {
                 </Text>
               </TouchableOpacity>
             )}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Diagnostics</Text>
+            <Text style={styles.sectionDescription}>
+              If a translation or conversation-mode issue happens, share this log right after —
+              it captures what actually happened on this device (stage-by-stage), which is far more
+              useful than a description of the symptom.
+            </Text>
+            <TouchableOpacity
+              style={[styles.secondaryButton, { borderColor: '#d1d5db' }]}
+              onPress={handleShareDiagnostics}>
+              <Bug size={18} color="#374151" />
+              <Text style={[styles.secondaryButtonText, { color: '#374151' }]}>Share Diagnostics</Text>
+            </TouchableOpacity>
           </View>
 
       <View style={styles.footer}>
