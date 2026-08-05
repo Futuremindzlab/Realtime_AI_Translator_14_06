@@ -1,6 +1,7 @@
 import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
 import { preprocessForWhisper } from './audioProcessor';
+import { logger } from '@/lib/logger';
 
 // expo-file-system is native-only. On web, TTS audio arrives as blob: URLs and
 // recording produces blob: URIs — neither path touches FileSystem, so a no-op
@@ -373,12 +374,36 @@ export class AudioService {
           if (elapsed < 1000) return;
 
           if (!status.isRecording) {
-            console.log('🎤 [AutoStop] Recording stopped externally');
-            if (!resolved) {
-              resolved = true;
-              clearTimeout(fallbackTimer);
-              this.pendingAutoStopFinish = null;
-              resolve(null);
+            // Bug fix: this native status field was being trusted at face value
+            // to mean "the recording was stopped externally" (e.g. by
+            // stopConversation() -> forceCleanup()). On Android it has been
+            // observed to report false spuriously shortly after a perfectly
+            // successful start — with nothing in our own code having stopped
+            // anything — which bailed the whole turn out with a null result on
+            // the very first metering callback. On screen that reads as
+            // "Person A: Listening…" flashing and disappearing almost
+            // instantly. Single Translation mode's manual start/stop recording
+            // never attaches this status callback at all and is unaffected,
+            // which is exactly the signature of a bug in this callback, not in
+            // recording itself.
+            //
+            // The only signal that WE intentionally stopped this recording is
+            // our own instance reference changing (set by stopRecording() /
+            // forceCleanup()) — plain JS state, not a value reported by the
+            // native bridge. Trust that instead of this field.
+            if (this.recording !== recording) {
+              console.log('🎤 [AutoStop] Recording stopped externally (instance changed)');
+              if (!resolved) {
+                resolved = true;
+                clearTimeout(fallbackTimer);
+                this.pendingAutoStopFinish = null;
+                resolve(null);
+              }
+            } else {
+              console.warn('⚠️ [AutoStop] Ignoring spurious isRecording=false (recording instance unchanged)');
+              logger.warn('AutoStop: ignored spurious isRecording=false from native status callback', {
+                platform: Platform.OS, elapsedMs: elapsed,
+              });
             }
             return;
           }
