@@ -29,21 +29,18 @@ module.exports = {
     icon: './assets/images/icon.png',
     scheme: 'aitranslator',
     userInterfaceStyle: 'automatic',
-    // Conversation mode (record → auto-stop-on-silence → transcribe → translate
-    // → TTS → play) worked reliably on web but was reported unreliable/hanging
-    // on the built APK, with no equivalent failure reachable from web — web
-    // never touches a native module at all, it just uses browser APIs.
-    // The app's entire audio pipeline (audioService.ts, ttsService.ts) runs on
-    // expo-av, which Expo has explicitly deprecated ("will be removed in SDK
-    // 54") specifically as part of moving off the legacy Native Modules bridge
-    // that predates the New Architecture (Fabric/TurboModules) — the source of
-    // exactly the kind of native-bridge timing/event-callback instability that
-    // would only ever manifest on-device, never on web. expo-audio (the
-    // replacement) isn't fully wired in yet (see plugins below — it's present
-    // but audioService/ttsService still call expo-av), so the safe fix without
-    // a full audio-stack rewrite is to build against the classic architecture,
-    // where expo-av's bridge is well-established, until that migration happens.
-    newArchEnabled: false,
+    // NOTE: tried disabling this (newArchEnabled: false) to rule out expo-av's
+    // known instability under Fabric/TurboModules — reverted immediately, it
+    // breaks the build outright: react-native-reanimated ~4.1.1 (used by
+    // react-native-worklets 0.5.1, a hard dependency here) requires the New
+    // Architecture and fails the Gradle build with
+    // ":react-native-reanimated:assertNewArchitectureEnabledTask FAILED" the
+    // moment this is false. Must stay true as long as Reanimated 4.x is a
+    // dependency; if expo-av instability under new-arch turns out to be the
+    // real cause, the actual fix is migrating audioService/ttsService off
+    // expo-av onto expo-audio (already present as a plugin, not yet wired into
+    // the code), not disabling new-arch.
+    newArchEnabled: true,
     ios: {
       supportsTablet: true,
       infoPlist: {
