@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -23,6 +23,7 @@ import { audioService } from '@/services/audioService';
 import { ttsService } from '@/services/ttsService';
 import { whisperService } from '@/services/whisperService';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
+import { logger } from '@/lib/logger';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_MAX_WIDTH = Math.min(SCREEN_WIDTH, 600);
@@ -37,6 +38,7 @@ export default function HomeScreen() {
   const [isConversationRunning, setIsConversationRunning] = useState(false);
   const [progress, setProgress] = useState<TranslationProgress | null>(null);
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
+  const backgroundDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── 1. Startup voices + sync settings ──
   // Provider API keys live server-side (backend AI proxy) — nothing to initialise here.
@@ -63,20 +65,52 @@ export default function HomeScreen() {
     whisperService.initialize().catch(() => {});
 
     const handleAppState = (next: AppStateStatus) => {
+      // Diagnostic: captured in Settings -> Share Diagnostics. Reported bug was
+      // "Person A: Listening…" appearing then disappearing instantly on Android
+      // with no other error — a spurious 'background' transition right as
+      // recording starts (audio-focus negotiation, OEM overlay, the mic-privacy
+      // indicator, etc. can all momentarily pull focus on some Android builds)
+      // would immediately tear the whole conversation down via the branch below
+      // and look exactly like that. This log will confirm or rule that out.
+      logger.info('AppState changed', { next, wasConversationActive: realtimeTranslationService.getIsActive() });
+
       if (next === 'background') {
         // True background: OS kills mic access — must stop everything.
         // NOTE: 'inactive' is intentionally excluded — on iOS it fires for
         // notification overlays, permission dialogs, and control center
         // (mic is NOT killed). Stopping on 'inactive' would drop conversations
         // at startup (permission dialog) or on any incoming notification.
-        if (realtimeTranslationService.getIsActive()) {
-          realtimeTranslationService.stopConversation();
-          audioService.forceCleanup().catch(() => {});
-          setIsRecording(false);
-          setIsConversationRunning(false);
-          setProgress(null);
-        }
+        //
+        // Debounced: a genuine backgrounding (home button, app switch) persists;
+        // starting an audio recording can momentarily trigger a transient
+        // 'background' blip on some Android devices that does not. Re-confirm
+        // AppState is still 'background' after a short delay before actually
+        // tearing the conversation down, instead of reacting to the very first
+        // event — Android's own mic-access revocation on a real backgrounding
+        // is unaffected by this, so a genuine background is still handled
+        // correctly, just ~600ms later.
+        if (backgroundDebounceRef.current) clearTimeout(backgroundDebounceRef.current);
+        backgroundDebounceRef.current = setTimeout(() => {
+          backgroundDebounceRef.current = null;
+          if (AppState.currentState !== 'background') {
+            logger.info('AppState background was transient — ignoring', { currentState: AppState.currentState });
+            return;
+          }
+          if (realtimeTranslationService.getIsActive()) {
+            logger.warn('AppState confirmed background — stopping conversation', {});
+            realtimeTranslationService.stopConversation();
+            audioService.forceCleanup().catch(() => {});
+            setIsRecording(false);
+            setIsConversationRunning(false);
+            setProgress(null);
+          }
+        }, 600);
       } else if (next === 'active') {
+        // Cancel a pending debounce from a background blip that already recovered.
+        if (backgroundDebounceRef.current) {
+          clearTimeout(backgroundDebounceRef.current);
+          backgroundDebounceRef.current = null;
+        }
         // App came back to foreground — re-attach callback and reconcile state
         realtimeTranslationService.setProgressCallback(setProgress);
         if (!realtimeTranslationService.getIsActive()) {
@@ -91,6 +125,7 @@ export default function HomeScreen() {
 
     return () => {
       sub.remove();
+      if (backgroundDebounceRef.current) clearTimeout(backgroundDebounceRef.current);
       // Feb pattern: do NOT clear the progress callback on unmount so any in-flight
       // progress from a final cleanup cycle is still routed correctly.
       realtimeTranslationService.cleanup().catch(() => {});

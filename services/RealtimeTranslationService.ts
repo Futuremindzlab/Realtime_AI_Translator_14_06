@@ -464,7 +464,12 @@ export class RealtimeTranslationService {
   }
 
   stopConversation(): void {
-    console.log('🛑 CONVERSATION STOPPED by user');
+    console.log('🛑 CONVERSATION STOPPED');
+    // Diagnostic: this name says "by user" but it's also called from
+    // AppState's background handler (index.tsx) — the stack trace here
+    // distinguishes an actual user tap from a spurious background-triggered
+    // stop, which was indistinguishable from the outside otherwise.
+    logger.warn('stopConversation() called', { stack: new Error().stack });
     this.isActive = false;
     this.autoContinueEnabled = false;
     // Stop any in-progress recording or playback immediately

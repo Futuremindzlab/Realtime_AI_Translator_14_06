@@ -319,6 +319,7 @@ export class AudioService {
     await this.startRecording();
     if (!this.recording) {
       console.error('🎤 [AutoStop] Recording failed to start');
+      logger.error('AutoStop: startRecording() left this.recording null', undefined, { platform: Platform.OS });
       return null;
     }
 
@@ -328,9 +329,16 @@ export class AudioService {
     // Wait briefly for recording to stabilize before attaching listeners
     await new Promise(r => setTimeout(r, 300));
 
-    // If recording was stopped externally during the wait
+    // If recording was stopped externally during the wait — diagnostic: this
+    // path (not the status-callback one already fixed) is the other possible
+    // explanation for "Listening… appears then disappears instantly" if
+    // something else in the app (e.g. a spurious AppState 'background' event)
+    // is calling forceCleanup()/stopRecording() within this 300ms window.
     if (this.recording !== recording) {
       console.log('🎤 [AutoStop] Recording stopped during startup');
+      logger.warn('AutoStop: recording instance changed during 300ms startup wait — something else stopped it', {
+        platform: Platform.OS,
+      });
       return null;
     }
 
