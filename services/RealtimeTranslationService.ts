@@ -7,6 +7,7 @@ import { dynamoService } from './dynamoService';
 import { resolveLanguage, isCorrectScript, detectScriptLanguage } from '@/lib/constants';
 import { isNetworkError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
+import { withTimeout, TimeoutError } from '@/lib/withTimeout';
 
 // expo-file-system is native-only — audio history persistence is skipped on
 // web, where recording/TTS URIs are blob: URLs FileSystem can't read anyway.
@@ -521,7 +522,19 @@ export class RealtimeTranslationService {
         // - stops automatically after 2.5s of silence following at least 1.5s of speech
         // - hard-caps at this.silenceTimeoutMs regardless (feature: configurable timeout)
         // - returns null if forceCleanup() was called externally (e.g. stopConversation())
-        const audioUri = await audioService.startRecordingWithAutoStop(this.silenceTimeoutMs, -45, 2500, 1500);
+        //
+        // Wrapped in a hard ceiling: this call ultimately depends on a native audio
+        // module bridge call (Audio.Recording.createAsync) resolving. If that bridge
+        // call itself hangs — never resolves or rejects — everything downstream
+        // (the internal fallback timer included) never even gets armed, and this
+        // await would otherwise block forever with the UI stuck on "Listening…"
+        // and no way to recover. Only reachable on-device; web has no native bridge
+        // to hang on, which is why this class of failure never showed up there.
+        const audioUri = await withTimeout(
+          audioService.startRecordingWithAutoStop(this.silenceTimeoutMs, -45, 2500, 1500),
+          this.silenceTimeoutMs + 8000,
+          'Recording',
+        );
         console.log(`🎤 Recording: ${audioUri ? 'OK' : 'null'}`);
         logger.info('Turn recording finished', { person, platform: Platform.OS, hasAudio: !!audioUri });
 
@@ -546,7 +559,15 @@ export class RealtimeTranslationService {
         }
 
         // ── STEP 2: PROCESS (transcribe → translate → TTS → play) ──
-        const { success, reason } = await this.processConversationTurn(audioUri);
+        // Same hard-ceiling reasoning as the recording step above — transcribe/TTS/
+        // playback each ultimately touch a native bridge (file read, Audio.Sound)
+        // or a network call already covered by NetworkError, but a generous outer
+        // bound catches anything else that could otherwise hang indefinitely.
+        const { success, reason } = await withTimeout(
+          this.processConversationTurn(audioUri),
+          45_000,
+          'Turn processing',
+        );
         logger.info('Turn processed', { person, success, reason, platform: Platform.OS });
 
         if (!this.isActive || !this.autoContinueEnabled) break;
@@ -609,23 +630,28 @@ export class RealtimeTranslationService {
         // they're just logged and messaged distinctly so a real outage is still
         // easy to tell apart from a translation/transcription bug in the logs.
         const networkFailure = isNetworkError(error);
+        const timedOut = error instanceof TimeoutError;
         consecutiveErrors++;
         logger.error(
-          networkFailure ? 'Conversation turn failed — network unreachable' : 'Conversation turn failed',
+          networkFailure ? 'Conversation turn failed — network unreachable'
+            : timedOut ? 'Conversation turn failed — hung and hit the safety timeout'
+            : 'Conversation turn failed',
           error,
-          { person, attempt: consecutiveErrors, maxAttempts: MAX_ERRORS, networkFailure }
+          { person, attempt: consecutiveErrors, maxAttempts: MAX_ERRORS, networkFailure, timedOut }
         );
         // Ensure we clean up any leftover audio state
         await audioService.forceCleanup().catch(() => {});
 
         const errorMessage = networkFailure
           ? 'Connection issue — check your internet connection.'
+          : timedOut
+          ? 'That took too long and was stopped.'
           : (error instanceof Error ? error.message : 'Conversation failed.');
 
         if (consecutiveErrors >= MAX_ERRORS) {
           this.updateProgress({
             stage: 'error',
-            error: networkFailure ? `${errorMessage} Please restart.` : errorMessage,
+            error: (networkFailure || timedOut) ? `${errorMessage} Please restart.` : errorMessage,
             isRealtime: true,
           });
           break; // bound reached — stop, do not re-enter Listening mode
@@ -635,10 +661,10 @@ export class RealtimeTranslationService {
           error: `${errorMessage} — retrying (${consecutiveErrors}/${MAX_ERRORS})…`,
           isRealtime: true,
         });
-        // Back off longer for network failures — retrying an unreachable host
-        // instantly just repeats the same failure; give a transient blip a
-        // moment to actually resolve before the next attempt.
-        await new Promise(r => setTimeout(r, networkFailure ? 3000 : 1800));
+        // Back off longer for network failures and timeouts — retrying an
+        // unreachable host or a still-recovering native bridge instantly just
+        // repeats the same failure; give it a moment before the next attempt.
+        await new Promise(r => setTimeout(r, (networkFailure || timedOut) ? 3000 : 1800));
       }
     }
 
