@@ -15,7 +15,7 @@ supabase login
 ### C. Link Your Project
 ```bash
 cd "C:\Users\mohan\Realtime_AI_Translator_01_28_v1\Realtime_AI_Translator_01_28_v1"
-supabase link --project-ref aantlckqmrrddvjykjwz
+supabase link --project-ref <YOUR_PROJECT_REF>
 ```
 
 ### D. Set OpenAI API Key in Supabase
@@ -30,8 +30,8 @@ supabase functions deploy translate
 
 ### F. Test the Function
 ```bash
-curl -X POST https://aantlckqmrrddvjykjwz.supabase.co/functions/v1/translate \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhbnRsY2txbXJyZGR2anlrand6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4MTE2OTcsImV4cCI6MjA4NTM4NzY5N30.h5LYafYEOg03Yj47WCZNqgUhgiWwrGe3Cr5Zhxa27h4" \
+curl -X POST https://<YOUR_PROJECT_REF>.supabase.co/functions/v1/translate \
+  -H "Authorization: Bearer <YOUR_SUPABASE_ANON_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"text":"Hello world","sourceLanguage":"en","targetLanguage":"es"}'
 ```
@@ -46,7 +46,7 @@ Expected output:
 ## Step 2: Set Up Database Tables
 
 ### A. Open Supabase SQL Editor
-1. Go to https://supabase.com/dashboard/project/aantlckqmrrddvjykjwz
+1. Go to https://supabase.com/dashboard/project/<YOUR_PROJECT_REF>
 2. Click **SQL Editor** in left sidebar
 3. Click **New Query**
 
@@ -146,9 +146,9 @@ After setup, test these:
 
 Your `.env` file should have:
 ```env
-EXPO_PUBLIC_SUPABASE_URL=https://aantlckqmrrddvjykjwz.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhbnRsY2txbXJyZGR2anlrand6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4MTE2OTcsImV4cCI6MjA4NTM4NzY5N30.h5LYafYEOg03Yj47WCZNqgUhgiWwrGe3Cr5Zhxa27h4
-EXPO_PUBLIC_TRANSLATE_URL=https://aantlckqmrrddvjykjwz.supabase.co/functions/v1/translate
+EXPO_PUBLIC_SUPABASE_URL=https://<YOUR_PROJECT_REF>.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<YOUR_SUPABASE_ANON_KEY>
+EXPO_PUBLIC_TRANSLATE_URL=https://<YOUR_PROJECT_REF>.supabase.co/functions/v1/translate
 ```
 
 ---
