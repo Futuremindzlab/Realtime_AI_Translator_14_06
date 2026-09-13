@@ -11,6 +11,8 @@
  * exposes this buffer via a "Share Diagnostics" action (see settings.tsx) so
  * a user can send it directly instead of describing symptoms secondhand.
  */
+import { captureError } from '@/lib/sentry';
+
 type LogContext = Record<string, unknown>;
 type LogLevel = 'info' | 'warn' | 'error';
 
@@ -44,11 +46,14 @@ function emit(level: LogLevel, message: string, context?: LogContext) {
 export const logger = {
   info: (message: string, context?: LogContext) => emit('info', message, context),
   warn: (message: string, context?: LogContext) => emit('warn', message, context),
-  error: (message: string, error?: unknown, context?: LogContext) =>
+  error: (message: string, error?: unknown, context?: LogContext) => {
     emit('error', message, {
       ...(context || {}),
       error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error,
-    }),
+    });
+    // No-ops if EXPO_PUBLIC_SENTRY_DSN isn't set — see lib/sentry.ts.
+    captureError(error ?? message, context);
+  },
 
   /** Recent log entries (oldest first), newest-N capped at MAX_BUFFER_SIZE. */
   getRecentEntries: (): readonly LogEntry[] => buffer.slice(),

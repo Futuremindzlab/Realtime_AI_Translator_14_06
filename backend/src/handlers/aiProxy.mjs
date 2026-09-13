@@ -15,6 +15,7 @@
 
 import { getUserId } from '../auth.mjs';
 import { sendSuccess, sendError, handleError } from '../response.mjs';
+import { enforceDailyAiCallLimit } from '../lib/usageLimits.mjs';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -39,7 +40,8 @@ const MAX_AUDIO_BYTES = 6 * 1024 * 1024; // Lambda sync invocation payload ceili
 // ─────────────────────────────────────────────────────────
 export async function proxyOpenAIChat(event) {
   try {
-    getUserId(event);
+    const userId = getUserId(event);
+    await enforceDailyAiCallLimit(userId);
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return sendError(500, 'OpenAI is not configured on the server');
 
@@ -76,7 +78,8 @@ export async function proxyOpenAIChat(event) {
 // ─────────────────────────────────────────────────────────
 export async function proxyOpenAITts(event) {
   try {
-    getUserId(event);
+    const userId = getUserId(event);
+    await enforceDailyAiCallLimit(userId);
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return sendError(500, 'OpenAI is not configured on the server');
 
@@ -118,7 +121,8 @@ export async function proxyOpenAITts(event) {
 // ─────────────────────────────────────────────────────────
 export async function proxyOpenAITranscribe(event) {
   try {
-    getUserId(event);
+    const userId = getUserId(event);
+    await enforceDailyAiCallLimit(userId);
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return sendError(500, 'OpenAI is not configured on the server');
 
@@ -174,7 +178,8 @@ export async function proxyOpenAITranscribe(event) {
 // ─────────────────────────────────────────────────────────
 export async function proxyElevenLabsTts(event) {
   try {
-    getUserId(event);
+    const userId = getUserId(event);
+    await enforceDailyAiCallLimit(userId);
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) return sendError(500, 'ElevenLabs is not configured on the server');
 
@@ -209,7 +214,8 @@ export async function proxyElevenLabsTts(event) {
 // ─────────────────────────────────────────────────────────
 export async function proxyElevenLabsVoiceClone(event) {
   try {
-    getUserId(event);
+    const userId = getUserId(event);
+    await enforceDailyAiCallLimit(userId);
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) return sendError(500, 'ElevenLabs is not configured on the server');
 
@@ -249,7 +255,8 @@ export async function proxyElevenLabsVoiceClone(event) {
 // ─────────────────────────────────────────────────────────
 export async function proxyAzureTts(event) {
   try {
-    getUserId(event);
+    const userId = getUserId(event);
+    await enforceDailyAiCallLimit(userId);
     const apiKey = process.env.AZURE_SPEECH_KEY;
     const region = process.env.AZURE_SPEECH_REGION;
     if (!apiKey || !region) return sendError(500, 'Azure Speech is not configured on the server');

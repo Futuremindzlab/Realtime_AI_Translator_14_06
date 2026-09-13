@@ -425,7 +425,11 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* ── Transcript ── */}
+        {/* ── Transcript ──
+            Supersedes the old single-turn "Results" box (pre-Conversation-Canvas
+            master): every completed turn — single or conversation mode — now
+            accumulates here instead of only showing the latest one, and the
+            AI-accuracy disclaimer that box used to carry lives below the list. */}
         <View style={styles.section}>
           <View style={styles.sectTitle}>
             <Text style={styles.sectTitleText}>Transcript</Text>

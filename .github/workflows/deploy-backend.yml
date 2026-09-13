@@ -68,7 +68,12 @@ jobs:
               OpenAIApiKey=${{ secrets.OPENAI_API_KEY }} \
               ElevenLabsApiKey=${{ secrets.ELEVENLABS_API_KEY }} \
               AzureSpeechKey=${{ secrets.AZURE_SPEECH_KEY }} \
-              AzureSpeechRegion=${{ secrets.AZURE_SPEECH_REGION }}
+              AzureSpeechRegion=${{ secrets.AZURE_SPEECH_REGION }} \
+              RazorpayKeyId=${{ secrets.RAZORPAY_KEY_ID }} \
+              RazorpayKeySecret=${{ secrets.RAZORPAY_KEY_SECRET }} \
+              RazorpayWebhookSecret=${{ secrets.RAZORPAY_WEBHOOK_SECRET }} \
+              RazorpayPlanIdPlus=${{ secrets.RAZORPAY_PLAN_ID_PLUS }} \
+              RazorpayPlanIdLive=${{ secrets.RAZORPAY_PLAN_ID_LIVE }}
 
       - name: Print API base URL
         run: |
