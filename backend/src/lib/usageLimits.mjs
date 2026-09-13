@@ -10,18 +10,18 @@ export const USAGE_TABLE = process.env.USAGE_TABLE || 'ai_usage';
  * user) on the metered OpenAI/ElevenLabs/Azure routes in aiProxy.mjs.
  *
  * `plus`/`live` are sized off TheOneLingo_Cost_Pricing_Calculator.xlsx
- * (shared alongside this change), targeting a 60% gross margin on a
+ * (shared alongside this change), targeting a 50% gross margin on a
  * subscriber's AI cost EVEN IN THE WORST CASE (gpt-4o + ElevenLabs v3 —
  * i.e. every call this user makes hits the priciest model/TTS combination
  * the app can route to, which real usage will rarely do every single call).
  * At ₹200/₹360 current pricing (backend/src/lib/razorpay.mjs) and the
  * calculator's usage assumptions (~8s audio, ~150+60 tokens, ~80 TTS
  * characters per transaction — 3 AI calls each: transcribe+translate+TTS):
- *   plus: ₹80/mo cost budget → ~9 calls/day  (was 150 — a real cut, see below)
- *   live: ₹144/mo cost budget → ~15 calls/day (was 500)
+ *   plus: ₹100/mo cost budget → ~11 calls/day (was 150 — a real cut, see below)
+ *   live: ₹180/mo cost budget → ~19 calls/day (was 500)
  * This is a steep reduction from the previous placeholder values, and is a
  * genuine product trade-off, not just a bug fix: it caps a paid subscriber
- * to roughly 3-5 translations/day before hitting the daily limit. Before
+ * to roughly 3-6 translations/day before hitting the daily limit. Before
  * shipping this to production, decide (with the spreadsheet's "Target gross
  * margin" and per-transaction usage assumptions as the levers) whether that
  * trade-off is right for the product, or whether it's the ₹200/₹360 pricing
@@ -35,7 +35,7 @@ export const USAGE_TABLE = process.env.USAGE_TABLE || 'ai_usage';
  * user (~₹188/month in the calculator's worst case) — worth a deliberate
  * decision, not a default.
  */
-export const DAILY_AI_CALL_LIMITS = { basic: 20, plus: 9, live: 15 };
+export const DAILY_AI_CALL_LIMITS = { basic: 20, plus: 11, live: 19 };
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD, UTC
