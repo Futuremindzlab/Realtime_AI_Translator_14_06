@@ -1,0 +1,13 @@
+# Pins the theonelingo.com marketing site's build config in code, rather than
+# relying on Netlify's dashboard "Build settings" fields — this repo also
+# contains an unrelated Expo app at its root, and Netlify's framework
+# auto-detection (and hand-set dashboard fields) have repeatedly picked that
+# app up instead of this static site.
+#
+# website/ is a plain static page: no build step, no dist/ output — just
+# index.html + images/ committed directly. `base` scopes everything below to
+# that folder (so Netlify never touches the Expo app at the repo root), and
+# `publish = "."` means "serve website/ itself", since there's nothing built.
+[build]
+  base = "website"
+  publish = "."
