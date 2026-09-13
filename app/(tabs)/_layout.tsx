@@ -1,8 +1,9 @@
 import { Tabs } from 'expo-router';
-import { Home, History, Settings, BarChart2 } from 'lucide-react-native';
+import { Mic, History, Settings, BarChart2, BookOpen } from 'lucide-react-native';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/AuthContext';
+import { canvasTheme as t } from '@/lib/canvasTheme';
 
 // Polyfill must stay at the top — fast-text-encoding self-installs
 // global.TextDecoder/TextEncoder as a side effect (it has no exports of its
@@ -25,12 +26,12 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#2563eb',
-        tabBarInactiveTintColor: '#6b7280',
+        tabBarActiveTintColor: t.personB,
+        tabBarInactiveTintColor: t.textFaint,
         tabBarStyle: {
-          backgroundColor: '#ffffff',
+          backgroundColor: t.bgElevated,
           borderTopWidth: 1,
-          borderTopColor: '#e5e7eb',
+          borderTopColor: t.cardBorder,
           height: tabBarHeight,
           paddingBottom: tabBarPaddingBottom,
           paddingTop: 8,
@@ -43,8 +44,15 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ size, color }) => <Home size={size} color={color} />,
+          title: 'Talk',
+          tabBarIcon: ({ size, color }) => <Mic size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="phrases"
+        options={{
+          title: 'Phrases',
+          tabBarIcon: ({ size, color }) => <BookOpen size={size} color={color} />,
         }}
       />
       <Tabs.Screen
