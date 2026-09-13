@@ -22,7 +22,7 @@ if (missing.length > 0) {
 /** @type {import('expo/config').ExpoConfig} */
 module.exports = {
   expo: {
-    name: 'Realtime AI Translator',
+    name: 'The OneLingo',
     slug: 'ai-translator-06-09',
     // Pinned explicitly so `eas init`/`eas build` always create/target the
     // project under the Futuremindzlab org account, never whichever personal

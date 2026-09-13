@@ -265,7 +265,7 @@ export default function HomeScreen() {
       >
         {/* ── Header ── */}
         <View style={styles.header}>
-          <Text style={styles.title}>AI Translator</Text>
+          <Text style={styles.title}>The OneLingo</Text>
           <Text style={styles.subtitle}>Real-time voice translation</Text>
         </View>
 
