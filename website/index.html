@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The OneLingo</title>
+<meta name="description" content="The OneLingo turns any conversation into one you can both understand — speak naturally, hear the reply back instantly, even in your own cloned voice. 45+ languages, launching soon." />
+<meta name="theme-color" content="#7C4FE0" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%97%A3%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+<link rel="canonical" href="https://theonelingo.com/" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="The OneLingo" />
+<meta property="og:title" content="The OneLingo — One app. Every language. Every conversation." />
+<meta property="og:description" content="Speak naturally, hear the reply instantly — in a voice that can even be your own. 45+ languages. Launching soon." />
+<meta property="og:url" content="https://theonelingo.com/" />
+<meta property="og:image" content="https://theonelingo.com/images/problem-conversation.webp" />
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="The OneLingo — One app. Every language. Every conversation." />
+<meta name="twitter:description" content="Speak naturally, hear the reply instantly — in a voice that can even be your own. 45+ languages. Launching soon." />
+<meta name="twitter:image" content="https://theonelingo.com/images/problem-conversation.webp" />
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Karla:wght@400;500;600;700&display=swap');
+
+  :root {
+    --paper: #F8F4FE;
+    --surface: #FFFFFF;
+    --ink: #15121D;
+    --ink-2: #322C40;
+    --muted: #6B6577;
+    --border: #E7E2ED;
+    --border-2: #DCD5E6;
+    --accent: #7C4FE0;
+    --accent-ink: #5F35BE;
+    --c1: #FF6B5B; /* coral */
+    --c2: #8B5CF6; /* violet */
+    --c3: #2BC6B9; /* teal */
+    --grad: linear-gradient(100deg, var(--c1) 0%, var(--c2) 52%, var(--c3) 100%);
+    --shadow-sm: 0 1px 2px rgba(21,18,29,0.04), 0 2px 8px rgba(21,18,29,0.04);
+    --shadow-md: 0 4px 16px rgba(21,18,29,0.06), 0 12px 32px rgba(21,18,29,0.06);
+    --radius: 20px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #120F1A;
+      --surface: #1B1726;
+      --ink: #F3EFFA;
+      --ink-2: #D8D0E8;
+      --muted: #9C93AE;
+      --border: #2C2739;
+      --border-2: #383049;
+      --accent: #A98BFA;
+      --accent-ink: #C4AEFF;
+      --c1: #FF8B7D;
+      --c2: #A98BFA;
+      --c3: #4FE0D2;
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.25);
+      --shadow-md: 0 8px 24px rgba(0,0,0,0.4), 0 16px 40px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #120F1A;
+    --surface: #1B1726;
+    --ink: #F3EFFA;
+    --ink-2: #D8D0E8;
+    --muted: #9C93AE;
+    --border: #2C2739;
+    --border-2: #383049;
+    --accent: #A98BFA;
+    --accent-ink: #C4AEFF;
+    --c1: #FF8B7D;
+    --c2: #A98BFA;
+    --c3: #4FE0D2;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.25);
+    --shadow-md: 0 8px 24px rgba(0,0,0,0.4), 0 16px 40px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; } }
+
+  body {
+    margin: 0;
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(900px circle at 8% -8%, color-mix(in srgb, var(--c2) 22%, transparent), transparent 60%),
+      radial-gradient(820px circle at 106% 8%, color-mix(in srgb, var(--c1) 18%, transparent), transparent 55%),
+      radial-gradient(760px circle at 46% 108%, color-mix(in srgb, var(--c3) 16%, transparent), transparent 55%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    color: var(--ink);
+    font-family: 'Karla', system-ui, -apple-system, sans-serif;
+    padding-inline: 24px;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, .display {
+    font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+    text-wrap: balance;
+    line-height: 1.08;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin: 0;
+  }
+
+  p { line-height: 1.65; color: var(--ink-2); }
+
+  a { color: var(--accent-ink); }
+
+  .wrap { max-width: 1120px; margin: 0 auto; }
+  .prose { max-width: 62ch; }
+
+  .grad-text {
+    background: var(--grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+  .eyebrow .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--grad);
+    flex-shrink: 0;
+  }
+
+  /* ── buttons ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: 'Karla', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 13px 24px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn-primary { background: var(--ink); color: var(--paper); box-shadow: var(--shadow-sm); }
+  .btn-primary:hover { box-shadow: var(--shadow-md); }
+  .btn-ghost { background: transparent; color: var(--ink); border-color: var(--border-2); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent-ink); }
+  .btn-sm { padding: 9px 16px; font-size: 13.5px; }
+
+  /* ── nav ── */
+  header.nav {
+    position: sticky; top: 0; z-index: 30;
+    background: color-mix(in srgb, var(--paper) 86%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    margin-inline: -24px;
+    padding-inline: 24px;
+  }
+  .nav-inner {
+    max-width: 1120px; margin: 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    padding-block: 16px;
+  }
+  .wordmark {
+    display: flex; align-items: center; gap: 9px;
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 700; font-size: 19px; color: var(--ink);
+    text-decoration: none;
+  }
+  .wordmark .glyph {
+    width: 26px; height: 26px; border-radius: 8px;
+    background: var(--grad);
+    position: relative; flex-shrink: 0;
+  }
+  .wordmark .glyph::after {
+    content: ''; position: absolute; inset: 7px;
+    background: var(--paper); border-radius: 3px;
+  }
+  .wordmark .pre { color: var(--muted); font-weight: 500; }
+  nav.links { display: flex; align-items: center; gap: 28px; }
+  nav.links a:not(.btn) { color: var(--ink-2); text-decoration: none; font-size: 14.5px; font-weight: 600; }
+  nav.links a:not(.btn):hover { color: var(--ink); }
+  .nav-cta { display: flex; align-items: center; gap: 14px; }
+  @media (max-width: 780px) { nav.links { display: none; } }
+
+  /* ── hero ── */
+  .hero {
+    padding-block: 72px 40px;
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 56px;
+    align-items: center;
+  }
+  @media (max-width: 900px) { .hero { grid-template-columns: 1fr; padding-block: 44px 8px; gap: 40px; } }
+
+  .hero h1 { font-size: clamp(36px, 5.2vw, 60px); font-weight: 700; margin-block: 18px 20px; }
+  .hero .lede { font-size: 18px; max-width: 46ch; margin-bottom: 30px; }
+  .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 22px; }
+  .hero-note { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .avatars { display: flex; }
+  .avatars span {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid var(--paper);
+    margin-left: -8px;
+    background: var(--grad);
+  }
+  .avatars span:first-child { margin-left: 0; }
+
+  /* ── hero visual: phone mock ── */
+  .phone-stage { position: relative; display: flex; justify-content: center; }
+  .waveblob {
+    position: absolute; inset: -60px -20px auto auto; width: 420px; height: 420px;
+    background: var(--grad); opacity: 0.16; filter: blur(60px);
+    border-radius: 50%; z-index: 0;
+  }
+  .phone {
+    position: relative; z-index: 1;
+    width: 272px; border-radius: 34px;
+    background: var(--surface);
+    border: 1px solid var(--border-2);
+    box-shadow: var(--shadow-md);
+    padding: 14px;
+  }
+  .phone-screen { border-radius: 22px; background: var(--paper); padding: 18px 14px; min-height: 420px; display: flex; flex-direction: column; }
+  .ps-header { text-align: center; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 14px; }
+  .bubble { border-radius: 16px; padding: 12px 14px; margin-bottom: 10px; font-size: 13.5px; line-height: 1.4; box-shadow: var(--shadow-sm); }
+  .bubble.a { background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .bubble.b { background: var(--ink); color: var(--paper); border-bottom-right-radius: 4px; margin-left: 32px; }
+  .bubble .lang { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.6; margin-bottom: 4px; }
+  .mic-row { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 16px; }
+  .wave-bars { display: flex; align-items: flex-end; gap: 3px; height: 28px; }
+  .wave-bars i { display: block; width: 3px; border-radius: 2px; background: var(--grad); animation: wavepulse 1.1s ease-in-out infinite; }
+  .wave-bars i:nth-child(1){height:40%;animation-delay:0s}
+  .wave-bars i:nth-child(2){height:80%;animation-delay:.1s}
+  .wave-bars i:nth-child(3){height:100%;animation-delay:.2s}
+  .wave-bars i:nth-child(4){height:60%;animation-delay:.3s}
+  .wave-bars i:nth-child(5){height:90%;animation-delay:.4s}
+  .wave-bars i:nth-child(6){height:45%;animation-delay:.5s}
+  .wave-bars i:nth-child(7){height:70%;animation-delay:.6s}
+  @keyframes wavepulse { 0%,100% { transform: scaleY(0.5); } 50% { transform: scaleY(1); } }
+  .mic-btn { width: 52px; height: 52px; border-radius: 50%; background: var(--grad); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-md); }
+  .mic-btn svg { width: 20px; height: 20px; }
+
+  /* ── sections ── */
+  section { padding-block: 88px; border-top: 1px solid var(--border); }
+  section:first-of-type { border-top: none; }
+  .section-head { max-width: 640px; margin-bottom: 44px; }
+  .section-head h2 { font-size: clamp(28px, 3.6vw, 40px); margin-block: 14px 0; }
+  .section-head p { font-size: 16.5px; margin-top: 14px; }
+
+  /* ── problem ── */
+  .problem-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+  @media (max-width: 860px) { .problem-grid { grid-template-columns: 1fr; gap: 32px; } }
+  .problem-shot {
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+    margin-bottom: 44px;
+    background: var(--surface);
+  }
+  .problem-shot img { display: block; width: 100%; height: auto; }
+  .juggle-list { display: flex; flex-direction: column; gap: 12px; }
+  .juggle-item {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px 16px;
+    font-weight: 600; font-size: 14.5px; color: var(--muted);
+  }
+  .juggle-item .x { color: var(--c1); font-size: 16px; flex-shrink: 0; }
+  .juggle-item.win { border-color: var(--accent); color: var(--ink); box-shadow: var(--shadow-sm); }
+  .juggle-item.win .x { color: var(--c3); }
+
+  /* ── how it works ── */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; counter-reset: step; }
+  @media (max-width: 860px) { .steps { grid-template-columns: 1fr; } }
+  .step { position: relative; padding-top: 8px; }
+  .step-num {
+    font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 15px;
+    width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    background: var(--surface); border: 1px solid var(--border); margin-bottom: 18px;
+  }
+  .step:nth-child(1) .step-num { color: var(--c1); }
+  .step:nth-child(2) .step-num { color: var(--c2); }
+  .step:nth-child(3) .step-num { color: var(--c3); }
+  .step h3 { font-size: 19px; margin-bottom: 8px; }
+  .step p { font-size: 14.5px; }
+  .step-line { position: absolute; top: 28px; left: 100%; width: 28px; height: 1px; background: var(--border-2); }
+  @media (max-width: 860px) { .step-line { display: none; } }
+
+  /* ── bento features ── */
+  .bento { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: minmax(170px, auto); gap: 18px; }
+  @media (max-width: 900px) { .bento { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .bento { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 26px; display: flex; flex-direction: column; box-shadow: var(--shadow-sm);
+  }
+  .card.big { grid-column: span 2; grid-row: span 2; }
+  @media (max-width: 900px) { .card.big { grid-column: span 2; } }
+  @media (max-width: 560px) { .card.big { grid-column: span 1; } }
+  .card .icon-badge {
+    width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    background: var(--paper); border: 1px solid var(--border); margin-bottom: 16px; flex-shrink: 0;
+  }
+  .card.big .icon-badge { width: 50px; height: 50px; border-radius: 14px; background: var(--grad); border: none; }
+  .card.big .icon-badge svg { stroke: white; }
+  .card h3 { font-size: 17px; margin-bottom: 8px; }
+  .card.big h3 { font-size: 23px; }
+  .card p { font-size: 14px; margin: 0; }
+  .card.big p { font-size: 15px; max-width: 42ch; }
+  .voice-viz { display: flex; align-items: center; gap: 3px; margin-top: auto; padding-top: 20px; height: 32px; }
+  .voice-viz i { width: 4px; border-radius: 2px; background: var(--grad); opacity: 0.85; }
+  .badge-soon {
+    display: inline-flex; align-self: flex-start; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    background: var(--accent-soft, var(--paper)); border: 1px solid var(--border-2); color: var(--accent-ink);
+    padding: 3px 9px; border-radius: 999px; margin-bottom: 10px;
+  }
+
+  /* ── languages ── */
+  .lang-cloud { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 999px; padding: 8px 16px; font-size: 14px; font-weight: 600;
+  }
+  .chip .native { color: var(--muted); font-weight: 500; font-size: 12.5px; }
+  .chip.lg { font-size: 16px; padding: 10px 20px; border-color: var(--border-2); box-shadow: var(--shadow-sm); }
+  .chip.dim { opacity: 0.6; }
+
+  /* ── trust ── */
+  .trust-row { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; }
+  .trust-badge {
+    display: flex; align-items: center; gap: 10px;
+    border: 1px solid var(--border); border-radius: 14px; padding: 14px 20px;
+    background: var(--surface); font-weight: 700; font-size: 14.5px;
+  }
+  .trust-badge .dot2 { width: 8px; height: 8px; border-radius: 50%; background: var(--grad); }
+  .trust-foot { display: flex; align-items: center; gap: 10px; margin-top: 28px; font-size: 13.5px; color: var(--muted); }
+
+  /* ── faq ── */
+  .faq-list { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--border); }
+  .faq-item { border-bottom: 1px solid var(--border); }
+  .faq-item summary {
+    cursor: pointer; list-style: none; padding-block: 20px;
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    font-weight: 700; font-size: 16px; color: var(--ink);
+  }
+  .faq-item summary::-webkit-details-marker { display: none; }
+  .faq-item .plus { position: relative; width: 18px; height: 18px; flex-shrink: 0; }
+  .faq-item .plus::before, .faq-item .plus::after { content:''; position: absolute; background: var(--ink); border-radius: 2px; }
+  .faq-item .plus::before { width: 100%; height: 2px; top: 8px; }
+  .faq-item .plus::after { width: 2px; height: 100%; left: 8px; transition: transform 0.2s ease; }
+  .faq-item[open] .plus::after { transform: rotate(90deg); }
+  .faq-item p { padding-bottom: 20px; margin: 0; max-width: 66ch; font-size: 15px; }
+
+  /* ── final cta ── */
+  .cta-panel {
+    border-radius: 28px;
+    padding: 64px 40px;
+    text-align: center;
+    background: var(--ink);
+    color: var(--paper);
+    position: relative;
+    overflow: hidden;
+  }
+  :root[data-theme="dark"] .cta-panel { background: var(--surface); border: 1px solid var(--border-2); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cta-panel { background: var(--surface); border: 1px solid var(--border-2); } }
+  .cta-panel::before {
+    content: ''; position: absolute; inset: 0; opacity: 0.5;
+    background: var(--grad); filter: blur(90px); transform: translateY(-40%);
+  }
+  .cta-panel > * { position: relative; z-index: 1; }
+  .cta-panel h2 { color: var(--paper); font-size: clamp(26px, 4vw, 38px); margin-bottom: 14px; }
+  .cta-panel p { color: color-mix(in srgb, var(--paper) 72%, transparent); max-width: 50ch; margin-inline: auto; margin-bottom: 30px; }
+
+  .waitlist-form { display: flex; gap: 10px; max-width: 420px; margin: 0 auto; flex-wrap: wrap; justify-content: center; }
+  .waitlist-form input {
+    flex: 1; min-width: 200px;
+    padding: 13px 18px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.08); color: var(--paper); font-family: 'Karla', sans-serif; font-size: 15px;
+  }
+  .waitlist-form input::placeholder { color: rgba(255,255,255,0.5); }
+  .waitlist-form input:focus { outline: 2px solid var(--c3); outline-offset: 2px; }
+  .waitlist-form .btn-primary { background: var(--paper); color: var(--ink); }
+  .form-status { margin-top: 14px; font-size: 13.5px; min-height: 18px; color: color-mix(in srgb, var(--paper) 80%, transparent); }
+  .form-status.success { color: #7BE8C6; font-weight: 700; }
+
+  /* ── footer ── */
+  footer { padding-block: 48px 40px; }
+  .footer-grid { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 32px; }
+  .footer-links { display: flex; gap: 28px; flex-wrap: wrap; }
+  .footer-links a { color: var(--muted); text-decoration: none; font-size: 13.5px; font-weight: 600; }
+  .footer-links a:hover { color: var(--ink); }
+  .footer-bottom { margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; font-size: 12.5px; color: var(--muted); }
+
+  ::selection { background: var(--accent); color: white; }
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="nav-inner">
+    <a href="#top" class="wordmark"><span class="glyph"></span><span class="pre">The</span>&nbsp;OneLingo</a>
+    <nav class="links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#languages">Languages</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-primary btn-sm" href="#join">Join the waitlist</a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap" id="top">
+
+  <!-- ═══════════════════ HERO ═══════════════════ -->
+  <section class="hero" style="border-top:none;">
+    <div>
+      <span class="eyebrow"><span class="dot"></span>Early access · launching soon</span>
+      <h1>One app.<br>Every language.<br><span class="grad-text">Every conversation.</span></h1>
+      <p class="lede">The OneLingo turns any conversation into one you can both understand — speak naturally, hear the reply instantly, in a voice that can even be your own.</p>
+      <div class="hero-ctas">
+        <a class="btn btn-primary" href="#join">Join the Waitlist</a>
+        <a class="btn btn-ghost" href="#how">See how it works ↓</a>
+      </div>
+      <div class="hero-note"><div class="avatars"><span></span><span></span><span></span></div> Built for the conversations you're not having yet.</div>
+    </div>
+    <div class="phone-stage">
+      <div class="waveblob"></div>
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="ps-header">Conversation Mode</div>
+          <div class="bubble a"><span class="lang">Person A · Malayalam</span>നാളെ കാണാം, ശരിയല്ലേ?</div>
+          <div class="bubble b"><span class="lang">Person B · Spanish</span>¿Nos vemos mañana, verdad?</div>
+          <div class="mic-row">
+            <div class="wave-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="mic-btn"><svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4"/></svg></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ PROBLEM ═══════════════════ -->
+  <section id="problem">
+    <figure class="problem-shot">
+      <img src="images/problem-conversation.webp" alt="Four people calling each other from the US, Nairobi, Chennai, and Rio de Janeiro, each speaking their own language, with a giant question mark and 'How? Why?' between them" loading="lazy" width="1024" height="682" />
+    </figure>
+    <div class="problem-grid">
+      <div>
+        <span class="eyebrow"><span class="dot"></span>Sound familiar?</span>
+        <h2 style="margin-top:14px;">You shouldn't need four apps to have one conversation.</h2>
+        <p class="prose" style="margin-top:18px; font-size:16px;">A translator for text messages. A separate one for voice notes. A phrasebook for travel. An interpreter you'd have to book in advance. Somewhere between all that switching, the actual conversation — and the person in it — gets lost in a robotic, monotone voice that sounds like nobody at all.</p>
+        <p class="prose" style="font-size:16px; font-weight:700; color:var(--ink);">The OneLingo is the only one you'll need.</p>
+      </div>
+      <div class="juggle-list">
+        <div class="juggle-item"><span class="x">✕</span> Text translator for messages</div>
+        <div class="juggle-item"><span class="x">✕</span> Separate app for voice notes</div>
+        <div class="juggle-item"><span class="x">✕</span> Phrasebook you never remember to open</div>
+        <div class="juggle-item"><span class="x">✕</span> An interpreter you have to book</div>
+        <div class="juggle-item win"><span class="x">✓</span> The OneLingo — all of it, one app</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ HOW IT WORKS ═══════════════════ -->
+  <section id="how">
+    <div class="section-head">
+      <span class="eyebrow"><span class="dot"></span>How it works</span>
+      <h2>Talk. That's the whole instruction manual.</h2>
+      <p>No phrasebooks, no typing, no waiting for a stiff, word-for-word readout.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <h3>Speak, naturally</h3>
+        <p>Talk the way you already talk. The OneLingo auto-detects your language — no menus to dig through mid-sentence.</p>
+        <div class="step-line"></div>
+      </div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <h3>Understood, instantly</h3>
+        <p>Translation streams in real time — on Plus, it starts speaking the reply before your sentence has even finished generating.</p>
+        <div class="step-line"></div>
+      </div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <h3>Answered, in a real voice</h3>
+        <p>Hear it back naturally — or in your own cloned voice. Then the mic flips: their reply translates back to you, automatically.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ FEATURES (bento) ═══════════════════ -->
+  <section id="features">
+    <div class="section-head">
+      <span class="eyebrow"><span class="dot"></span>What makes it "the one"</span>
+      <h2>Everything a real conversation needs. Nothing it doesn't.</h2>
+    </div>
+    <div class="bento">
+      <div class="card big">
+        <div class="icon-badge"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4"/></svg></div>
+        <h3>It still sounds like you.</h3>
+        <p>Clone your own voice once. From then on, every translation you speak comes back out sounding like <em>you</em> said it — not a call-center voice reading your words for you.</p>
+        <div class="voice-viz">
+          <i style="height:30%"></i><i style="height:70%"></i><i style="height:100%"></i><i style="height:50%"></i><i style="height:85%"></i><i style="height:40%"></i><i style="height:60%"></i><i style="height:90%"></i><i style="height:35%"></i><i style="height:75%"></i><i style="height:55%"></i><i style="height:20%"></i>
+        </div>
+      </div>
+      <div class="card">
+        <div class="icon-badge"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="7" r="4"/><path d="M2 21v-2a4 4 0 014-4h6a4 4 0 014 4v2"/><circle cx="19" cy="8" r="3" stroke-dasharray="2 2"/></svg></div>
+        <h3>Conversation Mode</h3>
+        <p>Two people, two languages, one flow — the mic swaps direction automatically after each reply.</p>
+      </div>
+      <div class="card">
+        <div class="icon-badge"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 010 20 15 15 0 010-20z"/></svg></div>
+        <h3>45+ languages, done right</h3>
+        <p>Including native-script accuracy for 10 Indian languages and right-to-left scripts — not just the easy ones.</p>
+      </div>
+      <div class="card">
+        <div class="icon-badge"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z"/></svg></div>
+        <span class="badge-soon">Basic → Plus → Live</span>
+        <h3>Three ways to translate</h3>
+        <p>Start free. Go streaming for near-zero lag. Live, continuous interpretation is coming next.</p>
+      </div>
+      <div class="card">
+        <div class="icon-badge"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+        <h3>Private by design</h3>
+        <p>Conversations auto-delete after 90 days. Delete your account and everything in it, any time, in-app.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ LANGUAGES ═══════════════════ -->
+  <section id="languages">
+    <div class="section-head">
+      <span class="eyebrow"><span class="dot"></span>Language depth</span>
+      <h2>However you say it, we've got it.</h2>
+      <p>From Spanish to Swahili, Mandarin to Malayalam — 45+ languages, with real engineering behind the ones that usually get left behind.</p>
+    </div>
+    <div class="lang-cloud">
+      <span class="chip lg">English</span>
+      <span class="chip lg">हिन्दी <span class="native">Hindi</span></span>
+      <span class="chip">Español <span class="native">Spanish</span></span>
+      <span class="chip lg">മലയാളം <span class="native">Malayalam</span></span>
+      <span class="chip">中文 <span class="native">Mandarin</span></span>
+      <span class="chip">தமிழ் <span class="native">Tamil</span></span>
+      <span class="chip">Français <span class="native">French</span></span>
+      <span class="chip lg">العربية <span class="native">Arabic</span></span>
+      <span class="chip">తెలుగు <span class="native">Telugu</span></span>
+      <span class="chip">日本語 <span class="native">Japanese</span></span>
+      <span class="chip">ಕನ್ನಡ <span class="native">Kannada</span></span>
+      <span class="chip">Deutsch <span class="native">German</span></span>
+      <span class="chip">বাংলা <span class="native">Bengali</span></span>
+      <span class="chip">한국어 <span class="native">Korean</span></span>
+      <span class="chip">Português <span class="native">Portuguese</span></span>
+      <span class="chip">ગુજરાતી <span class="native">Gujarati</span></span>
+      <span class="chip">Русский <span class="native">Russian</span></span>
+      <span class="chip">اردو <span class="native">Urdu</span></span>
+      <span class="chip">ਪੰਜਾਬੀ <span class="native">Punjabi</span></span>
+      <span class="chip">Kiswahili <span class="native">Swahili</span></span>
+      <span class="chip dim">Italiano</span>
+      <span class="chip dim">Türkçe</span>
+      <span class="chip dim">ไทย</span>
+      <span class="chip dim">Tiếng Việt</span>
+      <span class="chip dim">עברית</span>
+      <span class="chip dim">فارسی</span>
+      <span class="chip dim">Nederlands</span>
+      <span class="chip dim">+ 20 more</span>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ TRUST ═══════════════════ -->
+  <section id="trust">
+    <div class="section-head">
+      <span class="eyebrow"><span class="dot"></span>Under the hood</span>
+      <h2>Built on AI that's already proven itself.</h2>
+      <p>We didn't train our own shaky speech model — we built on the ones already trusted for real speech, translation, and voice.</p>
+    </div>
+    <div class="trust-row">
+      <div class="trust-badge"><span class="dot2"></span>OpenAI — speech &amp; translation</div>
+      <div class="trust-badge"><span class="dot2"></span>ElevenLabs — natural &amp; cloned voices</div>
+      <div class="trust-badge"><span class="dot2"></span>Microsoft Azure Speech</div>
+    </div>
+    <div class="trust-foot">🔒 Your conversations are never sold, and never used to train anyone's model without your say. <a href="https://claude.ai/code/artifact/38531f73-11ab-43d9-aa87-407d13e1672f#privacy" target="_blank" rel="noopener">Read the privacy policy →</a></div>
+  </section>
+
+  <!-- ═══════════════════ FAQ ═══════════════════ -->
+  <section id="faq">
+    <div class="section-head">
+      <span class="eyebrow"><span class="dot"></span>Questions</span>
+      <h2>Good to know</h2>
+    </div>
+    <div class="faq-list">
+      <details class="faq-item" open>
+        <summary>What exactly is The OneLingo? <span class="plus"></span></summary>
+        <p>A mobile app for real, spoken conversations across languages. You speak, it detects your language and translates in real time, then speaks the reply back — in a natural voice, or your own cloned one — and automatically flips direction for the other person.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Which languages does it support? <span class="plus"></span></summary>
+        <p>45+ languages and counting, including dedicated accuracy work on Indian languages and right-to-left scripts like Arabic, Hebrew, and Persian — not just the handful most translators stop at.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Is my conversation private? <span class="plus"></span></summary>
+        <p>Yes. Conversations and their audio auto-delete after 90 days, and you can permanently delete your account and every trace of your data at any time, right from the app.</p>
+      </details>
+      <details class="faq-item">
+        <summary>How much does it cost? <span class="plus"></span></summary>
+        <p>Basic will always be free to start. Paid plans are launching alongside the app — join the waitlist and you'll be the first to know pricing, with early-access perks.</p>
+      </details>
+      <details class="faq-item">
+        <summary>When can I actually use it? <span class="plus"></span></summary>
+        <p>The OneLingo is in final testing now. Join the waitlist below and we'll email you the moment it's available.</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- ═══════════════════ FINAL CTA ═══════════════════ -->
+  <section id="join" style="border-top:none; padding-top:0;">
+    <div class="cta-panel">
+      <h2>Your next conversation could be in any language.</h2>
+      <p>Be first to try The OneLingo — early access, before anyone else.</p>
+      <form class="waitlist-form" id="waitlistForm" novalidate>
+        <input type="email" id="waitlistEmail" placeholder="you@email.com" autocomplete="email" required aria-label="Email address" />
+        <button class="btn btn-primary" type="submit">Join the Waitlist</button>
+      </form>
+      <div class="form-status" id="formStatus" role="status" aria-live="polite"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <div class="footer-grid">
+    <a href="#top" class="wordmark"><span class="glyph"></span><span class="pre">The</span>&nbsp;OneLingo</a>
+    <div class="footer-links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#languages">Languages</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://claude.ai/code/artifact/38531f73-11ab-43d9-aa87-407d13e1672f#privacy" target="_blank" rel="noopener">Privacy Policy</a>
+      <a href="https://claude.ai/code/artifact/38531f73-11ab-43d9-aa87-407d13e1672f#terms" target="_blank" rel="noopener">Terms of Service</a>
+      <a href="mailto:hello@theonelingo.com">Contact</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 The OneLingo. All rights reserved.</span>
+    <span>theonelingo.com</span>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var form = document.getElementById('waitlistForm');
+    var status = document.getElementById('formStatus');
+    var input = document.getElementById('waitlistEmail');
+
+    // NOTE for implementation: this currently only validates and shows a
+    // success state client-side — it does not yet send the email anywhere.
+    // Wire this to a real endpoint (e.g. a new POST /v1/waitlist route on
+    // the existing backend) before this page goes live at theonelingo.com.
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var email = input.value.trim();
+      var isValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+      if (!isValid) {
+        status.textContent = 'Please enter a valid email address.';
+        status.className = 'form-status';
+        input.focus();
+        return;
+      }
+      try { localStorage.setItem('onelingo_waitlist_email', email); } catch (err) {}
+      status.textContent = "You're on the list! We'll email you the moment it's ready.";
+      status.className = 'form-status success';
+      form.reset();
+    });
+  })();
+</script>
+</body>
+</html>
