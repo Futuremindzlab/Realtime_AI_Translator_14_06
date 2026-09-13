@@ -24,6 +24,12 @@ module.exports = {
   expo: {
     name: 'Realtime AI Translator',
     slug: 'ai-translator-06-09',
+    // Pinned explicitly so `eas init`/`eas build` always create/target the
+    // project under the Futuremindzlab org account, never whichever personal
+    // account happens to be logged in locally (see the mixup this fixed:
+    // extra.eas.projectId below was previously a project actually owned by
+    // a personal account, mohanbscbe2010, despite this being an org project).
+    owner: 'futuremindzlab',
     version: '1.0.0',
     orientation: 'portrait',
     icon: './assets/images/icon.png',
@@ -96,7 +102,11 @@ module.exports = {
     },
     extra: {
       router: {},
-      eas: { projectId: 'd7c5b190-f02b-4782-a64c-5414b9490e98' },
+      // No eas.projectId here for now — the old one (d7c5b190-...) belonged
+      // to the wrong (personal) account. Run `eas init` from the project
+      // root with the `owner` above already set to `futuremindzlab`; it'll
+      // create a fresh project under that account and print the new ID,
+      // which then needs to be added back here as `eas: { projectId: '...' }`.
       // Snapshot current env for runtime inspection (values are inlined by Metro)
       awsRegion: process.env.EXPO_PUBLIC_AWS_REGION || '',
       apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || '',
