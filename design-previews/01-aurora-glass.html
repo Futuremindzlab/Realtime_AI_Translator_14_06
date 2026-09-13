@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Design A — Aurora Glass</title>
+<link rel="stylesheet" href="shared.css" />
+<script src="icons.js"></script>
+<style>
+  .phone .viewport { background: #070b18; color: #e9edff; }
+  .phone .viewport::before {
+    content: ''; position: absolute; inset: -30% -40% auto -40%; height: 70%;
+    background:
+      radial-gradient(45% 55% at 25% 40%, rgba(56,189,248,0.55), transparent 70%),
+      radial-gradient(40% 50% at 70% 25%, rgba(168,85,247,0.55), transparent 70%),
+      radial-gradient(35% 45% at 55% 70%, rgba(236,72,153,0.35), transparent 70%);
+    filter: blur(28px);
+  }
+  .aurora-bottom {
+    position: absolute; left: -20%; right: -20%; bottom: -18%; height: 40%;
+    background: radial-gradient(50% 60% at 50% 60%, rgba(45,212,191,0.35), transparent 70%);
+    filter: blur(34px); pointer-events: none;
+  }
+  .statusbar { color: #cdd7ff; }
+  .scroll { position: relative; z-index: 10; }
+
+  .glass {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 22px;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 10px 30px rgba(3,7,18,0.45);
+  }
+
+  .top { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 16px; }
+  .hello { font-size: 12px; color: #9fb0e0; font-weight: 600; }
+  .hello + h2 { font-size: 22px; letter-spacing: -0.4px; margin-top: 2px; }
+  .avatar {
+    width: 38px; height: 38px; border-radius: 14px; display: grid; place-items: center;
+    background: linear-gradient(140deg, #38bdf8, #a855f7); font-weight: 800; font-size: 14px; color: #06101f;
+  }
+
+  .pair { padding: 15px 13px; display: flex; align-items: center; gap: 8px; }
+  .pair .lang { flex: 1; }
+  .pair .lang .k { font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase; color: #8fa2d6; font-weight: 700; }
+  .pair .lang .v { font-size: 15.5px; font-weight: 700; margin-top: 4px; display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .pair .lang .v svg { width: 14px; height: 14px; color: #8fa2d6; }
+  .pair .native { font-size: 11px; color: #93a3d4; margin-top: 2px; }
+  .swap {
+    width: 42px; height: 42px; border-radius: 15px; display: grid; place-items: center; flex: 0 0 42px;
+    background: linear-gradient(140deg, rgba(56,189,248,0.9), rgba(168,85,247,0.9)); color: #04101f;
+    box-shadow: 0 8px 20px rgba(56,189,248,0.35);
+  }
+  .swap svg { width: 20px; height: 20px; stroke-width: 2.4; }
+
+  .seg { display: flex; padding: 5px; margin: 14px 0; border-radius: 18px; gap: 4px; }
+  .seg div {
+    flex: 1; text-align: center; padding: 9px 4px; border-radius: 14px; font-size: 12.5px; font-weight: 700;
+    color: #9fb0e0; display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .seg svg { width: 15px; height: 15px; }
+  .seg .on { background: rgba(255,255,255,0.16); color: #ffffff; box-shadow: 0 4px 14px rgba(0,0,0,0.3); }
+
+  .chips { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .chip {
+    font-size: 11.5px; font-weight: 600; padding: 7px 11px; border-radius: 999px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #c8d3f7;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .chip svg { width: 12px; height: 12px; color: #fbbf24; fill: #fbbf24; }
+  .chip.add { color: #7dd3fc; border-style: dashed; }
+
+  .micwrap { display: grid; place-items: center; height: 190px; margin: 8px 0 0; position: relative; }
+  .halo { position: absolute; width: 190px; height: 190px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(56,189,248,0.35), transparent 62%); }
+  .ring { position: absolute; width: 132px; height: 132px; border-radius: 50%; border: 1px solid rgba(125,211,252,0.35); }
+  .ring.two { width: 162px; height: 162px; border-color: rgba(168,85,247,0.25); }
+  .mic {
+    width: 104px; height: 104px; border-radius: 50%; display: grid; place-items: center; position: relative;
+    background: linear-gradient(150deg, #38bdf8, #6366f1 55%, #a855f7);
+    box-shadow: 0 18px 40px rgba(99,102,241,0.5), inset 0 1px 0 rgba(255,255,255,0.5);
+  }
+  .mic svg { width: 40px; height: 40px; color: #05101f; stroke-width: 2.2; }
+  .mic.rec { background: linear-gradient(150deg, #fb7185, #ef4444 60%, #f97316); box-shadow: 0 18px 40px rgba(239,68,68,0.45); }
+  .mic.rec svg { fill: #2a0509; stroke: #2a0509; }
+  .status { text-align: center; font-size: 13.5px; font-weight: 600; color: #b7c6f4; margin-top: 2px; position: relative; z-index: 3; }
+  .status .accent { color: #7dd3fc; }
+
+  .wave { display: flex; align-items: center; justify-content: center; gap: 3px; height: 34px; margin-top: 4px; }
+  .wave i { width: 3px; border-radius: 3px; background: linear-gradient(180deg, #7dd3fc, #a855f7); display: block; }
+
+  .turn { display: flex; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 12px; }
+  .turn .who {
+    width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; font-weight: 800; font-size: 13px;
+    background: linear-gradient(140deg, #34d399, #22d3ee); color: #04231d;
+  }
+  .turn .meta { flex: 1; }
+  .turn .meta b { font-size: 13.5px; }
+  .turn .meta span { display: block; font-size: 11px; color: #93a3d4; margin-top: 2px; }
+  .timer { font-variant-numeric: tabular-nums; font-size: 13px; font-weight: 700; color: #7dd3fc; }
+
+  .bubble { padding: 14px 16px; margin-bottom: 12px; }
+  .bubble .k { font-size: 10px; letter-spacing: 1.3px; text-transform: uppercase; color: #8fa2d6; font-weight: 700; margin-bottom: 7px; }
+  .bubble p { font-size: 15px; line-height: 1.5; }
+  .bubble.out {
+    background: linear-gradient(140deg, rgba(56,189,248,0.22), rgba(168,85,247,0.22));
+    border-color: rgba(125,211,252,0.4);
+  }
+  .bubble.out p { font-size: 16.5px; }
+  .actions { display: flex; gap: 8px; margin-top: 12px; }
+  .act {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px;
+    border-radius: 12px; background: rgba(255,255,255,0.09); font-size: 11.5px; font-weight: 700; color: #dbe4ff;
+  }
+  .act svg { width: 13px; height: 13px; }
+  .act.primary { background: linear-gradient(140deg, #38bdf8, #6366f1); color: #04101f; }
+
+  .interrupt {
+    text-align: center; padding: 9px; border-radius: 14px; font-size: 12.5px; font-weight: 700;
+    border: 1px dashed rgba(125,211,252,0.5); color: #7dd3fc; margin-bottom: 12px;
+  }
+
+  .sect { display: flex; align-items: center; justify-content: space-between; margin: 4px 2px 10px; }
+  .sect b { font-size: 15px; }
+  .sect span { font-size: 11.5px; color: #7dd3fc; font-weight: 600; }
+
+  .hrow { padding: 13px 14px; margin-bottom: 10px; display: flex; gap: 11px; align-items: flex-start; }
+  .hrow .flag { width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; font-size: 12px; font-weight: 800;
+    background: rgba(255,255,255,0.1); color: #cfe0ff; }
+  .hrow .txt { flex: 1; min-width: 0; }
+  .hrow .txt b { font-size: 13.5px; display: block; }
+  .hrow .txt span { font-size: 12px; color: #9fb0e0; display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hrow .txt .tr { color: #7dd3fc; }
+  .hrow .go { color: #6f80b5; }
+  .hrow .go svg { width: 16px; height: 16px; }
+
+  .kpis { display: flex; gap: 10px; margin-bottom: 14px; }
+  .kpi { flex: 1; padding: 13px 12px; }
+  .kpi b { font-size: 20px; display: block; }
+  .kpi span { font-size: 10.5px; color: #93a3d4; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+  .kpi.a b { color: #7dd3fc; } .kpi.b b { color: #c084fc; } .kpi.c b { color: #34d399; }
+
+  .bar { margin-bottom: 11px; }
+  .bar .lbl { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px; color: #c3cfef; font-weight: 600; }
+  .bar .track { height: 8px; border-radius: 8px; background: rgba(255,255,255,0.09); overflow: hidden; }
+  .bar .fill { height: 100%; border-radius: 8px; background: linear-gradient(90deg, #38bdf8, #a855f7); }
+
+  .tabbar {
+    margin: 0 14px 14px; border-radius: 24px; flex: 0 0 62px; padding: 0;
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); backdrop-filter: blur(16px);
+  }
+  .tab { color: #8092c4; }
+  .tab.on { color: #7dd3fc; }
+  .tab.on svg { filter: drop-shadow(0 0 8px rgba(125,211,252,0.8)); }
+</style>
+</head>
+<body>
+<div class="page-head">
+  <div class="eyebrow">Design direction A</div>
+  <h1>Aurora Glass</h1>
+  <p>A premium dark UI: aurora gradient backdrop, frosted-glass cards and a mic button that glows as it listens.
+     Best when the app is used in meetings, travel and low light — the coloured glow doubles as the state indicator
+     (blue = idle, red = capturing, teal = the other speaker's turn).</p>
+  <div class="tags">
+    <span>Dark-first</span><span>Glassmorphism</span><span>Animated waveform</span>
+    <span>Swap button</span><span>Favourite language chips</span><span>Floating tab bar</span>
+  </div>
+</div>
+
+<div class="gallery">
+
+  <!-- Screen 1 — idle -->
+  <div class="screen">
+    <div class="phone"><div class="viewport">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i><i></i></span></div>
+      <div class="aurora-bottom"></div>
+      <div class="body"><div class="scroll">
+        <div class="top">
+          <div><div class="hello">Good evening</div><h2>Let's translate</h2></div>
+          <div class="avatar">MS</div>
+        </div>
+
+        <div class="glass pair">
+          <div class="lang">
+            <div class="k">From</div>
+            <div class="v"><svg><use href="#i-globe"/></svg> Auto detect</div>
+            <div class="native">Detects 47 languages</div>
+          </div>
+          <div class="swap"><svg><use href="#i-swap"/></svg></div>
+          <div class="lang" style="text-align:right">
+            <div class="k">To</div>
+            <div class="v" style="justify-content:flex-end">Malayalam</div>
+            <div class="native">മലയാളം</div>
+          </div>
+        </div>
+
+        <div class="glass seg">
+          <div class="on"><svg><use href="#i-user"/></svg> Single</div>
+          <div><svg><use href="#i-users"/></svg> Conversation</div>
+        </div>
+
+        <div class="chips">
+          <div class="chip"><svg><use href="#i-star"/></svg> EN → ML</div>
+          <div class="chip"><svg><use href="#i-star"/></svg> EN → ES</div>
+          <div class="chip add">+ Add</div>
+        </div>
+
+        <div class="micwrap">
+          <div class="halo"></div><div class="ring"></div><div class="ring two"></div>
+          <div class="mic"><svg><use href="#i-mic"/></svg></div>
+        </div>
+        <div class="status">Tap to speak · <span class="accent">on-device Whisper ready</span></div>
+
+        <div class="sect" style="margin-top:22px"><b>Recent</b><span>See all</span></div>
+        <div class="glass hrow">
+          <div class="flag">EN</div>
+          <div class="txt"><b>Where is the train station?</b><span class="tr">ട്രെയിൻ സ്റ്റേഷൻ എവിടെയാണ്?</span></div>
+          <div class="go"><svg><use href="#i-chevron"/></svg></div>
+        </div>
+      </div></div>
+      <div class="tabbar">
+        <div class="tab on"><svg><use href="#i-home"/></svg>Home</div>
+        <div class="tab"><svg><use href="#i-history"/></svg>History</div>
+        <div class="tab"><svg><use href="#i-chart"/></svg>Stats</div>
+        <div class="tab"><svg><use href="#i-settings"/></svg>Settings</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Home · idle</b>Swap control, favourite pairs and a live "engine ready" hint.</div>
+  </div>
+
+  <!-- Screen 2 — live conversation -->
+  <div class="screen">
+    <div class="phone"><div class="viewport">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i><i></i></span></div>
+      <div class="aurora-bottom"></div>
+      <div class="body"><div class="scroll">
+        <div class="top">
+          <div><div class="hello">Conversation mode</div><h2>English ⇄ Malayalam</h2></div>
+          <div class="avatar">MS</div>
+        </div>
+
+        <div class="glass turn">
+          <div class="who">A</div>
+          <div class="meta"><b>Person A is speaking</b><span>English → Malayalam</span></div>
+          <div class="timer">0:06</div>
+        </div>
+
+        <div class="micwrap" style="height:132px">
+          <div class="halo" style="background:radial-gradient(circle, rgba(239,68,68,0.35), transparent 62%)"></div>
+          <div class="ring" style="border-color:rgba(251,113,133,0.4)"></div>
+          <div class="ring two" style="border-color:rgba(239,68,68,0.25)"></div>
+          <div class="mic rec"><svg><use href="#i-stop"/></svg></div>
+        </div>
+        <div class="wave" id="wave"></div>
+        <div class="status" style="color:#fda4af">Listening… silence ends the turn</div>
+
+        <div class="interrupt">Done talking — pass to Person B</div>
+
+        <div class="glass bubble" style="padding:12px 14px">
+          <div class="k">English · heard</div>
+          <p style="font-size:14px">Could you tell me how much the ticket costs?</p>
+        </div>
+
+        <div class="glass bubble out">
+          <div class="k">Malayalam · translation</div>
+          <p>ടിക്കറ്റിന് എത്ര രൂപയാകും എന്ന് പറയാമോ?</p>
+          <div class="actions">
+            <div class="act primary"><svg><use href="#i-volume"/></svg> Replay</div>
+            <div class="act"><svg><use href="#i-copy"/></svg> Copy</div>
+            <div class="act"><svg><use href="#i-share"/></svg> Share</div>
+          </div>
+        </div>
+      </div></div>
+      <div class="tabbar">
+        <div class="tab on"><svg><use href="#i-home"/></svg>Home</div>
+        <div class="tab"><svg><use href="#i-history"/></svg>History</div>
+        <div class="tab"><svg><use href="#i-chart"/></svg>Stats</div>
+        <div class="tab"><svg><use href="#i-settings"/></svg>Settings</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Conversation · live</b>Turn card + timer, waveform, hand-off button, replay/copy/share.</div>
+  </div>
+
+  <!-- Screen 3 — dashboard -->
+  <div class="screen">
+    <div class="phone"><div class="viewport">
+      <div class="notch"></div>
+      <div class="statusbar"><span>9:41</span><span class="dots"><i></i><i></i><i></i><i></i></span></div>
+      <div class="aurora-bottom"></div>
+      <div class="body"><div class="scroll">
+        <div class="top">
+          <div><div class="hello">This month</div><h2>Dashboard</h2></div>
+          <div class="avatar">MS</div>
+        </div>
+
+        <div class="kpis">
+          <div class="glass kpi a"><b>1,284</b><span>Turns</span></div>
+          <div class="glass kpi b"><b>18</b><span>Languages</span></div>
+          <div class="glass kpi c"><b>1.4s</b><span>Avg latency</span></div>
+        </div>
+
+        <div class="sect"><b>Top language pairs</b><span>30 days</span></div>
+        <div class="glass" style="padding:14px 14px 6px; margin-bottom:14px">
+          <div class="bar"><div class="lbl"><span>English → Malayalam</span><span>412</span></div><div class="track"><div class="fill" style="width:92%"></div></div></div>
+          <div class="bar"><div class="lbl"><span>English → Spanish</span><span>288</span></div><div class="track"><div class="fill" style="width:64%"></div></div></div>
+          <div class="bar"><div class="lbl"><span>Hindi → English</span><span>176</span></div><div class="track"><div class="fill" style="width:39%"></div></div></div>
+          <div class="bar"><div class="lbl"><span>Tamil → English</span><span>121</span></div><div class="track"><div class="fill" style="width:27%"></div></div></div>
+        </div>
+
+        <div class="sect"><b>Latency by stage</b><span>avg</span></div>
+        <div class="glass" style="padding:14px 14px 6px">
+          <div class="bar"><div class="lbl"><span>Transcribe</span><span>420 ms</span></div><div class="track"><div class="fill" style="width:42%"></div></div></div>
+          <div class="bar"><div class="lbl"><span>Translate</span><span>510 ms</span></div><div class="track"><div class="fill" style="width:51%"></div></div></div>
+          <div class="bar"><div class="lbl"><span>Speech</span><span>470 ms</span></div><div class="track"><div class="fill" style="width:47%"></div></div></div>
+        </div>
+      </div></div>
+      <div class="tabbar">
+        <div class="tab"><svg><use href="#i-home"/></svg>Home</div>
+        <div class="tab"><svg><use href="#i-history"/></svg>History</div>
+        <div class="tab on"><svg><use href="#i-chart"/></svg>Stats</div>
+        <div class="tab"><svg><use href="#i-settings"/></svg>Settings</div>
+      </div>
+    </div></div>
+    <div class="caption"><b>Dashboard</b>KPI trio, pair ranking and the per-stage latency you already measure.</div>
+  </div>
+
+</div>
+
+<script>
+  // Static waveform bars — deterministic so screenshots are reproducible.
+  document.addEventListener('DOMContentLoaded', () => {
+    const heights = [8,14,22,30,38,28,18,26,36,42,30,20,12,18,28,38,34,24,16,10,16,24,32,26,18,12,8];
+    document.getElementById('wave').innerHTML = heights.map(h => `<i style="height:${h}px"></i>`).join('');
+  });
+</script>
+</body>
+</html>

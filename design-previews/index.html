@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>AI Translator — design directions</title>
+<link rel="stylesheet" href="shared.css" />
+<style>
+  .cards { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+  .c {
+    display: block; text-decoration: none; color: inherit; padding: 22px; border-radius: 22px;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+  }
+  .c .swatches { display: flex; gap: 6px; margin-bottom: 16px; }
+  .c .swatches i { width: 26px; height: 26px; border-radius: 9px; display: block; }
+  .c h3 { font-size: 19px; letter-spacing: -0.4px; margin-bottom: 8px; }
+  .c p { font-size: 13.5px; line-height: 1.55; color: var(--page-muted); }
+  .c .go { margin-top: 14px; font-size: 12.5px; font-weight: 700; color: #7dd3fc; }
+  table { max-width: 1180px; margin: 40px auto 0; border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  th { color: var(--page-muted); font-size: 11.5px; letter-spacing: 1.2px; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<div class="page-head">
+  <div class="eyebrow">Realtime AI Translator</div>
+  <h1>Four front-end directions</h1>
+  <p>Static, pixel-accurate mockups of the same app in four visual languages. Every screen is built from features
+     the app already has (auto-detect, conversation turn-taking, provider routing, history, dashboard) plus a few
+     proposed additions marked in the captions. Pick one — or mix — and it gets implemented in the Expo app.</p>
+</div>
+
+<div class="cards">
+  <a class="c" href="01-aurora-glass.html">
+    <div class="swatches"><i style="background:#38bdf8"></i><i style="background:#a855f7"></i><i style="background:#070b18"></i></div>
+    <h3>A · Aurora Glass</h3>
+    <p>Dark, frosted glass over an aurora gradient. Glowing mic states, waveform, floating tab bar. Premium and distinctive.</p>
+    <div class="go">Open preview →</div>
+  </a>
+  <a class="c" href="02-clarity-light.html">
+    <div class="swatches"><i style="background:#4f46e5"></i><i style="background:#f6f7fb"></i><i style="background:#0f172a"></i></div>
+    <h3>B · Clarity Light</h3>
+    <p>A polished version of today's light UI: joined language control with swap, pipeline stepper, searchable grouped history. Lowest risk.</p>
+    <div class="go">Open preview →</div>
+  </a>
+  <a class="c" href="03-conversation-canvas.html">
+    <div class="swatches"><i style="background:#a855f7"></i><i style="background:#38bdf8"></i><i style="background:#0f1117"></i></div>
+    <h3>C · Conversation Canvas</h3>
+    <p>Built for two people: split face-to-face screen with the other speaker's text rotated toward them, chat transcript, phrasebook.</p>
+    <div class="go">Open preview →</div>
+  </a>
+  <a class="c" href="04-studio-bold.html">
+    <div class="swatches"><i style="background:#7c3aed"></i><i style="background:#fbbf24"></i><i style="background:#fdf8f3"></i></div>
+    <h3>D · Studio Bold</h3>
+    <p>Consumer-app energy: violet→pink hero, amber actions, oversized translation type readable across a table.</p>
+    <div class="go">Open preview →</div>
+  </a>
+</div>
+
+<table>
+  <tr><th>Direction</th><th>Best for</th><th>New features shown</th><th>Effort</th></tr>
+  <tr><td>A · Aurora Glass</td><td>Standing out; low-light use</td><td>Swap, favourite pairs, waveform, replay/copy/share, latency KPIs</td><td>Medium — new theme layer + components</td></tr>
+  <tr><td>B · Clarity Light</td><td>Shipping fastest on the current code</td><td>Swap, pipeline stepper, confidence, history search + filters + day grouping</td><td>Low — restyles existing screens</td></tr>
+  <tr><td>C · Conversation Canvas</td><td>Face-to-face translation as the core use case</td><td>Split rotated view, chat transcript, turn hand-off dock, phrasebook</td><td>High — new navigation model</td></tr>
+  <tr><td>D · Studio Bold</td><td>Consumer launch / app-store screenshots</td><td>Hero language pair, mode tiles, voice picker with preview, provider transparency</td><td>Medium</td></tr>
+</table>
+</body>
+</html>
