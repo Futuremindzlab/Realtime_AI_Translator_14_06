@@ -38,6 +38,24 @@ function isUserCancellation(description: unknown): boolean {
   return typeof description === 'string' && description.toLowerCase().includes('cancel');
 }
 
+// The native Android SDK throws this exact text ("Initialization issue
+// between previous transaction and current transaction") when open() is
+// called while it still considers a previous Checkout session live — either
+// a genuine double-invocation (guarded against below via inProgress) or a
+// prior session left dangling by the app being backgrounded/killed mid-
+// Checkout, which the SDK can't recover from on its own. There's no
+// react-native-razorpay API to force-reset that native state from JS, so the
+// only thing to do is translate it into guidance instead of surfacing the
+// raw SDK string.
+function isStaleCheckoutSession(description: unknown): boolean {
+  return typeof description === 'string' && description.toLowerCase().includes('initialization issue');
+}
+
+// Synchronous, module-level (not React state) so it can't be bypassed by a
+// double-tap landing before setState/re-render disables the button — React's
+// state updates aren't guaranteed to apply before a second onPress fires.
+let checkoutInProgress = false;
+
 const PLAN_LABEL: Record<'plus' | 'live', string> = { plus: 'Plus', live: 'Live' };
 
 // The @types/react-native-razorpay CheckoutOptions interface declares
@@ -72,29 +90,50 @@ interface SubscriptionCheckoutSuccess {
  * signature mismatch, etc.).
  */
 export async function subscribeToPlan(plan: 'plus' | 'live'): Promise<UserSettings> {
-  const order = await dynamoService.createRazorpaySubscription(plan);
-
-  let checkoutResult: SubscriptionCheckoutSuccess;
-  try {
-    const options: SubscriptionCheckoutOptions = {
-      subscription_id: order.subscription_id,
-      key: order.key_id,
-      name: 'Realtime AI Translator',
-      description: `${PLAN_LABEL[plan]} plan — monthly subscription`,
-      // Razorpay Checkout's documented flag marking this as a recurring
-      // (subscription) payment sheet rather than a one-time order.
-      recurring: true,
-      theme: { color: '#2563eb' },
-    };
-    checkoutResult = (await RazorpayCheckout.open(options as CheckoutOptions)) as unknown as SubscriptionCheckoutSuccess;
-  } catch (err: any) {
-    if (isUserCancellation(err?.description)) {
-      throw new CheckoutCancelledError();
-    }
-    throw new Error(err?.description || 'Payment failed — please try again.');
+  // Guards the same class of bug the "Initialization issue between previous
+  // transaction and current transaction" native error reports: Checkout.open()
+  // called a second time before the first has finished. The Settings screen
+  // already disables its button while subscribing, but that's React state —
+  // this check is synchronous and can't be raced by a fast double-tap landing
+  // before the re-render lands.
+  if (checkoutInProgress) {
+    throw new CheckoutCancelledError('A payment is already in progress — please wait for it to finish.');
   }
+  checkoutInProgress = true;
 
-  return dynamoService.verifyRazorpayPayment(checkoutResult);
+  try {
+    const order = await dynamoService.createRazorpaySubscription(plan);
+
+    let checkoutResult: SubscriptionCheckoutSuccess;
+    try {
+      const options: SubscriptionCheckoutOptions = {
+        subscription_id: order.subscription_id,
+        key: order.key_id,
+        name: 'The OneLingo',
+        description: `${PLAN_LABEL[plan]} plan — monthly subscription`,
+        // Razorpay Checkout's documented flag marking this as a recurring
+        // (subscription) payment sheet rather than a one-time order.
+        recurring: true,
+        theme: { color: '#2563eb' },
+      };
+      checkoutResult = (await RazorpayCheckout.open(options as CheckoutOptions)) as unknown as SubscriptionCheckoutSuccess;
+    } catch (err: any) {
+      if (isUserCancellation(err?.description)) {
+        throw new CheckoutCancelledError();
+      }
+      if (isStaleCheckoutSession(err?.description)) {
+        // Not something retrying immediately fixes — the native SDK's own
+        // session state is stuck, most often after the app was backgrounded
+        // or killed mid-Checkout last time. A full app restart clears it.
+        throw new Error('Payment could not start because a previous attempt is still active. Please close and reopen the app, then try again.');
+      }
+      throw new Error(err?.description || 'Payment failed — please try again.');
+    }
+
+    return await dynamoService.verifyRazorpayPayment(checkoutResult);
+  } finally {
+    checkoutInProgress = false;
+  }
 }
 
 /** Cancels the caller's active subscription (effective at cycle end — see
