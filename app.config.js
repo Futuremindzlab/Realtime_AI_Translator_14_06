@@ -52,10 +52,15 @@ module.exports = {
     },
     android: {
       package: 'com.mohan.aitranslator',
+      // READ/WRITE_EXTERNAL_STORAGE deliberately dropped: every FileSystem
+      // call in this app (whisperService's model cache, audioProcessor's
+      // temp WAV, ttsService's temp audio) writes to documentDirectory/
+      // cacheDirectory — the app's own private sandbox, which has never
+      // needed these permissions on Android. Declaring broad storage access
+      // the app doesn't use invites exactly the kind of unjustified-
+      // permission flag Play Console review looks for.
       permissions: [
         'RECORD_AUDIO',
-        'READ_EXTERNAL_STORAGE',
-        'WRITE_EXTERNAL_STORAGE',
         'android.permission.RECORD_AUDIO',
         'android.permission.MODIFY_AUDIO_SETTINGS',
       ],

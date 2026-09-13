@@ -392,6 +392,12 @@ export default function HomeScreen() {
                 <Text style={styles.textBoxContent}>{progress.translatedText}</Text>
               </View>
             )}
+
+            {progress.translatedText && (
+              <Text style={styles.disclaimerText}>
+                AI translations may contain errors. Not intended for medical, legal, or other critical use.
+              </Text>
+            )}
           </View>
         )}
 
@@ -600,5 +606,11 @@ const styles = StyleSheet.create({
     fontSize: 17,
     color: '#1e293b',
     lineHeight: 26,
+  },
+  disclaimerText: {
+    fontSize: 11,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginTop: 8,
   },
 });
