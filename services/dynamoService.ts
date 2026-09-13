@@ -152,6 +152,71 @@ class DynamoService {
     }
   }
 
+  // OWNER-only testing tool — see backend/src/handlers/settings.mjs's
+  // adminSetPlan(). No streaming/live pipeline gates currently read `plan` in
+  // this codebase, so this only exercises the billing UI/state without a real
+  // purchase — useful for QA without spending real money via Razorpay.
+  async adminSetPlan(plan: 'basic' | 'plus' | 'live', targetUserId?: string): Promise<UserSettings | null> {
+    try {
+      return await this.request<UserSettings>('/v1/admin/set-plan', {
+        method: 'PATCH',
+        body:   JSON.stringify({ plan, ...(targetUserId ? { user_id: targetUserId } : {}) }),
+      });
+    } catch (error) {
+      console.error('❌ adminSetPlan error:', error);
+      return null;
+    }
+  }
+
+  // ── BILLING / RAZORPAY ──────────────────────────────────────────────────────
+  // Real purchase flow for 'plus'/'live' — see services/billingService.ts for
+  // the RazorpayCheckout wrapper that ties these two calls together with the
+  // native SDK. Errors are rethrown (not swallowed to null like most methods
+  // above) so billingService can distinguish "network/server error" from
+  // "user cancelled the checkout" and surface each correctly.
+
+  /** Creates a Razorpay subscription for the given plan and returns what
+   *  Checkout needs to open (subscription_id + the public key_id). */
+  async createRazorpaySubscription(plan: 'plus' | 'live'): Promise<{ subscription_id: string; key_id: string; plan: string }> {
+    return this.request('/v1/billing/razorpay/create-subscription', {
+      method: 'POST',
+      body:   JSON.stringify({ plan }),
+    });
+  }
+
+  /** Verifies a just-completed Checkout payment and applies the plan server-side.
+   *  This is a fast in-app confirmation only — the Razorpay webhook (handled
+   *  entirely server-side) is the durable source of truth for renewals and
+   *  cancellations, which this call is never involved in. */
+  async verifyRazorpayPayment(payload: {
+    razorpay_payment_id: string;
+    razorpay_subscription_id: string;
+    razorpay_signature: string;
+  }): Promise<UserSettings> {
+    return this.request('/v1/billing/razorpay/verify', {
+      method: 'POST',
+      body:   JSON.stringify(payload),
+    });
+  }
+
+  /** Cancels at the end of the current billing cycle — access continues
+   *  through what's already been paid for; the actual downgrade happens when
+   *  the webhook's subscription.cancelled event lands at cycle end. */
+  async cancelRazorpaySubscription(): Promise<UserSettings> {
+    return this.request('/v1/billing/razorpay/cancel', { method: 'POST' });
+  }
+
+  // ── ACCOUNT ──────────────────────────────────────────────────────────────
+
+  /** Permanently deletes the signed-in user's account: cancels any live
+   *  Razorpay subscription, purges conversation history + audio, deletes
+   *  settings, then deletes the Cognito user itself. Irreversible — the
+   *  caller (AuthContext.deleteAccount) signs the local session out
+   *  immediately after this resolves, since the account no longer exists. */
+  async deleteAccount(): Promise<void> {
+    await this.request('/v1/account', { method: 'DELETE' });
+  }
+
   // ── CONVERSATION HISTORY ────────────────────────────────────────────────────
 
   async getConversationHistory(userId: string, limit?: number): Promise<ConversationHistory[]> {

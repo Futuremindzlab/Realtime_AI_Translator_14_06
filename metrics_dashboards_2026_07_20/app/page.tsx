@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { Users, ShieldCheck } from "lucide-react";
+import { Users, ShieldCheck, CreditCard } from "lucide-react";
 
 export default function Home() {
   return (
-    <div className="grid gap-6 sm:grid-cols-2">
+    <div className="grid gap-6 sm:grid-cols-3">
       <Link
         href="/user_analytics"
         className="rounded-xl border border-slate-200 bg-white p-6 hover:shadow-md transition-shadow"
@@ -11,6 +11,14 @@ export default function Home() {
         <Users className="h-8 w-8 text-brand-600 mb-3" />
         <h2 className="text-lg font-semibold">User Analytics</h2>
         <p className="text-sm text-slate-600 mt-1">Members, regions, retention, churn risk</p>
+      </Link>
+      <Link
+        href="/payments"
+        className="rounded-xl border border-slate-200 bg-white p-6 hover:shadow-md transition-shadow"
+      >
+        <CreditCard className="h-8 w-8 text-brand-600 mb-3" />
+        <h2 className="text-lg font-semibold">Payments</h2>
+        <p className="text-sm text-slate-600 mt-1">Active paying users, recent orders (live from Razorpay)</p>
       </Link>
       <Link
         href="/infra_security"

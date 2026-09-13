@@ -1,0 +1,523 @@
+<title>Privacy, Terms &amp; Refunds</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #F6F7FA;
+    --surface: #FFFFFF;
+    --surface-2: #EEF1F6;
+    --ink: #161A20;
+    --ink-muted: #5B6472;
+    --ink-faint: #8891A0;
+    --border: #E1E4EA;
+    --accent: #2554EB;
+    --accent-ink: #1740B8;
+    --accent-soft: #EAF0FF;
+    --placeholder-bg: #FFF4E0;
+    --placeholder-border: #E8A93B;
+    --placeholder-ink: #8A5A0A;
+    --shadow: 0 1px 2px rgba(22,26,32,0.04), 0 8px 24px rgba(22,26,32,0.05);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151B;
+      --surface: #1A1E26;
+      --surface-2: #20242D;
+      --ink: #E7E9EE;
+      --ink-muted: #99A2B3;
+      --ink-faint: #6B7383;
+      --border: #2A2F3A;
+      --accent: #6E96FF;
+      --accent-ink: #A9C1FF;
+      --accent-soft: #1D2740;
+      --placeholder-bg: #2E260F;
+      --placeholder-border: #B98A2E;
+      --placeholder-ink: #F2C169;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12151B;
+    --surface: #1A1E26;
+    --surface-2: #20242D;
+    --ink: #E7E9EE;
+    --ink-muted: #99A2B3;
+    --ink-faint: #6B7383;
+    --border: #2A2F3A;
+    --accent: #6E96FF;
+    --accent-ink: #A9C1FF;
+    --accent-soft: #1D2740;
+    --placeholder-bg: #2E260F;
+    --placeholder-border: #B98A2E;
+    --placeholder-ink: #F2C169;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    padding-inline: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--accent); }
+
+  h1, h2, h3 {
+    font-family: 'Source Serif 4', Georgia, serif;
+    text-wrap: balance;
+    color: var(--ink);
+    line-height: 1.2;
+  }
+
+  code, .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+
+  /* ── Top bar ── */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    margin-inline: -20px;
+    padding-inline: 20px;
+  }
+  .topbar-inner {
+    max-width: 760px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding-block: 14px;
+    flex-wrap: wrap;
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-family: 'Source Serif 4', serif;
+    font-weight: 600;
+    font-size: 17px;
+    white-space: nowrap;
+  }
+  .brand .tag {
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+  nav.switcher {
+    display: flex;
+    gap: 4px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px;
+  }
+  nav.switcher a {
+    text-decoration: none;
+    color: var(--ink-muted);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: 999px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  nav.switcher a:hover { color: var(--ink); }
+  nav.switcher a.active { background: var(--accent); color: white; }
+
+  /* ── Layout ── */
+  main { max-width: 760px; margin: 0 auto; padding-block: 40px 80px; }
+
+  .intro {
+    padding-bottom: 28px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .intro h1 { font-size: 28px; margin: 0 0 8px; }
+  .intro p { color: var(--ink-muted); font-size: 15px; line-height: 1.6; margin: 0; max-width: 62ch; }
+
+  .doc { padding-block: 56px; border-bottom: 1px solid var(--border); }
+  .doc:last-child { border-bottom: none; }
+
+  .doc-head { margin-bottom: 28px; }
+  .doc-eyebrow {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    margin-bottom: 8px;
+  }
+  .doc h2 { font-size: 26px; margin: 0 0 14px; }
+
+  .meta-card {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .meta-cell { background: var(--surface); padding: 12px 16px; }
+  .meta-cell .label {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 4px;
+  }
+  .meta-cell .value { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--ink); }
+  @media (max-width: 560px) {
+    .meta-card { grid-template-columns: 1fr; }
+  }
+
+  section.clause { margin-top: 30px; }
+  section.clause h3 {
+    font-size: 17px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0 0 10px;
+  }
+  section.clause h3 .num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-faint);
+    flex-shrink: 0;
+  }
+  section.clause p, section.clause li {
+    font-size: 15px;
+    line-height: 1.7;
+    color: var(--ink);
+    max-width: 66ch;
+  }
+  section.clause p { margin: 0 0 12px; }
+  section.clause ul { margin: 0 0 12px; padding-left: 22px; }
+  section.clause li { margin-bottom: 6px; }
+  section.clause strong { font-weight: 600; }
+
+  table.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 18px;
+    font-size: 14px;
+  }
+  table.data-table th, table.data-table td {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  table.data-table th {
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 600;
+  }
+  table.data-table td.num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+
+  .callout {
+    background: var(--accent-soft);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 14px;
+    line-height: 1.6;
+    margin: 16px 0;
+  }
+  .callout strong { color: var(--accent-ink); }
+
+  /* ── Placeholder marker ── */
+  .fill {
+    display: inline;
+    background: var(--placeholder-bg);
+    border: 1px dashed var(--placeholder-border);
+    color: var(--placeholder-ink);
+    border-radius: 5px;
+    padding: 1px 7px;
+    font-size: 0.93em;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .placeholder-key {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--ink-muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-top: 24px;
+    box-shadow: var(--shadow);
+  }
+  .placeholder-key .swatch {
+    width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
+    background: var(--placeholder-bg);
+    border: 1px dashed var(--placeholder-border);
+  }
+
+  footer {
+    max-width: 760px;
+    margin: 0 auto;
+    padding-block: 24px 48px;
+    color: var(--ink-faint);
+    font-size: 12.5px;
+    text-align: center;
+  }
+</style>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">The OneLingo <span class="tag">Legal</span></div>
+    <nav class="switcher" id="switcher">
+      <a href="#privacy" data-key="privacy" class="active">Privacy</a>
+      <a href="#terms" data-key="terms">Terms</a>
+      <a href="#refunds" data-key="refunds">Refunds</a>
+    </nav>
+  </div>
+</div>
+
+<main>
+  <div class="intro">
+    <h1>Privacy, Terms &amp; Refunds</h1>
+    <p>These three documents govern the use of The OneLingo mobile app and its subscription plans. Fields marked <span class="fill">like&nbsp;this</span> are placeholders — publish nothing publicly until every one is replaced.</p>
+  </div>
+
+  <!-- ══════════════════════════ PRIVACY POLICY ══════════════════════════ -->
+  <div class="doc" id="privacy">
+    <div class="doc-head">
+      <div class="doc-eyebrow">Document 1 of 3</div>
+      <h2>Privacy Policy</h2>
+      <div class="meta-card">
+        <div class="meta-cell"><div class="label">Effective</div><div class="value">Coming soon</div></div>
+        <div class="meta-cell"><div class="label">Applies to</div><div class="value">The OneLingo (Android)</div></div>
+        <div class="meta-cell"><div class="label">Governing law</div><div class="value">India</div></div>
+      </div>
+    </div>
+
+    <section class="clause">
+      <h3><span class="num">1.</span>Who this is about</h3>
+      <p>This policy explains what Futureminds Lab LLP ("we", "us") collects when you use The OneLingo, why, who we share it with, and how to have it deleted. It applies to the Android app and its backend services.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">2.</span>What we collect</h3>
+      <table class="data-table">
+        <thead><tr><th>Category</th><th>What, specifically</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Account</td><td>Email address, or phone number for OTP sign-in</td><td>Sign-in and account recovery</td></tr>
+          <tr><td>Translation content</td><td>Recorded audio and the resulting transcript/translation text</td><td>To produce the translation you asked for, and to show it in your history</td></tr>
+          <tr><td>Usage &amp; preferences</td><td>Chosen languages, voice settings, subscription plan</td><td>To run the app the way you configured it</td></tr>
+          <tr><td>Payment</td><td>Subscription status and plan — <strong>we never see or store your card/UPI details</strong>, Razorpay handles those directly</td><td>To grant Plus/Live access and manage billing</td></tr>
+          <tr><td>Diagnostics (optional)</td><td>On-device app logs, only if you tap "Share Diagnostics"</td><td>To debug a problem you reported</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">3.</span>Who we share it with</h3>
+      <p>We use the following processors to run the app. None of them may use your data for their own purposes beyond providing the service to us.</p>
+      <ul>
+        <li><strong>Amazon Web Services</strong> (Cognito, DynamoDB, S3, Lambda, API Gateway) — hosting, authentication, storage, compute. Region: us-east-1 (N. Virginia, USA).</li>
+        <li><strong>OpenAI</strong> — speech transcription, translation, and text-to-speech.</li>
+        <li><strong>ElevenLabs</strong> and <strong>Microsoft Azure Speech</strong> — alternative text-to-speech voices, used only if you select them.</li>
+        <li><strong>Razorpay</strong> — payment processing for Plus/Live subscriptions.</li>
+      </ul>
+      <p>We do not sell your data, and do not share it with anyone else.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">4.</span>How long we keep it</h3>
+      <p>Translation history and its audio are automatically and permanently deleted <strong>90 days</strong> after creation. Deleting your account (Settings → Delete Account) erases your history, audio, subscription link, and login immediately — this cannot be undone.</p>
+      <div class="callout"><strong>Cancelling a subscription does not delete your account</strong> — it only stops future billing. Use Delete Account separately if you want your data removed too.</div>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">5.</span>Your rights</h3>
+      <p>You can view and change your preferences any time in Settings. You can delete your account and all associated data at any time, in-app, with no need to contact us. To ask a question about your data instead, contact us at Admin@futuremindzlab.com.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">6.</span>Children</h3>
+      <p>This app is not directed at children under 13, and we do not knowingly collect data from them.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">7.</span>Grievance officer</h3>
+      <p>Under India's Information Technology Rules, 2021:</p>
+      <table class="data-table">
+        <tbody>
+          <tr><td>Name</td><td>Bhrathi</td></tr>
+          <tr><td>Email</td><td>Bhrathi@futuremindzlab.com</td></tr>
+          <tr><td>Address</td><td>Bangalore, Karnataka, India — <span class="fill">full street address + PIN code</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">8.</span>Changes to this policy</h3>
+      <p>If we materially change what we collect or why, we'll update the "Effective" date above and notify you in-app.</p>
+    </section>
+  </div>
+
+  <!-- ══════════════════════════ TERMS OF SERVICE ══════════════════════════ -->
+  <div class="doc" id="terms">
+    <div class="doc-head">
+      <div class="doc-eyebrow">Document 2 of 3</div>
+      <h2>Terms of Service</h2>
+      <div class="meta-card">
+        <div class="meta-cell"><div class="label">Effective</div><div class="value">Coming soon</div></div>
+        <div class="meta-cell"><div class="label">Applies to</div><div class="value">The OneLingo (Android)</div></div>
+        <div class="meta-cell"><div class="label">Governing law</div><div class="value">India</div></div>
+      </div>
+    </div>
+
+    <section class="clause">
+      <h3><span class="num">1.</span>Agreement</h3>
+      <p>By creating an account or using The OneLingo, you agree to these Terms and to our Privacy Policy. If you don't agree, don't use the app. This service is offered by Futureminds Lab LLP, based in Bangalore, Karnataka, India.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">2.</span>What you're getting</h3>
+      <p>The OneLingo converts spoken audio into another spoken/written language using third-party AI models (see Privacy Policy §3). Three plans are available:</p>
+      <table class="data-table">
+        <thead><tr><th>Plan</th><th>Price</th><th>What changes</th></tr></thead>
+        <tbody>
+          <tr><td>Basic</td><td class="num">Free</td><td>Standard record → translate → speak pipeline</td></tr>
+          <tr><td>Plus</td><td class="num">Coming soon</td><td>Streaming translation — starts speaking before the sentence finishes generating</td></tr>
+          <tr><td>Live</td><td class="num">Coming soon</td><td>Continuous live interpretation</td></tr>
+        </tbody>
+      </table>
+      <p style="font-size:13.5px; color:var(--ink-muted);">Plus/Live pricing is not finalized yet — this table will be updated with exact amounts before launch.</p>
+      <div class="callout"><strong>Translations are AI-generated and can be wrong.</strong> Don't rely on this app for medical, legal, safety, or other high-stakes situations.</div>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">3.</span>Your account</h3>
+      <p>You're responsible for the accuracy of your sign-up details and for anything that happens under your account. Don't share your login. Tell us immediately if you suspect unauthorized access, at Admin@futuremindzlab.com.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">4.</span>Subscriptions &amp; billing</h3>
+      <p>Plus and Live are recurring monthly subscriptions billed in INR through Razorpay, auto-renewing each month until you cancel. Full billing, cancellation, and refund terms are in the <a href="#refunds">Refund Policy</a> below — it's part of these Terms.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">5.</span>Acceptable use</h3>
+      <p>Don't use the app to:</p>
+      <ul>
+        <li>Break any law, or translate content you don't have the right to process;</li>
+        <li>Attempt to extract, reverse-engineer, or overload the underlying AI models or infrastructure;</li>
+        <li>Interfere with other users, or attempt unauthorized access to any account or system.</li>
+      </ul>
+      <p>We may suspend or terminate accounts that violate this.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">6.</span>No warranty, limited liability</h3>
+      <p>The app is provided "as is." To the extent permitted by law, Futureminds Lab LLP is not liable for indirect or consequential damages arising from your use of the app, including translation errors or service interruptions. Nothing here limits liability that cannot be limited under Indian law.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">7.</span>Changes &amp; termination</h3>
+      <p>We may update these Terms (we'll change the "Effective" date and notify you in-app) or discontinue the service with reasonable notice. You may stop using the app and delete your account at any time.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">8.</span>Governing law</h3>
+      <p>These Terms are governed by the laws of India. Disputes are subject to the exclusive jurisdiction of the courts in Bangalore, Karnataka.</p>
+    </section>
+  </div>
+
+  <!-- ══════════════════════════ REFUND POLICY ══════════════════════════ -->
+  <div class="doc" id="refunds">
+    <div class="doc-head">
+      <div class="doc-eyebrow">Document 3 of 3</div>
+      <h2>Refund &amp; Cancellation Policy</h2>
+      <div class="meta-card">
+        <div class="meta-cell"><div class="label">Effective</div><div class="value">Coming soon</div></div>
+        <div class="meta-cell"><div class="label">Billing partner</div><div class="value">Razorpay</div></div>
+        <div class="meta-cell"><div class="label">Currency</div><div class="value">INR</div></div>
+      </div>
+    </div>
+
+    <section class="clause">
+      <h3><span class="num">1.</span>How billing works</h3>
+      <p>Plus and Live are recurring monthly plans (exact pricing coming soon) that renew automatically every month on the date you first subscribed, until you cancel. Each charge is processed by Razorpay against the payment method you provided at signup.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">2.</span>Cancelling</h3>
+      <p>Cancel any time from Settings → Your Plan → Cancel Subscription. Cancelling takes effect <strong>at the end of your current billing period</strong> — you keep full access to your plan through the period you already paid for, then move to Basic automatically. No further charges occur after that.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">3.</span>Refunds</h3>
+      <p>Because cancellation already stops billing at the natural end of a paid period, and access continues through that period:</p>
+      <ul>
+        <li><strong>We do not offer prorated or partial-period refunds</strong> for cancelling partway through a billing cycle.</li>
+        <li>If you're charged in error (e.g. a duplicate charge, or a charge after you'd already cancelled), contact us at Admin@futuremindzlab.com within <span class="fill">30</span> days and we'll investigate and refund confirmed errors in full.</li>
+        <li>Refunds, where approved, are issued to the original payment method via Razorpay and can take <span class="fill">5–7</span> business days to appear, per your bank/UPI provider.</li>
+      </ul>
+      <div class="callout"><strong>Adjust this section to match your actual policy</strong> — as built, the app only supports cancel-at-cycle-end with no automatic proration. If you want to offer a cooling-off refund window instead (common for a first-time subscriber), say so and this page — and the cancellation code — can both be updated to match.</div>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">4.</span>Failed payments</h3>
+      <p>If a renewal payment fails, Razorpay retries it automatically. If it keeps failing, your subscription is halted and your account moves to Basic — no partial charge is taken for that period.</p>
+    </section>
+
+    <section class="clause">
+      <h3><span class="num">5.</span>Contact</h3>
+      <p>Billing questions: Admin@futuremindzlab.com. Include your account email and, if relevant, the Razorpay payment ID from your receipt.</p>
+    </section>
+  </div>
+
+  <div class="placeholder-key">
+    <span class="swatch"></span>
+    Any field shown like <span class="fill">this</span> is a placeholder — replace every one before publishing this page for real.
+  </div>
+</main>
+
+<footer>The OneLingo — drafted for review, not yet published as final.</footer>
+
+<script>
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll('nav.switcher a'));
+    var sections = links.map(function (a) { return document.querySelector(a.getAttribute('href')); });
+
+    function setActive(key) {
+      links.forEach(function (a) {
+        a.classList.toggle('active', a.getAttribute('data-key') === key);
+      });
+    }
+
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          var key = entry.target.id === 'privacy' ? 'privacy' : entry.target.id === 'terms' ? 'terms' : 'refunds';
+          setActive(key);
+        }
+      });
+    }, { rootMargin: '-45% 0px -50% 0px', threshold: 0 });
+
+    sections.forEach(function (s) { if (s) observer.observe(s); });
+  })();
+</script>

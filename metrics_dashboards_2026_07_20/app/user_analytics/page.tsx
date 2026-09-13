@@ -159,9 +159,9 @@ export default function UserAnalyticsPage() {
             {metrics.revenue.available ? (
               <>
                 <p className="text-2xl font-semibold text-slate-900 mb-4">
-                  ${metrics.revenue.totalUsd?.toLocaleString()}
+                  ₹{metrics.revenue.total?.toLocaleString()}
                 </p>
-                <BarList items={metrics.revenue.byTier.map((t) => ({ label: t.tier, value: t.totalUsd }))} />
+                <BarList items={metrics.revenue.byTier.map((t) => ({ label: t.tier, value: t.total }))} />
               </>
             ) : (
               <UnavailableNote reason={metrics.revenue.reason || "no data source"} />
@@ -208,39 +208,36 @@ export default function UserAnalyticsPage() {
             )}
           </SectionCard>
 
-          {/* ── 4. Churn — expiring in 7-14 days ── */}
-          <SectionCard title="Churn" description="Subscriptions expiring in 7–14 days">
+          {/* ── 4. Churn — cancellations taking effect within 7 days ── */}
+          <SectionCard
+            title="Churn"
+            description="Cancelled subscriptions ending within 7 days (dashboard view only — no notification is sent)"
+          >
             {metrics.churn.available ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-slate-500 border-b border-slate-200">
-                      <th className="py-2 pr-4 font-medium">User</th>
-                      <th className="py-2 pr-4 font-medium">Expires in</th>
-                      <th className="py-2 pr-4 font-medium">Renewal notification</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {metrics.churn.users.map((u) => (
-                      <tr key={u.userId} className="border-b border-slate-100 last:border-0">
-                        <td className="py-2 pr-4 text-slate-700">{u.identifier}</td>
-                        <td className="py-2 pr-4 text-slate-500">{u.expiresInDays} days</td>
-                        <td className="py-2 pr-4">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                              u.renewalNotificationSent
-                                ? "bg-emerald-100 text-emerald-700"
-                                : "bg-amber-100 text-amber-700"
-                            }`}
-                          >
-                            {u.renewalNotificationSent ? "Sent" : "Pending"}
-                          </span>
-                        </td>
+              metrics.churn.users.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-slate-500 border-b border-slate-200">
+                        <th className="py-2 pr-4 font-medium">User</th>
+                        <th className="py-2 pr-4 font-medium">Plan</th>
+                        <th className="py-2 pr-4 font-medium">Ends in</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {metrics.churn.users.map((u) => (
+                        <tr key={u.userId} className="border-b border-slate-100 last:border-0">
+                          <td className="py-2 pr-4 text-slate-700">{u.identifier}</td>
+                          <td className="py-2 pr-4 text-slate-500 capitalize">{u.plan}</td>
+                          <td className="py-2 pr-4 text-slate-500">{u.expiresInDays} day{u.expiresInDays === 1 ? "" : "s"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">No subscriptions ending in the next 7 days.</p>
+              )
             ) : (
               <UnavailableNote reason={metrics.churn.reason || "no data source"} />
             )}

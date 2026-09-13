@@ -40,6 +40,8 @@ interface AuthContextType {
   confirmOtpCode: (code: string) => Promise<void>;
   cancelPhoneVerification: () => void;
   signOut: () => Promise<void>;
+  /** Permanently deletes the account server-side, then signs out locally. Irreversible. */
+  deleteAccount: () => Promise<void>;
   completeNewPassword: (newPassword: string) => Promise<void>;
   updateSettings: (settings: Partial<UserSettings>) => Promise<void>;
   refreshSettings: () => Promise<void>;
@@ -562,6 +564,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     console.log('✅ Signed out');
   };
 
+  /**
+   * Permanently deletes the account (server-side: Razorpay subscription
+   * cancelled, history + audio purged, Cognito user deleted — see
+   * backend/src/handlers/account.mjs) then signs the local session out,
+   * since re-fetching a session for a user that no longer exists would just
+   * fail confusingly instead of cleanly landing back on the sign-in screen.
+   */
+  const deleteAccount = async () => {
+    await dynamoService.deleteAccount();
+    await signOut();
+  };
+
   const updateSettings = async (newSettings: Partial<UserSettings>) => {
     if (!user) return;
 
@@ -601,6 +615,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     confirmOtpCode,
     cancelPhoneVerification,
     signOut,
+    deleteAccount,
     completeNewPassword,
     updateSettings,
     refreshSettings,
