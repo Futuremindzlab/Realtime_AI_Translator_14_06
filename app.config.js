@@ -22,7 +22,7 @@ if (missing.length > 0) {
 /** @type {import('expo/config').ExpoConfig} */
 module.exports = {
   expo: {
-    name: 'Realtime AI Translator',
+    name: 'The OneLingo',
     slug: 'ai-translator-06-09',
     version: '1.0.0',
     orientation: 'portrait',
