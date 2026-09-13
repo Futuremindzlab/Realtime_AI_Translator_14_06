@@ -5,14 +5,37 @@ import { getUserPlan } from './entitlement.mjs';
 export const USAGE_TABLE = process.env.USAGE_TABLE || 'ai_usage';
 
 /**
- * Placeholder daily caps per plan — bound worst-case cost exposure (a leaked
- * token, a runaway conversation-mode retry loop) on the metered OpenAI/
- * ElevenLabs/Azure routes in aiProxy.mjs. These are NOT tuned against real
- * per-call cost or observed traffic — pick real numbers once you have either,
- * and if you want quotas to be a marketed plan feature, surface the actual
- * numbers in the UI and keep them in sync with whatever's set here.
+ * Daily AI-proxy call caps per plan — bound worst-case cost exposure (a
+ * leaked token, a runaway conversation-mode retry loop, or just a heavy
+ * user) on the metered OpenAI/ElevenLabs/Azure routes in aiProxy.mjs.
+ *
+ * `plus`/`live` are sized off TheOneLingo_Cost_Pricing_Calculator.xlsx
+ * (shared alongside this change), targeting a 60% gross margin on a
+ * subscriber's AI cost EVEN IN THE WORST CASE (gpt-4o + ElevenLabs v3 —
+ * i.e. every call this user makes hits the priciest model/TTS combination
+ * the app can route to, which real usage will rarely do every single call).
+ * At ₹200/₹360 current pricing (backend/src/lib/razorpay.mjs) and the
+ * calculator's usage assumptions (~8s audio, ~150+60 tokens, ~80 TTS
+ * characters per transaction — 3 AI calls each: transcribe+translate+TTS):
+ *   plus: ₹80/mo cost budget → ~9 calls/day  (was 150 — a real cut, see below)
+ *   live: ₹144/mo cost budget → ~15 calls/day (was 500)
+ * This is a steep reduction from the previous placeholder values, and is a
+ * genuine product trade-off, not just a bug fix: it caps a paid subscriber
+ * to roughly 3-5 translations/day before hitting the daily limit. Before
+ * shipping this to production, decide (with the spreadsheet's "Target gross
+ * margin" and per-transaction usage assumptions as the levers) whether that
+ * trade-off is right for the product, or whether it's the ₹200/₹360 pricing
+ * that should move instead — both are one cell each in the calculator.
+ *
+ * `basic` (free tier) is deliberately left unchanged (20/day) here: it has
+ * $0 revenue to size a margin against, so "how much free usage to give away"
+ * is a growth/acquisition-cost decision, not a cost-recovery one — flagging
+ * rather than guessing. At today's worst-case per-call cost, 20 calls/day
+ * (≈6-7 free transactions/day) is a real, uncapped-by-revenue cost per free
+ * user (~₹188/month in the calculator's worst case) — worth a deliberate
+ * decision, not a default.
  */
-export const DAILY_AI_CALL_LIMITS = { basic: 20, plus: 150, live: 500 };
+export const DAILY_AI_CALL_LIMITS = { basic: 20, plus: 9, live: 15 };
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD, UTC
