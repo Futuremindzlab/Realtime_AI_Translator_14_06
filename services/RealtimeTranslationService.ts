@@ -8,6 +8,7 @@ import { resolveLanguage, isCorrectScript, detectScriptLanguage } from '@/lib/co
 import { isNetworkError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 import { withTimeout, TimeoutError } from '@/lib/withTimeout';
+import { isLikelyWhisperHallucination } from '@/lib/whisperHallucinations';
 
 // expo-file-system is native-only — audio history persistence is skipped on
 // web, where recording/TTS URIs are blob: URLs FileSystem can't read anyway.
@@ -312,7 +313,12 @@ export class RealtimeTranslationService {
       }
 
       const actualText = (typeof sourceText === 'string' ? sourceText : '').trim();
-      if (!actualText || actualText.length < 3) {
+      // Bug fix: "Engine sound", "[Music]" etc. showing up as if someone had
+      // said them — Whisper hallucinating a caption-style non-speech
+      // description on ambient noise/silence (see whisperHallucinations.ts
+      // for the full explanation). Treated identically to no speech at all,
+      // since that's what actually happened.
+      if (!actualText || actualText.length < 3 || isLikelyWhisperHallucination(actualText)) {
         this.updateProgress({ stage: 'error', error: 'No speech detected — please speak clearly and try again' });
         this.isActive = false;
         return;
@@ -703,9 +709,16 @@ export class RealtimeTranslationService {
     console.log(`📝 Transcribed: "${actualText.substring(0, 80)}" | Detected: ${detectedLanguage}`);
     logger.info('Transcribe stage complete', { textLength: actualText.length, detectedLanguage, platform: Platform.OS });
 
-    // Skip if no valid speech
-    if (!actualText || actualText.length < 3) {
-      console.log('⚠️ No valid speech, will retry');
+    // Skip if no valid speech. Also catches Whisper hallucinating a
+    // caption-style non-speech description ("Engine sound", "[Music]", …)
+    // on ambient noise picked up while a person is just listening — this is
+    // the root cause behind conversation mode occasionally "saying" things
+    // nobody said, most visible right after a Person A↔B handover since
+    // that's exactly when the mic is open with nobody talking yet (see
+    // lib/whisperHallucinations.ts). Same handling as true silence: the
+    // caller hands control to the other person instead of retrying.
+    if (!actualText || actualText.length < 3 || isLikelyWhisperHallucination(actualText)) {
+      console.log(`⚠️ No valid speech (or Whisper hallucination: "${actualText}"), will retry`);
       return { success: false, reason: 'No speech detected' };
     }
 
