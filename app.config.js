@@ -22,7 +22,7 @@ if (missing.length > 0) {
 /** @type {import('expo/config').ExpoConfig} */
 module.exports = {
   expo: {
-    name: 'The OneLingo',
+    name: 'OneLingo',
     // Updated from the legacy 'ai-translator-06-09' so `eas init`/`eas build`
     // propose the right EAS project name instead of the pre-rename one —
     // that mismatch was the actual cause of `eas init` repeatedly offering

@@ -323,7 +323,7 @@ export default function HomeScreen() {
         {/* ── Header ── */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.title}>The OneLingo</Text>
+            <Text style={styles.title}>OneLingo</Text>
             <Text style={styles.subtitle}>Real-time voice translation</Text>
           </View>
           <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/settings')}>

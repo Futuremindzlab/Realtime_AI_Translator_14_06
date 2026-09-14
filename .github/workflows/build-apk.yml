@@ -32,7 +32,13 @@ jobs:
       - name: ⚙️ Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # eas-cli's current dependency tree (e.g. @oclif/plugin-autocomplete)
+          # requires Node >=22 — Node 20 here fails install with "The engine
+          # 'node' is incompatible", the same failure this repo hit against
+          # EAS's cloud build image before pinning eas.json's build.node to
+          # 22.11.0 (see #13); this workflow needed the same fix independently
+          # since it runs `eas build --local` with whatever Node this step sets up.
+          node-version: 22
           cache: 'npm'
 
       - name: 📦 Install Dependencies
