@@ -4,6 +4,17 @@ import { getUserId, getRole } from '../auth.mjs';
 import { sendSuccess, sendNoContent, sendError, handleError } from '../response.mjs';
 import { PLANS } from '../lib/entitlement.mjs';
 
+// An existing settings row with no onboarding_completed attribute predates
+// onboarding entirely (this account signed up before the feature existed) —
+// default it to true so the flow never appears retroactively. Only a
+// genuinely brand-new row (no existingItem at all) defaults to false. Shared
+// by putSettings/resetSettings so both agree with getSettings's own backfill
+// — otherwise an existing user hitting "Save" or "Reset" in Settings would
+// silently persist onboarding_completed:false and trigger onboarding next launch.
+function backfillOnboardingCompleted(existingItem) {
+  return existingItem?.onboarding_completed ?? !!existingItem;
+}
+
 // ─────────────────────────────────────────────────────────
 // GET /v1/settings
 // ─────────────────────────────────────────────────────────
@@ -27,13 +38,23 @@ export async function getSettings(event) {
         conversation_mode_default: false,
         custom_voice_id:          null,
         plan:                     'basic',
+        onboarding_completed:     false,
+        use_case:                 null,
         updated_at:               new Date().toISOString(),
       });
     }
 
     // Backfill for pre-billing records that predate the `plan` attribute —
-    // avoids a one-off data migration for existing users.
-    return sendSuccess({ plan: 'basic', ...result.Item });
+    // avoids a one-off data migration for existing users. `onboarding_completed`
+    // gets the OPPOSITE backfill treatment deliberately: an existing row that
+    // predates that attribute means this account signed up before onboarding
+    // existed, so it defaults to true (never show the flow retroactively) —
+    // only a genuinely brand-new row (the !result.Item branch above) defaults
+    // it to false. See backfillOnboardingCompleted().
+    return sendSuccess({
+      plan: 'basic', use_case: null, ...result.Item,
+      onboarding_completed: backfillOnboardingCompleted(result.Item),
+    });
   } catch (err) {
     return handleError(err);
   }
@@ -69,6 +90,19 @@ export async function putSettings(event) {
     const plan = existing.Item?.plan || 'basic';
     const razorpaySubscriptionId     = existing.Item?.razorpay_subscription_id;
     const razorpaySubscriptionStatus = existing.Item?.razorpay_subscription_status;
+    // Onboarding state and trial-usage counters are written by their own
+    // dedicated endpoints (PATCH /v1/settings for onboarding_completed/
+    // use_case; POST /v1/usage/trial/consume for the trial_* counters), never
+    // by this full-replace PUT — the client's UserSettings shape doesn't even
+    // carry them (see types/index.ts). Same "preserve, don't trust the body"
+    // treatment as `plan` above: without this, any ordinary preferences save
+    // from the Settings screen would silently wipe onboarding completion and
+    // reset the trial clock/counters back to unset.
+    const onboardingCompleted = backfillOnboardingCompleted(existing.Item);
+    const useCase             = existing.Item?.use_case ?? null;
+    const trialStartDate         = existing.Item?.trial_start_date;
+    const trialTranslationsUsed  = existing.Item?.trial_translations_used;
+    const trialConversationsUsed = existing.Item?.trial_conversations_used;
 
     const item = {
       user_id:                  userId,
@@ -79,8 +113,13 @@ export async function putSettings(event) {
       conversation_mode_default: body.conversation_mode_default ?? false,
       custom_voice_id:          body.custom_voice_id          || null,
       plan,
+      onboarding_completed:     onboardingCompleted,
+      use_case:                 useCase,
       ...(razorpaySubscriptionId     ? { razorpay_subscription_id: razorpaySubscriptionId }         : {}),
       ...(razorpaySubscriptionStatus ? { razorpay_subscription_status: razorpaySubscriptionStatus }  : {}),
+      ...(trialStartDate         !== undefined ? { trial_start_date: trialStartDate }                 : {}),
+      ...(trialTranslationsUsed  !== undefined ? { trial_translations_used: trialTranslationsUsed }   : {}),
+      ...(trialConversationsUsed !== undefined ? { trial_conversations_used: trialConversationsUsed } : {}),
       updated_at:               new Date().toISOString(),
     };
 
@@ -109,10 +148,24 @@ export async function patchSettings(event) {
     if (body.voice_gender && !VALID_GENDERS.includes(body.voice_gender)) {
       return sendError(400, `voice_gender must be one of: ${VALID_GENDERS.join(', ')}`);
     }
+    if ('onboarding_completed' in body && typeof body.onboarding_completed !== 'boolean') {
+      return sendError(400, 'onboarding_completed must be a boolean');
+    }
+    if ('use_case' in body && body.use_case !== null && typeof body.use_case !== 'string') {
+      return sendError(400, 'use_case must be a string or null');
+    }
+    if (typeof body.use_case === 'string' && body.use_case.length > 100) {
+      return sendError(400, 'use_case must be under 100 characters');
+    }
 
     const allowed = [
       'default_source_language', 'default_target_language',
       'tts_provider', 'voice_gender', 'conversation_mode_default', 'custom_voice_id',
+      // Written once by the onboarding flow on completion. Deliberately NOT
+      // including trial_start_date/trial_translations_used/trial_conversations_used
+      // here — those are server-incremented counters, only ever written by
+      // POST /v1/usage/trial/consume, never accepted from an arbitrary client PATCH.
+      'onboarding_completed', 'use_case',
     ];
 
     const expressionParts  = [];
@@ -194,13 +247,21 @@ export async function resetSettings(event) {
   try {
     const userId = getUserId(event);
 
-    // Preserve plan + Razorpay subscription linkage across a preferences
-    // reset — this endpoint resets UI preferences (language, voice, etc.),
-    // not billing status.
+    // Preserve plan + Razorpay subscription linkage, onboarding completion,
+    // and trial usage across a preferences reset — this endpoint resets UI
+    // preferences (language, voice, etc.), not billing/trial status. Without
+    // this, DELETE /v1/settings would double as a way to re-trigger
+    // onboarding and wipe the trial counters back to unset — i.e. a free way
+    // to farm a fresh 10-translation/5-conversation trial repeatedly.
     const existing = await db.send(new GetCommand({ TableName: SETTINGS_TABLE, Key: { user_id: userId } }));
     const plan = existing.Item?.plan || 'basic';
     const razorpaySubscriptionId     = existing.Item?.razorpay_subscription_id;
     const razorpaySubscriptionStatus = existing.Item?.razorpay_subscription_status;
+    const onboardingCompleted = backfillOnboardingCompleted(existing.Item);
+    const useCase             = existing.Item?.use_case ?? null;
+    const trialStartDate         = existing.Item?.trial_start_date;
+    const trialTranslationsUsed  = existing.Item?.trial_translations_used;
+    const trialConversationsUsed = existing.Item?.trial_conversations_used;
 
     const defaults = {
       user_id:                  userId,
@@ -211,8 +272,13 @@ export async function resetSettings(event) {
       conversation_mode_default: false,
       custom_voice_id:          null,
       plan,
-      ...(razorpaySubscriptionId     ? { razorpay_subscription_id: razorpaySubscriptionId }        : {}),
-      ...(razorpaySubscriptionStatus ? { razorpay_subscription_status: razorpaySubscriptionStatus } : {}),
+      onboarding_completed:     onboardingCompleted,
+      use_case:                 useCase,
+      ...(razorpaySubscriptionId     ? { razorpay_subscription_id: razorpaySubscriptionId }         : {}),
+      ...(razorpaySubscriptionStatus ? { razorpay_subscription_status: razorpaySubscriptionStatus }  : {}),
+      ...(trialStartDate         !== undefined ? { trial_start_date: trialStartDate }                 : {}),
+      ...(trialTranslationsUsed  !== undefined ? { trial_translations_used: trialTranslationsUsed }   : {}),
+      ...(trialConversationsUsed !== undefined ? { trial_conversations_used: trialConversationsUsed } : {}),
       updated_at:               new Date().toISOString(),
     };
 

@@ -19,17 +19,7 @@ import { dynamoService } from '@/services/dynamoService';
 import { subscribeToPlan, cancelSubscription as cancelRazorpaySubscription, CheckoutCancelledError } from '@/services/billingService';
 import { SubscriptionPlan } from '@/types';
 import { logger } from '@/lib/logger';
-
-const PLAN_INFO: Record<SubscriptionPlan, { label: string; description: string }> = {
-  basic: { label: 'Basic', description: "Today's pipeline — record, transcribe, translate, then speak." },
-  plus:  { label: 'Plus',  description: 'Streaming pipeline — starts speaking the translation before it finishes generating.' },
-  live:  { label: 'Live',  description: 'Continuous live interpretation, no record/stop steps. (Coming soon)' },
-};
-
-// Monthly price shown on the upgrade buttons — mirrors backend/src/lib/razorpay.mjs's
-// PAID_PLAN_PRICING (kept as a display-only literal here; the backend is the
-// only place that actually charges an amount, via the Razorpay Plan it created).
-const PAID_PLAN_PRICE: Record<'plus' | 'live', string> = { plus: '₹200/mo', live: '₹360/mo' };
+import { PLAN_INFO, PAID_PLAN_PRICE } from '@/lib/plans';
 
 export default function SettingsScreen() {
   // AuthGate (app/_layout.tsx) guarantees `user` is non-null by the time any

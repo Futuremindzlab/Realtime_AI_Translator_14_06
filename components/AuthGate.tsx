@@ -11,6 +11,8 @@ import {
 import { LogIn } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { CountryCodeSelector } from '@/components/CountryCodeSelector';
+import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
+import { canvasTheme as t } from '@/lib/canvasTheme';
 
 /**
  * Blocks the whole app (every tab, not just Settings) behind sign-in.
@@ -27,11 +29,12 @@ import { CountryCodeSelector } from '@/components/CountryCodeSelector';
  */
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const {
-    user, loading,
+    user, settings, loading,
     signIn, signUp, confirmSignUp, signInWithPhone, confirmOtpCode, cancelPhoneVerification,
     completeNewPassword,
     needsNewPassword, needsConfirmation, pendingEmail, needsOtpVerification, pendingPhone,
     needsForgotPasswordCode, pendingForgotPasswordEmail, forgotPassword, confirmForgotPassword, cancelForgotPassword,
+    updateSettings, refreshSettings,
   } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -64,6 +67,20 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   if (user) {
+    // `loading` (checked above) only flips false once loadUserSettings has
+    // resolved — settings is always set (to real data or OFFLINE_SETTINGS)
+    // by then in practice, but a defensive spinner beats flashing children
+    // for a frame in the unlikely event it's still null here.
+    if (!settings) {
+      return (
+        <View style={styles.darkLoadingContainer}>
+          <ActivityIndicator size="large" color={t.personB} />
+        </View>
+      );
+    }
+    if (!settings.onboarding_completed) {
+      return <OnboardingFlow updateSettings={updateSettings} refreshSettings={refreshSettings} />;
+    }
     return <>{children}</>;
   }
 
@@ -541,6 +558,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#f9fafb',
+  },
+  // Matches OnboardingFlow's dark background — used only for the brief
+  // user-but-no-settings-yet window right before OnboardingFlow renders, so
+  // there's no light-to-dark flash between this and it.
+  darkLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: t.bg,
   },
   header: {
     marginBottom: 24,

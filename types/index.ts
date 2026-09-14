@@ -45,7 +45,42 @@ export interface UserSettings {
    *  'cancel_requested' | 'cancelled' | 'halted' | 'completed' | 'paused', etc.
    *  See backend/src/handlers/billing.mjs for the authoritative state machine. */
   razorpay_subscription_status?: string;
+  /** True once the user has completed the onboarding flow (use-case picker +
+   *  privacy consent + trial/paywall intro) — AuthGate shows OnboardingFlow
+   *  instead of the app until this is true. Defaults to false server-side. */
+  onboarding_completed?: boolean;
+  /** Self-reported reason for using the app, collected once during onboarding
+   *  (e.g. 'travel', 'business', 'learning', 'family', 'other'). Not used for
+   *  gating anything — personalization/analytics only. */
+  use_case?: string | null;
   updated_at: string;
+}
+
+/** Response shape for GET /v1/usage/trial and POST /v1/usage/trial/consume —
+ *  see backend/src/lib/trialLimits.mjs for the authoritative logic. A 'plus'/
+ *  'live' subscriber gets back `{ unlimited: true }` and nothing else, since
+ *  the 7-day/10-translation/5-conversation trial only ever applies to 'basic'. */
+export interface TrialStatus {
+  plan: SubscriptionPlan;
+  unlimited: boolean;
+  trial_started?: boolean;
+  trial_start_date?: string;
+  expired?: boolean;
+  days_remaining?: number;
+  caps?: { translation: number; conversation: number };
+  used?: { translation: number; conversation: number };
+}
+
+/** Result of POST /v1/usage/trial/consume specifically. */
+export interface TrialConsumeResult {
+  allowed: boolean;
+  unlimited?: boolean;
+  reason?: 'trial_expired' | 'trial_limit_reached';
+  kind?: 'translation' | 'conversation';
+  used?: number;
+  remaining?: number;
+  cap?: number;
+  trial_start_date?: string;
 }
 
 export interface Language {

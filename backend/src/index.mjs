@@ -26,6 +26,10 @@
  *   PATCH  /v1/settings                               patchSettings
  *   DELETE /v1/settings                               resetSettings
  *
+ * Trial usage (7-day free trial for 'basic'-plan users — see trialLimits.mjs)
+ *   GET    /v1/usage/trial                            getTrialStatus (read-only)
+ *   POST   /v1/usage/trial/consume                    consumeTrial
+ *
  * Health
  *   GET    /v1/health                                 health check
  *
@@ -79,6 +83,7 @@ import {
 
 import { requestPhoneOtp } from './handlers/phoneAuth.mjs';
 import { deleteAccount } from './handlers/account.mjs';
+import { getTrialStatus, consumeTrial } from './handlers/trial.mjs';
 
 import {
   createSubscription,
@@ -174,6 +179,10 @@ export const handler = async (event) => {
 
   // ── Account (required by app-store review policy for account deletion) ──
   if (method === 'DELETE' && path === '/v1/account') return deleteAccount(event);
+
+  // ── Trial usage (7-day free trial gate) ────────────────
+  if (method === 'GET'  && path === '/v1/usage/trial')         return getTrialStatus(event);
+  if (method === 'POST' && path === '/v1/usage/trial/consume') return consumeTrial(event);
 
   // ── Settings ──────────────────────────────────────────
   if (path === '/v1/settings') {
