@@ -115,11 +115,9 @@ module.exports = {
     },
     extra: {
       router: {},
-      // No eas.projectId here for now — the old one (d7c5b190-...) belonged
-      // to the wrong (personal) account. Run `eas init` from the project
-      // root with the `owner` above already set to `futuremindzlab`; it'll
-      // create a fresh project under that account and print the new ID,
-      // which then needs to be added back here as `eas: { projectId: '...' }`.
+      // Created via `eas init` under the correct account/slug
+      // (@futuremindzlab/onelingo) — see https://expo.dev/accounts/futuremindzlab/projects/onelingo
+      eas: { projectId: 'ec47d5da-a5d8-4ae9-a48b-0614e20164db' },
       // Snapshot current env for runtime inspection (values are inlined by Metro)
       awsRegion: process.env.EXPO_PUBLIC_AWS_REGION || '',
       apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || '',
