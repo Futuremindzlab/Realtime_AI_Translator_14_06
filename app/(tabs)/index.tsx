@@ -6,15 +6,17 @@ import {
   StyleSheet,
   TouchableOpacity,
   Keyboard,
-  Switch,
   Dimensions,
   Platform,
   AppState,
   AppStateStatus,
 } from 'react-native';
-import { Mic, Square, Users, User } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Mic, Square, Users, User, Settings as SettingsIcon } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { LanguagePicker } from '@/components/LanguagePicker';
+import { LanguagePairControl } from '@/components/conversation/LanguagePairControl';
+import { SplitFaceToFace } from '@/components/conversation/SplitFaceToFace';
+import { ChatTranscript, TranscriptTurn } from '@/components/conversation/ChatTranscript';
 import {
   realtimeTranslationService,
   TranslationProgress,
@@ -24,12 +26,20 @@ import { ttsService } from '@/services/ttsService';
 import { whisperService } from '@/services/whisperService';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
 import { logger } from '@/lib/logger';
+import { canvasTheme as t } from '@/lib/canvasTheme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_MAX_WIDTH = Math.min(SCREEN_WIDTH, 600);
 
+// Progress stages at/after which both sourceText and translatedText are final —
+// safe points to append the turn to the session transcript.
+const TRANSCRIPT_TRIGGER_STAGES = new Set<TranslationProgress['stage']>([
+  'generating_speech', 'playing', 'complete', 'waiting',
+]);
+
 export default function HomeScreen() {
   const { user, settings } = useAuth();
+  const router = useRouter();
 
   const [sourceLanguage, setSourceLanguage] = useState('auto');
   const [targetLanguage, setTargetLanguage] = useState('es');
@@ -38,7 +48,10 @@ export default function HomeScreen() {
   const [isConversationRunning, setIsConversationRunning] = useState(false);
   const [progress, setProgress] = useState<TranslationProgress | null>(null);
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
+  const [turns, setTurns] = useState<TranscriptTurn[]>([]);
+  const [replayingId, setReplayingId] = useState<string | null>(null);
   const backgroundDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRecordedKeyRef = useRef<string | null>(null);
 
   // ── 1. Startup voices + sync settings ──
   // Provider API keys live server-side (backend AI proxy) — nothing to initialise here.
@@ -132,6 +145,36 @@ export default function HomeScreen() {
     };
   }, []);
 
+  const getLangName = (code: string) =>
+    SUPPORTED_LANGUAGES.find(l => l.code === code)?.name ?? (code ? code.toUpperCase() : '—');
+
+  // ── 3. Append completed turns to the session transcript ──
+  useEffect(() => {
+    if (!progress || !progress.sourceText || !progress.translatedText) return;
+    if (!progress.stage || !TRANSCRIPT_TRIGGER_STAGES.has(progress.stage)) return;
+
+    const key = `${progress.currentPerson || 'A'}|${progress.sourceText}|${progress.translatedText}`;
+    if (key === lastRecordedKeyRef.current) return;
+    lastRecordedKeyRef.current = key;
+
+    const srcCode = progress.currentSourceLanguage || sourceLanguage;
+    const tgtCode = progress.currentTargetLanguage || targetLanguage;
+
+    setTurns(prev => [
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        person: progress.currentPerson || 'A',
+        sourceText: progress.sourceText!,
+        translatedText: progress.translatedText!,
+        sourceLangName: getLangName(srcCode),
+        targetLangName: getLangName(tgtCode),
+        targetLangCode: tgtCode,
+      },
+      ...prev,
+    ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progress]);
+
   // ── Button handler ──
   const handleToggleRecording = async () => {
     if (isButtonDisabled) return;
@@ -217,8 +260,21 @@ export default function HomeScreen() {
     realtimeTranslationService.interruptCurrentTurn();
   };
 
-  const getLangName = (code: string) =>
-    SUPPORTED_LANGUAGES.find(l => l.code === code)?.name ?? code.toUpperCase();
+  const handleReplay = async (turn: TranscriptTurn) => {
+    if (isActive || replayingId) return;
+    setReplayingId(turn.id);
+    try {
+      const uri = await ttsService.generateSpeech(
+        turn.translatedText, turn.targetLangCode, settings?.tts_provider || 'device',
+      );
+      await audioService.forceCleanup();
+      if (uri) await audioService.playAudio(uri);
+    } catch (error) {
+      logger.error('Transcript replay failed', error, { platform: Platform.OS });
+    } finally {
+      setReplayingId(null);
+    }
+  };
 
   const getStatusText = () => {
     if (!progress) return 'Tap the mic to start speaking';
@@ -254,6 +310,7 @@ export default function HomeScreen() {
   };
 
   const isActive = isRecording || isConversationRunning;
+  const showCanvas = conversationMode && isConversationRunning;
 
   return (
     <View style={styles.container}>
@@ -265,93 +322,99 @@ export default function HomeScreen() {
       >
         {/* ── Header ── */}
         <View style={styles.header}>
-          <Text style={styles.title}>The OneLingo</Text>
-          <Text style={styles.subtitle}>Real-time voice translation</Text>
+          <View>
+            <Text style={styles.title}>The OneLingo</Text>
+            <Text style={styles.subtitle}>Real-time voice translation</Text>
+          </View>
+          <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/settings')}>
+            <SettingsIcon color={t.text} size={18} />
+          </TouchableOpacity>
         </View>
 
-        {/* ── Language Pickers ── */}
-        <View style={styles.card}>
-          <View style={styles.pickerSection}>
-            <LanguagePicker
-              label="Source Language"
-              selectedLanguage={sourceLanguage}
-              onSelectLanguage={setSourceLanguage}
-              allowAuto
-              disabled={isActive}
-            />
-            <View style={styles.pickerDivider} />
-            <LanguagePicker
-              label="Target Language"
-              selectedLanguage={targetLanguage}
-              onSelectLanguage={setTargetLanguage}
-              excludeLanguage="auto"
-              disabled={isActive}
-            />
-          </View>
+        {/* ── Language Pair ── */}
+        <View style={styles.section}>
+          <LanguagePairControl
+            sourceLanguage={sourceLanguage}
+            targetLanguage={targetLanguage}
+            onSelectSource={setSourceLanguage}
+            onSelectTarget={setTargetLanguage}
+            onSwap={() => {
+              setSourceLanguage(targetLanguage === 'auto' ? sourceLanguage : targetLanguage);
+              setTargetLanguage(sourceLanguage === 'auto' ? targetLanguage : sourceLanguage);
+            }}
+            disabled={isActive}
+          />
         </View>
 
         {/* ── Mode Toggle ── */}
-        <View style={[styles.card, styles.modeCard, conversationMode && styles.modeCardActive]}>
-          <View style={styles.modeLeft}>
-            {conversationMode
-              ? <Users color="#2563eb" size={24} />
-              : <User  color="#6b7280" size={24} />}
-            <View style={styles.modeText}>
-              <Text style={styles.modeTitle}>
-                {conversationMode ? 'Conversation Mode' : 'Single Translation'}
-              </Text>
-              <Text style={styles.modeSub}>
-                {conversationMode
-                  ? 'Auto-detects silence, swaps speakers'
-                  : 'One-time translation only'}
-              </Text>
-            </View>
-          </View>
-          <Switch
-            value={conversationMode}
-            onValueChange={setConversationMode}
+        <View style={[styles.section, styles.seg]}>
+          <TouchableOpacity
+            style={[styles.segItem, !conversationMode && styles.segItemOn]}
+            onPress={() => !isActive && setConversationMode(false)}
             disabled={isActive}
-            trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
-            thumbColor={conversationMode ? '#2563eb' : '#f3f4f6'}
-          />
+          >
+            <User size={15} color={!conversationMode ? t.personB : t.textMuted} />
+            <Text style={[styles.segText, !conversationMode && styles.segTextOn]}>Single</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segItem, conversationMode && styles.segItemOn]}
+            onPress={() => !isActive && setConversationMode(true)}
+            disabled={isActive}
+          >
+            <Users size={15} color={conversationMode ? t.personB : t.textMuted} />
+            <Text style={[styles.segText, conversationMode && styles.segTextOn]}>Conversation</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Conversation hint ── */}
         {conversationMode && !isConversationRunning && (
-          <View style={styles.hintBox}>
+          <View style={[styles.section, styles.hintBox]}>
             <Text style={styles.hintText}>
-              Tap the mic to start. Each person gets 10 s to speak. Tap stop to end.
+              Tap the mic to start. Each person gets 10s to speak — the phone lies flat between you
+              and the other side reads their translation right-side up.
             </Text>
           </View>
         )}
 
-        {/* ── Mic Button ── */}
-        <View style={styles.micSection}>
-          <TouchableOpacity
-            style={[styles.micButton, isActive && styles.micButtonActive]}
-            onPress={handleToggleRecording}
-            disabled={isButtonDisabled}
-            activeOpacity={0.8}
-          >
-            {isActive
-              ? <Square color="white" size={36} fill="white" />
-              : <Mic    color="white" size={36} />}
-          </TouchableOpacity>
-          <Text style={[
-            styles.statusText,
-            {
-              color: isActive
-                ? '#ef4444'
-                : progress?.stage === 'error'
-                ? '#dc2626'
-                : progress?.stage === 'complete'
-                ? '#16a34a'
-                : '#6b7280',
-            },
-          ]}>
-            {getStatusText()}
-          </Text>
-        </View>
+        {/* ── Primary control: face-to-face canvas while a conversation is live, otherwise the idle/solo mic ── */}
+        {showCanvas ? (
+          <View style={styles.section}>
+            <SplitFaceToFace
+              progress={progress}
+              isActive={isActive}
+              disabled={isButtonDisabled}
+              onTogglePress={handleToggleRecording}
+              getLangName={getLangName}
+            />
+          </View>
+        ) : (
+          <View style={styles.micSection}>
+            <TouchableOpacity
+              style={[styles.micButton, isActive && styles.micButtonActive]}
+              onPress={handleToggleRecording}
+              disabled={isButtonDisabled}
+              activeOpacity={0.85}
+            >
+              {isActive
+                ? <Square color="white" size={34} fill="white" />
+                : <Mic    color="white" size={34} />}
+            </TouchableOpacity>
+            <Text style={[
+              styles.statusText,
+              {
+                color: isActive
+                  ? '#fca5a5'
+                  : progress?.stage === 'error'
+                  ? '#fca5a5'
+                  : progress?.stage === 'complete'
+                  ? t.success
+                  : t.textMuted,
+              },
+            ]}>
+              {getStatusText()}
+            </Text>
+          </View>
+        )}
 
         {/* Feature: immediate-stop control — ends the current speaker's turn right
             now instead of waiting out the silence timeout. Only shown mid-recording
@@ -362,44 +425,29 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* ── Results ── */}
-        {progress && (progress.sourceText || progress.translatedText) && (
-          <View style={styles.results}>
-            {conversationMode && progress.currentPerson && (
-              <View style={styles.personBadge}>
-                <Text style={styles.personBadgeText}>Person {progress.currentPerson}</Text>
-                <Text style={styles.personBadgeSub}>
-                  {getLangName(progress.currentSourceLanguage || sourceLanguage)} →{' '}
-                  {getLangName(progress.currentTargetLanguage || targetLanguage)}
-                </Text>
-              </View>
-            )}
-
-            {progress.sourceText && (
-              <View style={styles.textBox}>
-                <Text style={styles.textBoxLabel}>
-                  {getLangName(progress.currentSourceLanguage || sourceLanguage)}
-                </Text>
-                <Text style={styles.textBoxContent}>{progress.sourceText}</Text>
-              </View>
-            )}
-
-            {progress.translatedText && (
-              <View style={[styles.textBox, styles.translatedBox]}>
-                <Text style={styles.textBoxLabel}>
-                  Translation → {getLangName(progress.currentTargetLanguage || targetLanguage)}
-                </Text>
-                <Text style={styles.textBoxContent}>{progress.translatedText}</Text>
-              </View>
-            )}
-
-            {progress.translatedText && (
-              <Text style={styles.disclaimerText}>
-                AI translations may contain errors. Not intended for medical, legal, or other critical use.
-              </Text>
-            )}
+        {/* ── Transcript ──
+            Supersedes the old single-turn "Results" box (pre-Conversation-Canvas
+            master): every completed turn — single or conversation mode — now
+            accumulates here instead of only showing the latest one, and the
+            AI-accuracy disclaimer that box used to carry lives below the list. */}
+        <View style={styles.section}>
+          <View style={styles.sectTitle}>
+            <Text style={styles.sectTitleText}>Transcript</Text>
+            {turns.length > 0 && <Text style={styles.sectTitleCount}>{turns.length} turn{turns.length === 1 ? '' : 's'}</Text>}
           </View>
-        )}
+          <ChatTranscript
+            turns={turns}
+            onReplay={handleReplay}
+            replayingId={replayingId}
+            canReplay={!isActive}
+            emptyHint="Your conversation will show up here as it happens — original on one side, translation on the other."
+          />
+          {turns.length > 0 && (
+            <Text style={styles.disclaimerText}>
+              AI translations may contain errors. Not intended for medical, legal, or other critical use.
+            </Text>
+          )}
+        </View>
 
         <View style={{ height: 32 }} />
       </ScrollView>
@@ -410,7 +458,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: t.bg,
     alignItems: 'center',
   },
   scrollView: {
@@ -423,194 +471,148 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
   },
   header: {
-    alignItems: 'center',
-    marginBottom: 24,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 20,
     width: '100%',
     maxWidth: CONTENT_MAX_WIDTH,
   },
   title: {
-    fontSize: 30,
+    fontSize: 26,
     fontWeight: '800',
-    color: '#1e3a5f',
-    letterSpacing: -0.5,
+    color: t.text,
+    letterSpacing: -0.6,
   },
   subtitle: {
-    fontSize: 15,
-    color: '#64748b',
-    marginTop: 4,
+    fontSize: 13.5,
+    color: t.textMuted,
+    marginTop: 3,
   },
-  card: {
+  iconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    backgroundColor: t.card,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  section: {
     width: '100%',
     maxWidth: CONTENT_MAX_WIDTH,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
     marginBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 6,
-    elevation: 3,
-    overflow: 'visible',
   },
-  pickerSection: {
-    padding: 4,
-    zIndex: 5000,
+  seg: {
+    flexDirection: 'row',
+    gap: 6,
+    padding: 5,
+    borderRadius: 16,
+    backgroundColor: t.card,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
   },
-  pickerDivider: {
-    height: 1,
-    backgroundColor: '#f1f5f9',
-    marginHorizontal: 12,
-  },
-  modeCard: {
+  segItem: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
-  modeCardActive: {
-    borderColor: '#93c5fd',
-    backgroundColor: '#f0f7ff',
+  segItemOn: {
+    backgroundColor: 'rgba(56,189,248,0.14)',
   },
-  modeLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 12,
-  },
-  modeText: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  modeTitle: {
-    fontSize: 15,
+  segText: {
+    fontSize: 12.5,
     fontWeight: '700',
-    color: '#1e293b',
-    marginBottom: 2,
+    color: t.textMuted,
   },
-  modeSub: {
-    fontSize: 12,
-    color: '#64748b',
-    lineHeight: 16,
+  segTextOn: {
+    color: t.personB,
   },
   hintBox: {
-    width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
-    backgroundColor: '#eff6ff',
-    borderRadius: 10,
-    paddingVertical: 10,
+    backgroundColor: t.personBBg,
+    borderRadius: 14,
+    paddingVertical: 12,
     paddingHorizontal: 14,
-    marginBottom: 14,
     borderLeftWidth: 3,
-    borderLeftColor: '#2563eb',
+    borderLeftColor: t.personB,
   },
   hintText: {
-    fontSize: 13,
-    color: '#1e40af',
+    fontSize: 12.5,
+    color: t.text,
     fontWeight: '500',
     lineHeight: 18,
   },
   interruptButton: {
     alignSelf: 'center',
     borderWidth: 1,
-    borderColor: '#2563eb',
+    borderColor: t.personB,
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 16,
     marginBottom: 16,
   },
   interruptButtonText: {
-    color: '#2563eb',
+    color: t.personB,
     fontSize: 13,
     fontWeight: '600',
   },
   micSection: {
     alignItems: 'center',
-    marginVertical: 20,
+    marginVertical: 18,
     width: '100%',
     maxWidth: CONTENT_MAX_WIDTH,
   },
   micButton: {
     width: 88,
     height: 88,
-    borderRadius: 44,
-    backgroundColor: '#2563eb',
+    borderRadius: 28,
+    backgroundColor: t.idleGradient[1],
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 8,
-    shadowColor: '#2563eb',
+    shadowColor: t.idleGradient[1],
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
   },
   micButtonActive: {
-    backgroundColor: '#ef4444',
-    shadowColor: '#ef4444',
+    backgroundColor: '#dc2626',
+    shadowColor: '#dc2626',
   },
   statusText: {
     marginTop: 14,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
     textAlign: 'center',
     paddingHorizontal: 20,
   },
-  results: {
-    width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
-  },
-  personBadge: {
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    marginBottom: 10,
-    alignSelf: 'flex-start',
-  },
-  personBadgeText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  personBadgeSub: {
-    fontSize: 12,
-    color: '#dbeafe',
-    marginTop: 2,
-  },
-  textBox: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    padding: 16,
+  sectTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 4,
-    elevation: 3,
-    borderLeftWidth: 4,
-    borderLeftColor: '#94a3b8',
+    paddingHorizontal: 2,
   },
-  translatedBox: {
-    borderLeftColor: '#2563eb',
-    backgroundColor: '#eff6ff',
+  sectTitleText: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: t.text,
+    letterSpacing: -0.3,
   },
-  textBoxLabel: {
+  sectTitleCount: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#64748b',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  textBoxContent: {
-    fontSize: 17,
-    color: '#1e293b',
-    lineHeight: 26,
+    color: t.textFaint,
   },
   disclaimerText: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: t.textFaint,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 6,
   },
 });
