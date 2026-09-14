@@ -1,11 +1,56 @@
 name: Create Production Builds
 
+# Manual only — a "production" build is exactly the kind of thing that
+# shouldn't fire on every push (unlike build-apk.yml's preview APK, which
+# intentionally does). Trigger from the Actions tab: Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Which platform(s) to build'
+        required: true
+        default: 'all'
+        type: choice
+        options: [all, android, ios]
+
 jobs:
-  build_android:
-    type: build # This job type creates a production build for Android
-    params:
-      platform: android
-  build_ios:
-    type: build # This job type creates a production build for iOS
-    params:
-      platform: ios
+  build:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+    steps:
+      - name: 🏗 Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # Same Node>=22 requirement as build-apk.yml's own fix (#17) —
+          # eas-cli's dependency tree needs it regardless of which command runs.
+          node-version: 22
+          cache: 'npm'
+
+      - name: 📦 Install Dependencies
+        run: npm ci
+
+      - name: 🏗 Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      # Cloud build (not --local, unlike build-apk.yml): iOS needs Apple's
+      # toolchain, which only EAS's own macOS build infrastructure has — this
+      # ubuntu-latest runner can build neither platform's production artifact
+      # itself, it only ever hands the job off to EAS and (optionally) waits.
+      #
+      # EXPO_PUBLIC_* values for this build come from EAS's own "Environment
+      # Variables" dashboard (Project → Environment variables → production),
+      # NOT from a workflow-generated .env like build-apk.yml uses — that
+      # .env trick only works for a LOCAL build running right here in the
+      # runner. Set them there before the first production build, or the
+      # app will build successfully but ship without a working API base URL/
+      # Cognito config.
+      - name: 🚀 Build (production profile)
+        run: |
+          eas build --platform ${{ inputs.platform }} --profile production --non-interactive --no-wait

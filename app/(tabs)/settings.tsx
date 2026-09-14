@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Switch,
   Share,
+  Linking,
   Platform,
 } from 'react-native';
 import { LogOut, Save, Mic, Trash2, Bug, Zap } from 'lucide-react-native';
@@ -282,12 +283,41 @@ export default function SettingsScreen() {
   // only practical way to see what actually happened on-device (which stage of
   // a conversation turn ran, what error was thrown, network vs. non-network)
   // instead of guessing from a secondhand description of the symptom.
+  //
+  // Opens the device's mail app pre-addressed to support, subject + diagnostic
+  // log already filled in, so a user reporting a problem doesn't have to type
+  // the address themselves or explain what went wrong from memory. mailto:
+  // URLs have no universal length ceiling, but some mail clients truncate or
+  // reject very long ones — cap the log body defensively rather than find out
+  // in the field. Falls back to the plain OS share sheet if no mail app can
+  // handle mailto: at all (e.g. a device with no email account configured).
+  const SUPPORT_EMAIL = 'Admin@futuremindzlab.com';
+  const MAILTO_BODY_MAX_CHARS = 1500;
+
   const handleShareDiagnostics = async () => {
     const buildSha = process.env.EXPO_PUBLIC_BUILD_SHA ? process.env.EXPO_PUBLIC_BUILD_SHA.substring(0, 7) : 'dev';
     const header = `OneLingo diagnostics\nBuild: ${buildSha}  Platform: ${Platform.OS} ${Platform.Version}\nGenerated: ${new Date().toISOString()}\n${'-'.repeat(40)}\n`;
-    const body = header + logger.formatRecentEntries();
+    const log = logger.formatRecentEntries();
+    const body = header + log;
+
+    const mailBody = body.length > MAILTO_BODY_MAX_CHARS
+      ? `${body.slice(0, MAILTO_BODY_MAX_CHARS)}\n…(truncated — full log available via Share if needed)`
+      : body;
+    const subject = `OneLingo support — diagnostics (${buildSha})`;
+    const mailtoUrl = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(mailBody)}`;
+
     try {
-      await Share.share({ message: body });
+      const canOpenMail = await Linking.canOpenURL(mailtoUrl);
+      if (canOpenMail) {
+        await Linking.openURL(mailtoUrl);
+        return;
+      }
+    } catch {
+      // fall through to the generic share sheet below
+    }
+
+    try {
+      await Share.share({ message: `To: ${SUPPORT_EMAIL}\nSubject: ${subject}\n\n${body}` });
     } catch {
       Alert.alert('Error', 'Failed to share diagnostics');
     }

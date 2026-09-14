@@ -13,11 +13,10 @@ import {
   Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Mic, Square, Users, User, Settings as SettingsIcon, Clock } from 'lucide-react-native';
+import { Mic, Square, Users, User, Settings as SettingsIcon, Clock, Volume2 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { LanguagePairControl } from '@/components/conversation/LanguagePairControl';
 import { SplitFaceToFace } from '@/components/conversation/SplitFaceToFace';
-import { ChatTranscript, TranscriptTurn } from '@/components/conversation/ChatTranscript';
 import { PaywallView } from '@/components/onboarding/PaywallView';
 import {
   realtimeTranslationService,
@@ -35,12 +34,6 @@ import { TrialStatus } from '@/types';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_MAX_WIDTH = Math.min(SCREEN_WIDTH, 600);
 
-// Progress stages at/after which both sourceText and translatedText are final —
-// safe points to append the turn to the session transcript.
-const TRANSCRIPT_TRIGGER_STAGES = new Set<TranslationProgress['stage']>([
-  'generating_speech', 'playing', 'complete', 'waiting',
-]);
-
 export default function HomeScreen() {
   const { user, settings, refreshSettings } = useAuth();
   const router = useRouter();
@@ -52,10 +45,8 @@ export default function HomeScreen() {
   const [isConversationRunning, setIsConversationRunning] = useState(false);
   const [progress, setProgress] = useState<TranslationProgress | null>(null);
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
-  const [turns, setTurns] = useState<TranscriptTurn[]>([]);
-  const [replayingId, setReplayingId] = useState<string | null>(null);
+  const [isReplaying, setIsReplaying] = useState(false);
   const backgroundDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastRecordedKeyRef = useRef<string | null>(null);
 
   // ── 7-day free trial (see backend/src/lib/trialLimits.mjs) ──
   const [trialStatus, setTrialStatus] = useState<TrialStatus | null>(null);
@@ -188,33 +179,6 @@ export default function HomeScreen() {
   const getLangName = (code: string) =>
     SUPPORTED_LANGUAGES.find(l => l.code === code)?.name ?? (code ? code.toUpperCase() : '—');
 
-  // ── 3. Append completed turns to the session transcript ──
-  useEffect(() => {
-    if (!progress || !progress.sourceText || !progress.translatedText) return;
-    if (!progress.stage || !TRANSCRIPT_TRIGGER_STAGES.has(progress.stage)) return;
-
-    const key = `${progress.currentPerson || 'A'}|${progress.sourceText}|${progress.translatedText}`;
-    if (key === lastRecordedKeyRef.current) return;
-    lastRecordedKeyRef.current = key;
-
-    const srcCode = progress.currentSourceLanguage || sourceLanguage;
-    const tgtCode = progress.currentTargetLanguage || targetLanguage;
-
-    setTurns(prev => [
-      {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        person: progress.currentPerson || 'A',
-        sourceText: progress.sourceText!,
-        translatedText: progress.translatedText!,
-        sourceLangName: getLangName(srcCode),
-        targetLangName: getLangName(tgtCode),
-        targetLangCode: tgtCode,
-      },
-      ...prev,
-    ]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [progress]);
-
   // ── Button handler ──
   const handleToggleRecording = async () => {
     if (isButtonDisabled) return;
@@ -304,19 +268,24 @@ export default function HomeScreen() {
     realtimeTranslationService.interruptCurrentTurn();
   };
 
-  const handleReplay = async (turn: TranscriptTurn) => {
-    if (isActive || replayingId) return;
-    setReplayingId(turn.id);
+  // Re-synthesizes and plays the current transaction's translation again —
+  // this only ever needs to reach for `progress` (the latest turn), since the
+  // full multi-turn record now lives in History (DB-backed) rather than a
+  // session-only list on this screen.
+  const handleReplay = async () => {
+    if (isActive || isReplaying || !progress?.translatedText) return;
+    const targetLangCode = progress.currentTargetLanguage || targetLanguage;
+    setIsReplaying(true);
     try {
       const uri = await ttsService.generateSpeech(
-        turn.translatedText, turn.targetLangCode, settings?.tts_provider || 'device',
+        progress.translatedText, targetLangCode, settings?.tts_provider || 'device',
       );
       await audioService.forceCleanup();
       if (uri) await audioService.playAudio(uri);
     } catch (error) {
-      logger.error('Transcript replay failed', error, { platform: Platform.OS });
+      logger.error('Current-transaction replay failed', error, { platform: Platform.OS });
     } finally {
-      setReplayingId(null);
+      setIsReplaying(false);
     }
   };
 
@@ -486,29 +455,42 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* ── Transcript ──
-            Supersedes the old single-turn "Results" box (pre-Conversation-Canvas
-            master): every completed turn — single or conversation mode — now
-            accumulates here instead of only showing the latest one, and the
-            AI-accuracy disclaimer that box used to carry lives below the list. */}
-        <View style={styles.section}>
-          <View style={styles.sectTitle}>
-            <Text style={styles.sectTitleText}>Transcript</Text>
-            {turns.length > 0 && <Text style={styles.sectTitleCount}>{turns.length} turn{turns.length === 1 ? '' : 's'}</Text>}
-          </View>
-          <ChatTranscript
-            turns={turns}
-            onReplay={handleReplay}
-            replayingId={replayingId}
-            canReplay={!isActive}
-            emptyHint="Your conversation will show up here as it happens — original on one side, translation on the other."
-          />
-          {turns.length > 0 && (
+        {/* ── Current transaction ──
+            Only the latest result — not a growing session list. The full,
+            persistent record of every past translation already lives in the
+            History tab (DB-backed there), so this screen doesn't need to
+            duplicate it; showing just "what did I hear/say just now" is what
+            actually belongs on the screen you're actively translating from. */}
+        {!showCanvas && progress?.sourceText && progress?.translatedText && (
+          <View style={styles.section}>
+            <Text style={styles.sectTitleText}>Current Transaction</Text>
+            <View style={styles.currentCard}>
+              <View style={styles.currentBlock}>
+                <Text style={styles.currentLabel}>
+                  {getLangName(progress.currentSourceLanguage || sourceLanguage)}
+                </Text>
+                <Text style={styles.currentText}>{progress.sourceText}</Text>
+              </View>
+              <View style={[styles.currentBlock, styles.currentBlockTranslated]}>
+                <Text style={[styles.currentLabel, styles.currentLabelTranslated]}>
+                  {getLangName(progress.currentTargetLanguage || targetLanguage)}
+                </Text>
+                <Text style={[styles.currentText, styles.currentTextTranslated]}>{progress.translatedText}</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.replayRow, (isActive || isReplaying) && styles.replayRowDisabled]}
+                onPress={handleReplay}
+                disabled={isActive || isReplaying}
+              >
+                <Volume2 size={14} color={t.personB} />
+                <Text style={styles.replayRowText}>{isReplaying ? 'Playing…' : 'Replay'}</Text>
+              </TouchableOpacity>
+            </View>
             <Text style={styles.disclaimerText}>
               AI translations may contain errors. Not intended for medical, legal, or other critical use.
             </Text>
-          )}
-        </View>
+          </View>
+        )}
 
         <View style={{ height: 32 }} />
       </ScrollView>
@@ -686,23 +668,62 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 20,
   },
-  sectTitle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    paddingHorizontal: 2,
-  },
   sectTitleText: {
     fontSize: 15.5,
     fontWeight: '800',
     color: t.text,
     letterSpacing: -0.3,
+    marginBottom: 12,
+    paddingHorizontal: 2,
   },
-  sectTitleCount: {
-    fontSize: 12,
-    fontWeight: '700',
+  currentCard: {
+    backgroundColor: t.card,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
+    borderRadius: 18,
+    padding: 16,
+    gap: 12,
+  },
+  currentBlock: {
+    gap: 5,
+  },
+  currentBlockTranslated: {
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: t.cardBorder,
+  },
+  currentLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
     color: t.textFaint,
+  },
+  currentLabelTranslated: {
+    color: t.personB,
+  },
+  currentText: {
+    fontSize: 15,
+    lineHeight: 21,
+    color: t.text,
+  },
+  currentTextTranslated: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  replayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+  },
+  replayRowDisabled: {
+    opacity: 0.5,
+  },
+  replayRowText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: t.personB,
   },
   disclaimerText: {
     fontSize: 11,
