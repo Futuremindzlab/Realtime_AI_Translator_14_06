@@ -10,12 +10,14 @@ import {
   Platform,
   AppState,
   AppStateStatus,
+  Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Mic, Square, Users, User, Settings as SettingsIcon, Volume2 } from 'lucide-react-native';
+import { Mic, Square, Users, User, Settings as SettingsIcon, Clock, Volume2 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { LanguagePairControl } from '@/components/conversation/LanguagePairControl';
 import { SplitFaceToFace } from '@/components/conversation/SplitFaceToFace';
+import { PaywallView } from '@/components/onboarding/PaywallView';
 import {
   realtimeTranslationService,
   TranslationProgress,
@@ -23,15 +25,17 @@ import {
 import { audioService } from '@/services/audioService';
 import { ttsService } from '@/services/ttsService';
 import { whisperService } from '@/services/whisperService';
+import { dynamoService } from '@/services/dynamoService';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
 import { logger } from '@/lib/logger';
 import { canvasTheme as t } from '@/lib/canvasTheme';
+import { TrialStatus } from '@/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_MAX_WIDTH = Math.min(SCREEN_WIDTH, 600);
 
 export default function HomeScreen() {
-  const { user, settings } = useAuth();
+  const { user, settings, refreshSettings } = useAuth();
   const router = useRouter();
 
   const [sourceLanguage, setSourceLanguage] = useState('auto');
@@ -43,6 +47,42 @@ export default function HomeScreen() {
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
   const backgroundDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── 7-day free trial (see backend/src/lib/trialLimits.mjs) ──
+  const [trialStatus, setTrialStatus] = useState<TrialStatus | null>(null);
+  const [paywallVisible, setPaywallVisible] = useState(false);
+  const [paywallReason, setPaywallReason] = useState<'trial_expired' | 'trial_limit_reached'>('trial_limit_reached');
+
+  useEffect(() => {
+    dynamoService.getTrialStatus().then(setTrialStatus).catch(() => {});
+  }, []);
+
+  /** Spends one unit of trial usage for `kind` before the action it gates
+   *  actually starts (see handleStartRecording/handleStartConversation) —
+   *  returns whether the action may proceed. Fails OPEN on a network/server
+   *  error: a transient blip shouldn't block a translation the trial would
+   *  have allowed, and the daily AI-call cap (usageLimits.mjs) remains the
+   *  real cost backstop regardless of this check. A 'plus'/'live' user (or
+   *  any error) resolves to allowed:true without ever touching the UI below. */
+  const checkTrialAllowance = async (kind: 'translation' | 'conversation'): Promise<boolean> => {
+    try {
+      const result = await dynamoService.consumeTrialUsage(kind);
+      if (result.allowed) {
+        setTrialStatus(prev =>
+          prev && !prev.unlimited && prev.used
+            ? { ...prev, trial_started: true, used: { ...prev.used, [kind]: (prev.used[kind] || 0) + 1 } }
+            : prev
+        );
+        return true;
+      }
+      setPaywallReason(result.reason || 'trial_limit_reached');
+      setPaywallVisible(true);
+      return false;
+    } catch (error) {
+      logger.error('Trial allowance check failed — proceeding', error, { kind });
+      return true;
+    }
+  };
 
   // ── 1. Startup voices + sync settings ──
   // Provider API keys live server-side (backend AI proxy) — nothing to initialise here.
@@ -150,7 +190,7 @@ export default function HomeScreen() {
         if (isConversationRunning) {
           await handleStopConversation();
         } else {
-          handleStartConversation();
+          await handleStartConversation();
         }
       } else {
         if (isRecording) {
@@ -166,6 +206,8 @@ export default function HomeScreen() {
 
   // ── Single Translation Mode ──
   const handleStartRecording = async () => {
+    const allowed = await checkTrialAllowance('translation');
+    if (!allowed) return;
     try {
       await realtimeTranslationService.startRealtimeRecording(
         sourceLanguage,
@@ -195,7 +237,9 @@ export default function HomeScreen() {
   };
 
   // ── Conversation Mode ──
-  const handleStartConversation = () => {
+  const handleStartConversation = async () => {
+    const allowed = await checkTrialAllowance('conversation');
+    if (!allowed) return;
     setIsConversationRunning(true);
     realtimeTranslationService
       .startConversation(
@@ -299,6 +343,23 @@ export default function HomeScreen() {
             <SettingsIcon color={t.text} size={18} />
           </TouchableOpacity>
         </View>
+
+        {/* ── Free-trial banner — only ever shown to a 'basic'-plan user; a
+            subscriber's status comes back {unlimited:true} and this renders
+            nothing. Tapping it opens the same paywall a blocked action would. ── */}
+        {trialStatus && !trialStatus.unlimited && trialStatus.caps && (
+          <TouchableOpacity
+            style={[styles.section, styles.trialBanner]}
+            onPress={() => { setPaywallReason('trial_limit_reached'); setPaywallVisible(true); }}
+          >
+            <Clock size={14} color={t.warning} />
+            <Text style={styles.trialBannerText}>
+              Free trial · {Math.max(0, trialStatus.caps.translation - (trialStatus.used?.translation || 0))} translations
+              · {Math.max(0, trialStatus.caps.conversation - (trialStatus.used?.conversation || 0))} conversations left
+              {trialStatus.trial_started ? ` · ${trialStatus.days_remaining}d left` : ''}
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {/* ── Language Pair ── */}
         <View style={styles.section}>
@@ -433,6 +494,40 @@ export default function HomeScreen() {
 
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* ── Trial-limit paywall — shown when checkTrialAllowance blocks a
+          start-recording/start-conversation attempt. Dismissible ("Not now")
+          rather than a hard block: the user simply can't record again until
+          they subscribe, which re-shows this same modal on the next attempt. ── */}
+      <Modal
+        visible={paywallVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPaywallVisible(false)}
+      >
+        <View style={styles.paywallOverlay}>
+          <View style={styles.paywallSheet}>
+            <ScrollView contentContainerStyle={styles.paywallScrollContent} showsVerticalScrollIndicator={false}>
+              <PaywallView
+                title={paywallReason === 'trial_expired' ? 'Your free trial has ended' : "You've used your free trial"}
+                subtitle={
+                  paywallReason === 'trial_expired'
+                    ? "Your 7-day trial window is over — subscribe to keep translating."
+                    : "You've reached your free trial's usage limit — subscribe to keep translating."
+                }
+                onSubscribed={async () => {
+                  setPaywallVisible(false);
+                  await refreshSettings();
+                  dynamoService.getTrialStatus().then(setTrialStatus).catch(() => {});
+                }}
+              />
+            </ScrollView>
+            <TouchableOpacity style={styles.paywallCloseButton} onPress={() => setPaywallVisible(false)}>
+              <Text style={styles.paywallCloseText}>Not now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -635,5 +730,47 @@ const styles = StyleSheet.create({
     color: t.textFaint,
     textAlign: 'center',
     marginTop: 6,
+  },
+  trialBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(251,191,36,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.25)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  trialBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: t.warning,
+  },
+  paywallOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  paywallSheet: {
+    backgroundColor: t.bgElevated,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '88%',
+    paddingTop: 20,
+    paddingHorizontal: 20,
+  },
+  paywallScrollContent: {
+    paddingBottom: 8,
+  },
+  paywallCloseButton: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  paywallCloseText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: t.textMuted,
   },
 });
