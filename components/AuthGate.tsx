@@ -237,7 +237,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.header}>
-        <Text style={styles.title}>The OneLingo</Text>
+        <Text style={styles.title}>OneLingo</Text>
         <Text style={styles.subtitle}>Sign in to start translating</Text>
       </View>
 

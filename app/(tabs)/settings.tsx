@@ -294,7 +294,7 @@ export default function SettingsScreen() {
   // instead of guessing from a secondhand description of the symptom.
   const handleShareDiagnostics = async () => {
     const buildSha = process.env.EXPO_PUBLIC_BUILD_SHA ? process.env.EXPO_PUBLIC_BUILD_SHA.substring(0, 7) : 'dev';
-    const header = `The OneLingo diagnostics\nBuild: ${buildSha}  Platform: ${Platform.OS} ${Platform.Version}\nGenerated: ${new Date().toISOString()}\n${'-'.repeat(40)}\n`;
+    const header = `OneLingo diagnostics\nBuild: ${buildSha}  Platform: ${Platform.OS} ${Platform.Version}\nGenerated: ${new Date().toISOString()}\n${'-'.repeat(40)}\n`;
     const body = header + logger.formatRecentEntries();
     try {
       await Share.share({ message: body });
@@ -696,7 +696,7 @@ export default function SettingsScreen() {
           </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>The OneLingo</Text>
+        <Text style={styles.footerText}>OneLingo</Text>
         <Text style={styles.footerSubtext}>Powered by OpenAI & Advanced TTS</Text>
         {/* versionCode/versionName never change between builds — this is the only
             way to tell whether an installed APK is actually the latest build. */}

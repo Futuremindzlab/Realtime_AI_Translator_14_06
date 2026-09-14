@@ -109,7 +109,7 @@ export async function subscribeToPlan(plan: 'plus' | 'live'): Promise<UserSettin
       const options: SubscriptionCheckoutOptions = {
         subscription_id: order.subscription_id,
         key: order.key_id,
-        name: 'The OneLingo',
+        name: 'OneLingo',
         description: `${PLAN_LABEL[plan]} plan — monthly subscription`,
         // Razorpay Checkout's documented flag marking this as a recurring
         // (subscription) payment sheet rather than a one-time order.
