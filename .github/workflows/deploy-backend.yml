@@ -62,6 +62,9 @@ jobs:
           RAZORPAY_WEBHOOK_SECRET: ${{ secrets.RAZORPAY_WEBHOOK_SECRET }}
           RAZORPAY_PLAN_ID_PLUS:   ${{ secrets.RAZORPAY_PLAN_ID_PLUS }}
           RAZORPAY_PLAN_ID_LIVE:   ${{ secrets.RAZORPAY_PLAN_ID_LIVE }}
+          SNS_DLT_ENTITY_ID:       ${{ secrets.SNS_DLT_ENTITY_ID }}
+          SNS_DLT_TEMPLATE_ID:     ${{ secrets.SNS_DLT_TEMPLATE_ID }}
+          SNS_SENDER_ID:           ${{ secrets.SNS_SENDER_ID }}
         run: |
           # `sam deploy --parameter-overrides` rejects a bare `Key=` with an
           # empty value ("... is not a valid format") — but several of these
@@ -88,6 +91,9 @@ jobs:
           [ -n "$RAZORPAY_WEBHOOK_SECRET" ] && PARAMS+=("RazorpayWebhookSecret=${RAZORPAY_WEBHOOK_SECRET}")
           [ -n "$RAZORPAY_PLAN_ID_PLUS" ]   && PARAMS+=("RazorpayPlanIdPlus=${RAZORPAY_PLAN_ID_PLUS}")
           [ -n "$RAZORPAY_PLAN_ID_LIVE" ]   && PARAMS+=("RazorpayPlanIdLive=${RAZORPAY_PLAN_ID_LIVE}")
+          [ -n "$SNS_DLT_ENTITY_ID" ]       && PARAMS+=("SnsDltEntityId=${SNS_DLT_ENTITY_ID}")
+          [ -n "$SNS_DLT_TEMPLATE_ID" ]     && PARAMS+=("SnsDltTemplateId=${SNS_DLT_TEMPLATE_ID}")
+          [ -n "$SNS_SENDER_ID" ]           && PARAMS+=("SnsSenderId=${SNS_SENDER_ID}")
 
           sam deploy \
             --no-confirm-changeset \

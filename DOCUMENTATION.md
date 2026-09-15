@@ -96,6 +96,18 @@ Verified end-to-end via `admin-initiate-auth`/`admin-respond-to-auth-challenge` 
 
 Sending OTP SMS to **Indian phone numbers via AWS SNS requires DLT (Distributed Ledger Technology) template registration** with Indian telecom regulators (TRAI). This is an **account-level registration you must complete yourself** — it's out of scope for this code change. Until it's done, `sns:Publish` returns success but carriers may silently drop the SMS to +91 numbers. Non-Indian numbers (+1, +44, etc.) are unaffected.
 
+**Registration steps (do these in order):**
+1. **Principal Entity (PE) registration** — register your business on one DLT platform (Jio TrueConnect, Airtel DLT, Vodafone-Idea/Vilpower, BSNL, or Tata Teleservices). PAN, GST, company registration proof, authorized signatory ID. ~3–7 business days. Your resulting **Entity ID** is recognized across all Indian carriers regardless of which platform you registered on.
+2. **Header (Sender ID) registration** — the 6-character alphanumeric sender shown to recipients (e.g. `ONELNG`), registered under your Entity ID.
+3. **Content Template registration** — the exact OTP SMS wording, character-for-character, with the code as a `{#var#}` placeholder:
+   ```
+   Your OneLingo verification code is {#var#}. Valid for 5 minutes. Do not share this code with anyone.
+   ```
+   This must match `createAuthChallenge.mjs`'s `buildOtpMessage()` exactly — if you change the wording there, re-register the template (or vice versa). A mismatch gets the message blocked even with everything else correctly registered.
+4. **AWS Support case** — for India, AWS requires you to open a Support case (Service: SNS) with your DLT Entity ID and Template ID so AWS can map them to your account. This is not self-service in the console.
+5. **Deploy with the new parameters** — once AWS confirms the mapping, deploy with `SnsDltEntityId`/`SnsDltTemplateId`/`SnsSenderId` set (via `sam deploy --parameter-overrides`, or the `SNS_DLT_ENTITY_ID`/`SNS_DLT_TEMPLATE_ID`/`SNS_SENDER_ID` GitHub Secrets consumed by `deploy-backend.yml`). `createAuthChallenge.mjs` only attaches these to outbound SMS when they're set — leaving them unset changes nothing for non-Indian numbers or before registration completes.
+6. **Test with a real +91 number** end-to-end before relying on it.
+
 ### New backend dependencies
 
 `backend/package.json` now also includes `@aws-sdk/client-sns` and `@aws-sdk/client-cognito-identity-provider`.
