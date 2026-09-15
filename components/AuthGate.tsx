@@ -7,6 +7,7 @@ import {
   ScrollView,
   TextInput,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { LogIn } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
@@ -58,6 +59,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   const [authError, setAuthError] = useState<string | null>(null);
 
+  // First-run brand moment shown once, before the sign-in form — dismissed
+  // by "Get Started" and never shown again for the rest of this mount (the
+  // sign-in card below is otherwise identical to before this was added).
+  const [showWelcome, setShowWelcome] = useState(true);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -82,6 +88,23 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       return <OnboardingFlow updateSettings={updateSettings} refreshSettings={refreshSettings} />;
     }
     return <>{children}</>;
+  }
+
+  if (showWelcome) {
+    return (
+      <View style={styles.welcomeContainer}>
+        <Image
+          source={require('@/assets/images/logo_mark.png')}
+          style={styles.welcomeLogo}
+          resizeMode="contain"
+        />
+        <Text style={styles.welcomeTitle}>OneLingo</Text>
+        <Text style={styles.welcomeTagline}>UNLIMIT YOUR VOICE</Text>
+        <TouchableOpacity style={styles.welcomeButton} onPress={() => setShowWelcome(false)}>
+          <Text style={styles.primaryButtonText}>Get Started</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
   const handleAuth = async () => {
@@ -578,6 +601,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: t.bg,
+  },
+  welcomeContainer: {
+    flex: 1,
+    backgroundColor: t.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  welcomeLogo: {
+    width: 180,
+    height: 137,
+    marginBottom: 28,
+  },
+  welcomeTitle: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: t.text,
+    letterSpacing: -0.5,
+  },
+  welcomeTagline: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: t.personB,
+    letterSpacing: 3,
+    marginTop: 10,
+    marginBottom: 56,
+  },
+  welcomeButton: {
+    backgroundColor: t.personB,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 48,
+    borderRadius: 8,
+    width: '100%',
   },
   header: {
     marginBottom: 24,
