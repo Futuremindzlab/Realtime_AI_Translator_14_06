@@ -20,6 +20,7 @@ import { subscribeToPlan, cancelSubscription as cancelRazorpaySubscription, Chec
 import { SubscriptionPlan } from '@/types';
 import { logger } from '@/lib/logger';
 import { PLAN_INFO, PAID_PLAN_PRICE } from '@/lib/plans';
+import { canvasTheme as t } from '@/lib/canvasTheme';
 
 export default function SettingsScreen() {
   // AuthGate (app/_layout.tsx) guarantees `user` is non-null by the time any
@@ -341,7 +342,7 @@ export default function SettingsScreen() {
             <Text style={styles.sectionTitle}>Account</Text>
             <Text style={styles.userEmail}>{user.email}</Text>
             <TouchableOpacity style={styles.secondaryButton} onPress={handleSignOut}>
-              <LogOut size={20} color="#ef4444" />
+              <LogOut size={20} color={t.danger} />
               <Text style={styles.secondaryButtonText}>Sign Out</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -349,10 +350,10 @@ export default function SettingsScreen() {
               disabled={deletingAccount}
               onPress={handleDeleteAccount}>
               {deletingAccount ? (
-                <ActivityIndicator size="small" color="#ef4444" />
+                <ActivityIndicator size="small" color={t.danger} />
               ) : (
                 <>
-                  <Trash2 size={20} color="#ef4444" />
+                  <Trash2 size={20} color={t.danger} />
                   <Text style={styles.secondaryButtonText}>Delete Account</Text>
                 </>
               )}
@@ -363,7 +364,7 @@ export default function SettingsScreen() {
             <Text style={styles.sectionTitle}>Your Plan</Text>
             <View style={styles.planBadgeRow}>
               <View style={styles.planBadge}>
-                <Zap size={14} color="#2563eb" />
+                <Zap size={14} color={t.personB} />
                 <Text style={styles.planBadgeText}>{PLAN_INFO[currentPlan].label}</Text>
               </View>
             </View>
@@ -378,11 +379,11 @@ export default function SettingsScreen() {
                   disabled={subscribingPlan !== null}
                   onPress={() => handleSubscribe(plan)}>
                   {subscribingPlan === plan ? (
-                    <ActivityIndicator size="small" color="#2563eb" />
+                    <ActivityIndicator size="small" color={t.personB} />
                   ) : (
                     <>
-                      <Zap size={18} color="#2563eb" />
-                      <Text style={[styles.secondaryButtonText, { color: '#2563eb' }]}>
+                      <Zap size={18} color={t.personB} />
+                      <Text style={[styles.secondaryButtonText, { color: t.personB }]}>
                         Upgrade to {PLAN_INFO[plan].label} — {PAID_PLAN_PRICE[plan]}
                       </Text>
                     </>
@@ -400,9 +401,9 @@ export default function SettingsScreen() {
                   disabled={cancellingSubscription}
                   onPress={handleCancelSubscription}>
                   {cancellingSubscription ? (
-                    <ActivityIndicator size="small" color="#ef4444" />
+                    <ActivityIndicator size="small" color={t.danger} />
                   ) : (
-                    <Text style={[styles.secondaryButtonText, { color: '#ef4444' }]}>Cancel Subscription</Text>
+                    <Text style={[styles.secondaryButtonText, { color: t.danger }]}>Cancel Subscription</Text>
                   )}
                 </TouchableOpacity>
               )
@@ -565,15 +566,15 @@ export default function SettingsScreen() {
               <Switch
                 value={conversationModeDefault}
                 onValueChange={setConversationModeDefault}
-                trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
-                thumbColor={conversationModeDefault ? '#2563eb' : '#f4f3f4'}
+                trackColor={{ false: t.cardBorderStrong, true: t.personBBorder }}
+                thumbColor={conversationModeDefault ? t.personB : t.textFaint}
               />
             </View>
 
             <TouchableOpacity
               style={styles.saveButton}
               onPress={handleSaveSettings}>
-              <Save size={20} color="#ffffff" />
+              <Save size={20} color={t.bg} />
               <Text style={styles.saveButtonText}>Save Preferences</Text>
             </TouchableOpacity>
           </View>
@@ -588,15 +589,15 @@ export default function SettingsScreen() {
 
             {settings?.custom_voice_id ? (
               <View>
-                <View style={[styles.voiceStatus, { backgroundColor: '#ecfdf5' }]}>
-                  <Text style={[styles.voiceStatusText, { color: '#059669' }]}>
+                <View style={[styles.voiceStatus, { backgroundColor: t.personBBg }]}>
+                  <Text style={[styles.voiceStatusText, { color: t.success }]}>
                     {isUserView ? 'Custom voice active ✓' : 'Custom voice active'}
                   </Text>
                 </View>
                 <TouchableOpacity
                   style={[styles.secondaryButton, { marginTop: 12 }]}
                   onPress={handleRemoveCustomVoice}>
-                  <Trash2 size={18} color="#ef4444" />
+                  <Trash2 size={18} color={t.danger} />
                   <Text style={styles.secondaryButtonText}>
                     {isUserView ? 'Reset to Default Voice' : 'Remove Custom Voice'}
                   </Text>
@@ -604,7 +605,7 @@ export default function SettingsScreen() {
               </View>
             ) : isCloningVoice ? (
               <View style={styles.cloningContainer}>
-                <ActivityIndicator size="large" color="#2563eb" />
+                <ActivityIndicator size="large" color={t.personB} />
                 <Text style={styles.cloningText}>
                   {isUserView ? 'Applying your voice...' : 'Cloning your voice...'}
                 </Text>
@@ -612,17 +613,17 @@ export default function SettingsScreen() {
               </View>
             ) : isRecordingVoice ? (
               <View>
-                <View style={[styles.voiceStatus, { backgroundColor: '#fef2f2' }]}>
-                  <Text style={[styles.voiceStatusText, { color: '#dc2626' }]}>
+                <View style={[styles.voiceStatus, { backgroundColor: 'rgba(252,165,165,0.14)' }]}>
+                  <Text style={[styles.voiceStatusText, { color: t.danger }]}>
                     {isUserView
                       ? `Recording... ${recordingSeconds}s`
                       : `Recording... ${recordingSeconds}s / 60s`}
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={[styles.primaryButton, { backgroundColor: '#dc2626', marginTop: 12 }]}
+                  style={[styles.primaryButton, { backgroundColor: t.recordGradient[0], marginTop: 12 }]}
                   onPress={handleStopVoiceRecording}>
-                  <Mic size={20} color="#ffffff" />
+                  <Mic size={20} color={t.text} />
                   <Text style={styles.primaryButtonText}>
                     {isUserView
                       ? 'Stop & Apply Voice'
@@ -632,9 +633,9 @@ export default function SettingsScreen() {
               </View>
             ) : (
               <TouchableOpacity
-                style={[styles.primaryButton, { backgroundColor: '#7c3aed' }]}
+                style={[styles.primaryButton, { backgroundColor: t.personA }]}
                 onPress={handleStartVoiceRecording}>
-                <Mic size={20} color="#ffffff" />
+                <Mic size={20} color={t.text} />
                 <Text style={styles.primaryButtonText}>
                   {isUserView ? 'Record & Apply My Voice' : 'Record My Voice'}
                 </Text>
@@ -650,10 +651,10 @@ export default function SettingsScreen() {
               useful than a description of the symptom.
             </Text>
             <TouchableOpacity
-              style={[styles.secondaryButton, { borderColor: '#d1d5db' }]}
+              style={[styles.secondaryButton, { borderColor: t.cardBorderStrong }]}
               onPress={handleShareDiagnostics}>
-              <Bug size={18} color="#374151" />
-              <Text style={[styles.secondaryButtonText, { color: '#374151' }]}>Share Diagnostics</Text>
+              <Bug size={18} color={t.textMuted} />
+              <Text style={[styles.secondaryButtonText, { color: t.textMuted }]}>Share Diagnostics</Text>
             </TouchableOpacity>
           </View>
 
@@ -673,7 +674,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: t.bg,
   },
   contentContainer: {
     padding: 20,
@@ -686,44 +687,41 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#111827',
+    color: t.text,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#6b7280',
+    color: t.textMuted,
   },
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: t.card,
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#111827',
+    color: t.text,
     marginBottom: 8,
   },
   sectionDescription: {
     fontSize: 14,
-    color: '#6b7280',
+    color: t.textMuted,
     marginBottom: 16,
   },
   userEmail: {
     fontSize: 16,
-    color: '#374151',
+    color: t.textMuted,
     marginBottom: 16,
   },
   secondaryButton: {
-    backgroundColor: '#ffffff',
+    backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#ef4444',
+    borderColor: t.danger,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -732,7 +730,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   secondaryButtonText: {
-    color: '#ef4444',
+    color: t.danger,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -744,7 +742,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#eef2ff',
+    backgroundColor: t.personBBg,
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 999,
@@ -752,16 +750,16 @@ const styles = StyleSheet.create({
   planBadgeText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#2563eb',
+    color: t.personB,
   },
   upgradeButton: {
-    borderColor: '#2563eb',
+    borderColor: t.personBBorder,
     marginTop: 12,
   },
   inputLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#374151',
+    color: t.textMuted,
     marginBottom: 8,
     marginTop: 8,
   },
@@ -782,51 +780,53 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   radioRowSelected: {
-    backgroundColor: '#eef2ff',
+    backgroundColor: t.personBBg,
   },
   radioOption: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    backgroundColor: '#f9fafb',
+    backgroundColor: t.bgElevated,
     borderRadius: 8,
     gap: 12,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
   },
   radio: {
     width: 20,
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: '#d1d5db',
+    borderColor: t.cardBorderStrong,
     justifyContent: 'center',
     alignItems: 'center',
   },
   radioSelected: {
-    borderColor: '#2563eb',
+    borderColor: t.personB,
   },
   radioDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#2563eb',
+    backgroundColor: t.personB,
   },
   radioLabel: {
     fontSize: 16,
-    color: '#374151',
+    color: t.text,
   },
   voiceDesc: {
     fontSize: 12,
-    color: '#6b7280',
+    color: t.textFaint,
     marginTop: 1,
   },
   voiceHint: {
     fontSize: 13,
-    color: '#6b7280',
+    color: t.textMuted,
     marginBottom: 12,
     fontStyle: 'italic',
   },
   primaryButton: {
-    backgroundColor: '#2563eb',
+    backgroundColor: t.personB,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -835,12 +835,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   primaryButtonText: {
-    color: '#ffffff',
+    color: t.text,
     fontSize: 16,
     fontWeight: '600',
   },
   saveButton: {
-    backgroundColor: '#2563eb',
+    backgroundColor: t.personB,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -850,7 +850,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   saveButtonText: {
-    color: '#ffffff',
+    color: t.bg,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -863,11 +863,11 @@ const styles = StyleSheet.create({
   switchLabel: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#111827',
+    color: t.text,
   },
   switchDescription: {
     fontSize: 14,
-    color: '#6b7280',
+    color: t.textMuted,
     marginTop: 4,
   },
   voiceStatus: {
@@ -887,11 +887,11 @@ const styles = StyleSheet.create({
   cloningText: {
     fontSize: 16,
     fontWeight: '600' as const,
-    color: '#2563eb',
+    color: t.personB,
   },
   cloningSubtext: {
     fontSize: 14,
-    color: '#6b7280',
+    color: t.textMuted,
   },
   footer: {
     marginTop: 40,
@@ -901,11 +901,11 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#374151',
+    color: t.textMuted,
   },
   footerSubtext: {
     fontSize: 12,
-    color: '#9ca3af',
+    color: t.textFaint,
     marginTop: 4,
   },
 });
