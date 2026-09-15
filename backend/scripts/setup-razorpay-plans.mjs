@@ -36,8 +36,8 @@ const razorpay = new Razorpay({ key_id: KEY_ID, key_secret: KEY_SECRET });
 // copy here rather than imported, since this script intentionally runs
 // standalone (before the Lambda env vars it produces even exist yet).
 const PLANS_TO_CREATE = [
-  { key: 'plus', name: 'The OneLingo — Plus (Monthly)', amount: 200 * 100 },
-  { key: 'live', name: 'The OneLingo — Live (Monthly)', amount: 360 * 100 },
+  { key: 'plus', name: 'The OneLingo — Plus (Monthly)', amount: 100 * 100 },
+  { key: 'live', name: 'The OneLingo — Live (Monthly)', amount: 200 * 100 },
 ];
 
 async function findExistingPlan(name) {

@@ -28,8 +28,8 @@ export const razorpay = new Razorpay({
  * and existing subscribers keep their original price until they resubscribe.
  */
 export const PAID_PLAN_PRICING = {
-  plus: { amountPaise: 200 * 100, label: 'Plus' },
-  live: { amountPaise: 360 * 100, label: 'Live' },
+  plus: { amountPaise: 100 * 100, label: 'Plus' },
+  live: { amountPaise: 200 * 100, label: 'Live' },
 };
 
 /** Maps a plan name to its Razorpay Plan ID, read from env (set post-setup-script). */
