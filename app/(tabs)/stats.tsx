@@ -13,6 +13,12 @@ import { BarChart2, ArrowRight, Globe, TrendingUp, RefreshCw } from 'lucide-reac
 import { useAuth } from '@/contexts/AuthContext';
 import { dynamoService } from '@/services/dynamoService';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
+import { canvasTheme as t } from '@/lib/canvasTheme';
+
+// Metric accent colors — reuse the app's two-speaker palette (personA/personB)
+// plus `success` for the third metric, instead of ad-hoc hex values, so the
+// Dashboard reads as the same visual system as Talk/Phrases.
+const METRIC_COLORS = { total: t.personB, pairs: t.personA, languages: t.success, matrix: t.warning };
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -110,7 +116,7 @@ function PairCard({ pair, rank, total }: { pair: PairStats; rank: number; total:
       <View style={styles.pairMiddle}>
         <View style={styles.pairLangs}>
           <Text style={styles.pairLang}>{getLangName(pair.source)}</Text>
-          <ArrowRight size={14} color="#9ca3af" />
+          <ArrowRight size={14} color={t.textFaint} />
           <Text style={styles.pairLang}>{getLangName(pair.target)}</Text>
         </View>
         <View style={styles.pairBarTrack}>
@@ -164,7 +170,7 @@ export default function StatsScreen() {
   if (!user) {
     return (
       <View style={styles.centerBox}>
-        <Globe size={56} color="#d1d5db" />
+        <Globe size={56} color={t.textFaint} />
         <Text style={styles.emptyTitle}>Sign In Required</Text>
         <Text style={styles.emptyText}>Please sign in from the Settings tab to view your dashboard.</Text>
       </View>
@@ -175,7 +181,7 @@ export default function StatsScreen() {
   if (loading) {
     return (
       <View style={styles.centerBox}>
-        <ActivityIndicator size="large" color="#2563eb" />
+        <ActivityIndicator size="large" color={t.personB} />
       </View>
     );
   }
@@ -184,7 +190,7 @@ export default function StatsScreen() {
   if (total === 0) {
     return (
       <View style={styles.centerBox}>
-        <BarChart2 size={56} color="#d1d5db" />
+        <BarChart2 size={56} color={t.textFaint} />
         <Text style={styles.emptyTitle}>No Data Yet</Text>
         <Text style={styles.emptyText}>Complete a translation to see your language stats.</Text>
       </View>
@@ -208,21 +214,21 @@ export default function StatsScreen() {
           <Text style={styles.subtitle}>Your translation analytics</Text>
         </View>
         <TouchableOpacity onPress={handleRefresh} style={styles.refreshBtn}>
-          <RefreshCw size={20} color="#2563eb" />
+          <RefreshCw size={20} color={t.personB} />
         </TouchableOpacity>
       </View>
 
       {/* Summary cards */}
       <View style={styles.cardRow}>
-        <StatCard label="Total" value={total} color="#2563eb" />
-        <StatCard label="Pairs" value={pairList.length} color="#7c3aed" />
-        <StatCard label="Languages" value={bySource.length + byTarget.filter(t => !bySource.find(s => s.code === t.code)).length} color="#059669" />
+        <StatCard label="Total" value={total} color={METRIC_COLORS.total} />
+        <StatCard label="Pairs" value={pairList.length} color={METRIC_COLORS.pairs} />
+        <StatCard label="Languages" value={bySource.length + byTarget.filter(l => !bySource.find(s => s.code === l.code)).length} color={METRIC_COLORS.languages} />
       </View>
 
       {/* Top Language Pairs */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <TrendingUp size={18} color="#2563eb" />
+          <TrendingUp size={18} color={METRIC_COLORS.total} />
           <Text style={styles.sectionTitle}>Top Language Pairs</Text>
         </View>
         {pairList.slice(0, 10).map((pair, i) => (
@@ -233,7 +239,7 @@ export default function StatsScreen() {
       {/* Source Languages */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Globe size={18} color="#7c3aed" />
+          <Globe size={18} color={METRIC_COLORS.pairs} />
           <Text style={styles.sectionTitle}>Most Used Source Languages</Text>
         </View>
         {bySource.map((lang, i) => (
@@ -242,7 +248,7 @@ export default function StatsScreen() {
             label={lang.name}
             count={lang.count}
             max={maxSource}
-            color="#7c3aed"
+            color={METRIC_COLORS.pairs}
             badge={i === 0 ? 'Top' : undefined}
           />
         ))}
@@ -251,7 +257,7 @@ export default function StatsScreen() {
       {/* Target Languages */}
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Globe size={18} color="#059669" />
+          <Globe size={18} color={METRIC_COLORS.languages} />
           <Text style={styles.sectionTitle}>Most Used Target Languages</Text>
         </View>
         {byTarget.map((lang, i) => (
@@ -260,7 +266,7 @@ export default function StatsScreen() {
             label={lang.name}
             count={lang.count}
             max={maxTarget}
-            color="#059669"
+            color={METRIC_COLORS.languages}
             badge={i === 0 ? 'Top' : undefined}
           />
         ))}
@@ -270,7 +276,7 @@ export default function StatsScreen() {
       {pairList.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <BarChart2 size={18} color="#d97706" />
+            <BarChart2 size={18} color={METRIC_COLORS.matrix} />
             <Text style={styles.sectionTitle}>All Combinations</Text>
           </View>
           <View style={styles.matrixHeader}>
@@ -282,7 +288,7 @@ export default function StatsScreen() {
           {pairList.map((pair) => (
             <View key={`${pair.source}-${pair.target}`} style={styles.matrixRow}>
               <Text style={styles.matrixCell}>{getLangName(pair.source)}</Text>
-              <ArrowRight size={12} color="#9ca3af" />
+              <ArrowRight size={12} color={t.textFaint} />
               <Text style={styles.matrixCell}>{getLangName(pair.target)}</Text>
               <View style={[styles.matrixBadge]}>
                 <Text style={styles.matrixBadgeText}>{pair.count}</Text>
@@ -299,79 +305,78 @@ export default function StatsScreen() {
 // ── styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  container:     { flex: 1, backgroundColor: '#f9fafb' },
+  container:     { flex: 1, backgroundColor: t.bg },
   scrollContent: { paddingBottom: 40 },
-  centerBox:     { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  centerBox:     { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40, backgroundColor: t.bg },
 
-  emptyTitle: { fontSize: 22, fontWeight: '600', color: '#374151', marginTop: 16, marginBottom: 8 },
-  emptyText:  { fontSize: 15, color: '#6b7280', textAlign: 'center', lineHeight: 22 },
+  emptyTitle: { fontSize: 22, fontWeight: '600', color: t.text, marginTop: 16, marginBottom: 8 },
+  emptyText:  { fontSize: 15, color: t.textMuted, textAlign: 'center', lineHeight: 22 },
 
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 20, paddingTop: 56, backgroundColor: '#ffffff',
-    borderBottomWidth: 1, borderBottomColor: '#e5e7eb',
+    padding: 20, paddingTop: 56, backgroundColor: t.bgElevated,
+    borderBottomWidth: 1, borderBottomColor: t.cardBorder,
   },
-  title:      { fontSize: 30, fontWeight: '700', color: '#111827', marginBottom: 2 },
-  subtitle:   { fontSize: 14, color: '#6b7280' },
-  refreshBtn: { padding: 8, borderRadius: 8, backgroundColor: '#eff6ff' },
+  title:      { fontSize: 30, fontWeight: '700', color: t.text, marginBottom: 2 },
+  subtitle:   { fontSize: 14, color: t.textMuted },
+  refreshBtn: { padding: 8, borderRadius: 8, backgroundColor: t.personBBg },
 
   // summary cards
   cardRow: { flexDirection: 'row', gap: 12, padding: 16 },
   statCard: {
-    flex: 1, backgroundColor: '#ffffff', borderRadius: 12, padding: 14,
-    borderLeftWidth: 4,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+    flex: 1, backgroundColor: t.card, borderRadius: 12, padding: 14,
+    borderWidth: 1, borderColor: t.cardBorder, borderLeftWidth: 4,
   },
   statValue: { fontSize: 28, fontWeight: '700', marginBottom: 2 },
-  statLabel: { fontSize: 12, color: '#6b7280', fontWeight: '500' },
+  statLabel: { fontSize: 12, color: t.textMuted, fontWeight: '500' },
 
   // sections
   section: {
-    backgroundColor: '#ffffff', margin: 16, marginTop: 0, borderRadius: 16,
-    padding: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+    backgroundColor: t.card, margin: 16, marginTop: 0, borderRadius: 16,
+    padding: 16, borderWidth: 1, borderColor: t.cardBorder,
   },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
-  sectionTitle:  { fontSize: 16, fontWeight: '700', color: '#111827' },
+  sectionTitle:  { fontSize: 16, fontWeight: '700', color: t.text },
 
   // bar rows
   barRow:      { marginBottom: 12 },
   barLabelRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, gap: 6 },
-  barLabel:    { flex: 1, fontSize: 14, color: '#374151', fontWeight: '500' },
-  barCount:    { fontSize: 13, color: '#6b7280', fontWeight: '600', minWidth: 28, textAlign: 'right' },
+  barLabel:    { flex: 1, fontSize: 14, color: t.text, fontWeight: '500' },
+  barCount:    { fontSize: 13, color: t.textMuted, fontWeight: '600', minWidth: 28, textAlign: 'right' },
   badge: { fontSize: 10, fontWeight: '700', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-  barTrack:    { height: 8, backgroundColor: '#f3f4f6', borderRadius: 4, overflow: 'hidden' },
+  barTrack:    { height: 8, backgroundColor: t.cardBorder, borderRadius: 4, overflow: 'hidden' },
   barFill:     { height: 8, borderRadius: 4 },
 
   // pair cards
   pairCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#f9fafb', borderRadius: 10, padding: 12, marginBottom: 8,
+    backgroundColor: t.bgElevated, borderRadius: 10, padding: 12, marginBottom: 8,
+    borderWidth: 1, borderColor: t.cardBorder,
   },
   pairRank:     { width: 28, alignItems: 'center' },
-  pairRankText: { fontSize: 12, fontWeight: '700', color: '#9ca3af' },
+  pairRankText: { fontSize: 12, fontWeight: '700', color: t.textFaint },
   pairMiddle:   { flex: 1 },
   pairLangs:    { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  pairLang:     { fontSize: 14, fontWeight: '600', color: '#1f2937' },
-  pairBarTrack: { height: 6, backgroundColor: '#e5e7eb', borderRadius: 3, overflow: 'hidden' },
-  pairBarFill:  { height: 6, borderRadius: 3, backgroundColor: '#2563eb' },
+  pairLang:     { fontSize: 14, fontWeight: '600', color: t.text },
+  pairBarTrack: { height: 6, backgroundColor: t.cardBorder, borderRadius: 3, overflow: 'hidden' },
+  pairBarFill:  { height: 6, borderRadius: 3, backgroundColor: t.personB },
   pairRight:    { alignItems: 'flex-end', minWidth: 40 },
-  pairCount:    { fontSize: 16, fontWeight: '700', color: '#2563eb' },
-  pairPct:      { fontSize: 11, color: '#9ca3af' },
+  pairCount:    { fontSize: 16, fontWeight: '700', color: t.personB },
+  pairPct:      { fontSize: 11, color: t.textFaint },
 
   // matrix
   matrixHeader: {
     flexDirection: 'row', alignItems: 'center', paddingBottom: 8,
-    borderBottomWidth: 1, borderBottomColor: '#f3f4f6', marginBottom: 4,
+    borderBottomWidth: 1, borderBottomColor: t.cardBorder, marginBottom: 4,
   },
-  matrixCol:   { flex: 1, fontSize: 11, fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase' },
+  matrixCol:   { flex: 1, fontSize: 11, fontWeight: '700', color: t.textFaint, textTransform: 'uppercase' },
   matrixArrow: { width: 20 },
-  matrixCount: { fontSize: 11, fontWeight: '700', color: '#9ca3af', textTransform: 'uppercase', width: 48, textAlign: 'right' },
+  matrixCount: { fontSize: 11, fontWeight: '700', color: t.textFaint, textTransform: 'uppercase', width: 48, textAlign: 'right' },
   matrixRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 8,
-    borderBottomWidth: 1, borderBottomColor: '#f9fafb',
+    borderBottomWidth: 1, borderBottomColor: t.cardBorder,
   },
-  matrixCell:      { flex: 1, fontSize: 14, color: '#374151' },
-  matrixBadge:     { backgroundColor: '#eff6ff', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, minWidth: 36, alignItems: 'center' },
-  matrixBadgeText: { fontSize: 13, fontWeight: '700', color: '#2563eb' },
+  matrixCell:      { flex: 1, fontSize: 14, color: t.text },
+  matrixBadge:     { backgroundColor: t.personBBg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3, minWidth: 36, alignItems: 'center' },
+  matrixBadgeText: { fontSize: 13, fontWeight: '700', color: t.personB },
 });

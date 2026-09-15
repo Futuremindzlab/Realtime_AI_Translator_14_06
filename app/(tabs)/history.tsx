@@ -21,6 +21,7 @@ import { audioService } from '@/services/audioService';
 import { ttsService } from '@/services/ttsService';
 import { translationProvider } from '@/services/translationProvider';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
+import { canvasTheme as t } from '@/lib/canvasTheme';
 
 // Languages available for replay (no 'auto' option)
 const REPLAY_LANGUAGES = SUPPORTED_LANGUAGES.filter(l => l.code !== 'auto');
@@ -214,7 +215,7 @@ export default function HistoryScreen() {
   if (!user) {
     return (
       <View style={styles.emptyContainer}>
-        <Languages size={64} color="#d1d5db" />
+        <Languages size={64} color={t.textFaint} />
         <Text style={styles.emptyTitle}>Sign In Required</Text>
         <Text style={styles.emptyText}>
           Please sign in from the Settings tab to view your translation history.
@@ -226,7 +227,7 @@ export default function HistoryScreen() {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2563eb" />
+        <ActivityIndicator size="large" color={t.personB} />
       </View>
     );
   }
@@ -241,7 +242,7 @@ export default function HistoryScreen() {
         </View>
         {history.length > 0 && (
           <TouchableOpacity onPress={handleClearHistory} style={styles.clearButton}>
-            <Trash2 size={20} color="#ef4444" />
+            <Trash2 size={20} color={t.danger} />
             <Text style={styles.clearButtonText}>Clear All</Text>
           </TouchableOpacity>
         )}
@@ -249,7 +250,7 @@ export default function HistoryScreen() {
 
       {history.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Languages size={64} color="#d1d5db" />
+          <Languages size={64} color={t.textFaint} />
           <Text style={styles.emptyTitle}>No History Yet</Text>
           <Text style={styles.emptyText}>
             Your translation history will appear here after you make your first translation.
@@ -279,7 +280,7 @@ export default function HistoryScreen() {
                   <TouchableOpacity
                     onPress={() => handleDeleteItem(item.id)}
                     style={styles.deleteButton}>
-                    <Trash2 size={18} color="#ef4444" />
+                    <Trash2 size={18} color={t.danger} />
                   </TouchableOpacity>
                 </View>
 
@@ -304,10 +305,10 @@ export default function HistoryScreen() {
                     disabled={!!replayingId}
                     activeOpacity={0.8}>
                     {isReplaying ? (
-                      <ActivityIndicator size="small" color="#ffffff" />
+                      <ActivityIndicator size="small" color={t.bg} />
                     ) : (
                       <>
-                        <Play size={15} color="#ffffff" fill="#ffffff" />
+                        <Play size={15} color={t.bg} fill={t.bg} />
                         <Text style={styles.replayButtonText}>
                           {isDifferentLang ? `Play in ${getLanguageName(replayLang)}` : 'Replay'}
                         </Text>
@@ -326,7 +327,7 @@ export default function HistoryScreen() {
                       numberOfLines={1}>
                       {getLanguageName(replayLang)}
                     </Text>
-                    <ChevronDown size={13} color={isDifferentLang ? '#2563eb' : '#6b7280'} />
+                    <ChevronDown size={13} color={isDifferentLang ? t.personB : t.textMuted} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -352,7 +353,7 @@ export default function HistoryScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Replay Language</Text>
               <TouchableOpacity onPress={() => setLangPickerItem(null)} style={styles.modalCloseBtn}>
-                <X size={20} color="#6b7280" />
+                <X size={20} color={t.textMuted} />
               </TouchableOpacity>
             </View>
             {langPickerItem && (
@@ -405,30 +406,31 @@ export default function HistoryScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: t.bg,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: t.bg,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
+    backgroundColor: t.bg,
   },
   emptyTitle: {
     fontSize: 24,
     fontWeight: '600',
-    color: '#374151',
+    color: t.text,
     marginTop: 20,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 16,
-    color: '#6b7280',
+    color: t.textMuted,
     textAlign: 'center',
     lineHeight: 24,
   },
@@ -438,19 +440,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: Platform.OS === 'ios' ? 56 : 40,
-    backgroundColor: '#ffffff',
+    backgroundColor: t.bgElevated,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: t.cardBorder,
   },
   title: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#111827',
+    color: t.text,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 14,
-    color: '#6b7280',
+    color: t.textMuted,
   },
   clearButton: {
     flexDirection: 'row',
@@ -461,7 +463,7 @@ const styles = StyleSheet.create({
   clearButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#ef4444',
+    color: t.danger,
   },
   scrollView: {
     flex: 1,
@@ -471,15 +473,12 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   historyCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: t.card,
     borderRadius: 16,
     padding: 16,
     marginBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -493,12 +492,12 @@ const styles = StyleSheet.create({
   languageText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#2563eb',
+    color: t.personB,
     marginBottom: 3,
   },
   dateText: {
     fontSize: 12,
-    color: '#6b7280',
+    color: t.textMuted,
   },
   deleteButton: {
     padding: 4,
@@ -510,14 +509,14 @@ const styles = StyleSheet.create({
   textLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#9ca3af',
+    color: t.textFaint,
     marginBottom: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
   textContent: {
     fontSize: 15,
-    color: '#111827',
+    color: t.text,
     lineHeight: 22,
   },
 
@@ -529,13 +528,13 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
+    borderTopColor: t.cardBorder,
   },
   replayButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#2563eb',
+    backgroundColor: t.personB,
     borderRadius: 8,
     paddingVertical: 9,
     paddingHorizontal: 14,
@@ -543,10 +542,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   replayButtonActive: {
-    backgroundColor: '#1d4ed8',
+    opacity: 0.85,
   },
   replayButtonText: {
-    color: '#ffffff',
+    color: t.bg,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -554,25 +553,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: t.bgElevated,
     borderRadius: 8,
     paddingVertical: 9,
     paddingHorizontal: 10,
     flex: 1,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
   },
   langPillChanged: {
-    backgroundColor: '#eff6ff',
+    backgroundColor: t.personBBg,
     borderWidth: 1,
-    borderColor: '#bfdbfe',
+    borderColor: t.personBBorder,
   },
   langPillText: {
     fontSize: 13,
-    color: '#374151',
+    color: t.textMuted,
     fontWeight: '500',
     flex: 1,
   },
   langPillTextChanged: {
-    color: '#2563eb',
+    color: t.personB,
     fontWeight: '600',
   },
 
@@ -583,10 +584,10 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
   },
   modalSheet: {
-    backgroundColor: '#ffffff',
+    backgroundColor: t.bgElevated,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '70%',
@@ -595,7 +596,7 @@ const styles = StyleSheet.create({
   modalHandle: {
     width: 36,
     height: 4,
-    backgroundColor: '#d1d5db',
+    backgroundColor: t.cardBorderStrong,
     borderRadius: 2,
     alignSelf: 'center',
     marginTop: 10,
@@ -608,19 +609,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: t.cardBorder,
   },
   modalTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#111827',
+    color: t.text,
   },
   modalCloseBtn: {
     padding: 4,
   },
   modalSubtitle: {
     fontSize: 12,
-    color: '#9ca3af',
+    color: t.textFaint,
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 4,
@@ -634,24 +635,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 13,
     borderBottomWidth: 1,
-    borderBottomColor: '#f9fafb',
+    borderBottomColor: t.cardBorder,
   },
   langOptionSelected: {
-    backgroundColor: '#eff6ff',
+    backgroundColor: t.personBBg,
   },
   langOptionText: {
     fontSize: 15,
-    color: '#1f2937',
+    color: t.text,
     flex: 1,
   },
   langOptionTextSelected: {
-    color: '#2563eb',
+    color: t.personB,
     fontWeight: '600',
   },
   langOptionOriginalBadge: {
     fontSize: 11,
-    color: '#9ca3af',
-    backgroundColor: '#f3f4f6',
+    color: t.textFaint,
+    backgroundColor: t.card,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -659,7 +660,7 @@ const styles = StyleSheet.create({
   },
   langOptionCheck: {
     fontSize: 15,
-    color: '#2563eb',
+    color: t.personB,
     fontWeight: '700',
   },
 });
