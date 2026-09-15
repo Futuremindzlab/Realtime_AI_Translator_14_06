@@ -16,7 +16,6 @@ import { LogOut, Save, Mic, Trash2, Bug, Zap } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { audioService } from '@/services/audioService';
 import { ttsService, TTSService } from '@/services/ttsService';
-import { dynamoService } from '@/services/dynamoService';
 import { subscribeToPlan, cancelSubscription as cancelRazorpaySubscription, CheckoutCancelledError } from '@/services/billingService';
 import { SubscriptionPlan } from '@/types';
 import { logger } from '@/lib/logger';
@@ -26,11 +25,13 @@ export default function SettingsScreen() {
   // AuthGate (app/_layout.tsx) guarantees `user` is non-null by the time any
   // screen renders — sign-in/sign-up/OTP/password-reset UI lives there now,
   // not here.
-  const { user, settings, signOut, deleteAccount, updateSettings, viewMode, setViewMode, refreshSettings } = useAuth();
+  const { user, settings, signOut, deleteAccount, updateSettings, refreshSettings } = useAuth();
   const [deletingAccount, setDeletingAccount] = useState(false);
-  const isUserView = user?.role === 'USER' || viewMode === 'user';
+  // Real OWNER vs. regular-customer distinction (Cognito role) — no more
+  // same-account preview toggle; an owner wanting the regular-customer
+  // experience signs in as one of the dedicated regular accounts instead.
+  const isUserView = user?.role === 'USER';
   const currentPlan: SubscriptionPlan = settings?.plan || 'basic';
-  const [pendingPlan, setPendingPlan] = useState<SubscriptionPlan | null>(null);
   const [subscribingPlan, setSubscribingPlan] = useState<'plus' | 'live' | null>(null);
   const [cancellingSubscription, setCancellingSubscription] = useState(false);
 
@@ -76,28 +77,7 @@ export default function SettingsScreen() {
     }
   };
 
-  // OWNER-only testing tool — see backend/src/handlers/settings.mjs's
-  // adminSetPlan(). No streaming/live pipeline gates currently read `plan` in
-  // this codebase, so today this only exercises the billing UI/state without
-  // a real purchase — useful for QA without spending real money via Razorpay.
-  const handleSetPlan = async (plan: SubscriptionPlan) => {
-    if (plan === currentPlan || pendingPlan) return;
-    setPendingPlan(plan);
-    try {
-      const result = await dynamoService.adminSetPlan(plan);
-      if (!result) throw new Error('Server rejected the request');
-      await refreshSettings();
-      Alert.alert('Plan updated', `You're now on the ${PLAN_INFO[plan].label} plan.`);
-    } catch (error) {
-      console.error('Set plan error:', error);
-      Alert.alert('Error', 'Failed to change plan. Are you still signed in as an OWNER?');
-    } finally {
-      setPendingPlan(null);
-    }
-  };
-
-  // Real purchase flow — see services/billingService.ts. Available to every
-  // signed-in user, independent of the OWNER-only testing switcher above.
+  // Real purchase flow — see services/billingService.ts.
   const handleSubscribe = async (plan: 'plus' | 'live') => {
     if (subscribingPlan || plan === currentPlan) return;
     setSubscribingPlan(plan);
@@ -428,44 +408,6 @@ export default function SettingsScreen() {
               )
             ) : null}
           </View>
-
-          {user?.role === 'OWNER' && (
-            <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Developer Mode</Text>
-              <View style={styles.switchRow}>
-                <View>
-                  <Text style={styles.switchLabel}>Admin View</Text>
-                  <Text style={styles.switchDescription}>Toggle off to preview User experience</Text>
-                </View>
-                <Switch
-                  value={viewMode === 'admin'}
-                  onValueChange={(v) => setViewMode(v ? 'admin' : 'user')}
-                  trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
-                  thumbColor={viewMode === 'admin' ? '#2563eb' : '#f4f3f4'}
-                />
-              </View>
-
-              <Text style={[styles.inputLabel, { marginTop: 20 }]}>Change Plan (testing only — no real charge)</Text>
-              <View style={styles.radioGroup}>
-                {(Object.keys(PLAN_INFO) as SubscriptionPlan[]).map((plan) => (
-                  <TouchableOpacity
-                    key={plan}
-                    style={styles.radioOption}
-                    disabled={pendingPlan !== null}
-                    onPress={() => handleSetPlan(plan)}>
-                    <View style={[styles.radio, currentPlan === plan && styles.radioSelected]}>
-                      {currentPlan === plan && <View style={styles.radioDot} />}
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.radioLabel}>{PLAN_INFO[plan].label}</Text>
-                      <Text style={styles.voiceDesc}>{PLAN_INFO[plan].description}</Text>
-                    </View>
-                    {pendingPlan === plan && <ActivityIndicator size="small" color="#2563eb" />}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          )}
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Preferences</Text>

@@ -11,10 +11,12 @@ import { canvasTheme as t } from '@/lib/canvasTheme';
 import 'fast-text-encoding';
 
 export default function TabLayout() {
-  const { user, viewMode } = useAuth();
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  // Hide Dashboard for regular users and when owner previews user experience
-  const isUserView = user?.role === 'USER' || viewMode === 'user';
+  // Hide Dashboard (internal analytics) from regular customer accounts —
+  // real OWNER-role accounts see it. No more same-account preview toggle:
+  // an owner wanting the regular-customer experience signs in as one.
+  const isUserView = user?.role === 'USER';
 
   // On Android the system navigation bar (gesture strip or buttons) sits at the
   // bottom. insets.bottom gives the exact height we need to clear it so all tabs
