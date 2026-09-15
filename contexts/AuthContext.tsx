@@ -5,7 +5,6 @@ import {
   CognitoUserAttribute,
   CognitoUserSession,
 } from 'amazon-cognito-identity-js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { userPool, cognitoStorage } from '@/lib/aws';
 import { dynamoService } from '@/services/dynamoService';
 import { ttsService } from '@/services/ttsService';
@@ -14,7 +13,6 @@ import { DEFAULT_SOURCE_LANGUAGE, DEFAULT_TARGET_LANGUAGE } from '@/lib/constant
 import { isNetworkError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 
-const VIEW_MODE_KEY = '@rbac_view_mode';
 
 interface AppUser {
   id: string;
@@ -31,8 +29,6 @@ interface AuthContextType {
   pendingEmail: string | null;
   needsOtpVerification: boolean;
   pendingPhone: string | null;
-  viewMode: 'admin' | 'user';
-  setViewMode: (mode: 'admin' | 'user') => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   confirmSignUp: (email: string, code: string) => Promise<void>;
@@ -96,16 +92,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
   const [needsForgotPasswordCode, setNeedsForgotPasswordCode] = useState(false);
   const [pendingForgotPasswordEmail, setPendingForgotPasswordEmail] = useState<string | null>(null);
-  const [viewMode, setViewModeState] = useState<'admin' | 'user'>('admin');
 
   useEffect(() => {
-    // Hydrate persisted view mode preference
-    AsyncStorage.getItem(VIEW_MODE_KEY).then((stored) => {
-      if (stored === 'user' || stored === 'admin') {
-        setViewModeState(stored);
-      }
-    }).catch(() => {});
-
     // If Cognito is not available, use offline mode immediately
     if (!userPool) {
       console.log('📱 Running in offline mode (no AWS Cognito)');
@@ -177,11 +165,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     dynamoService.setSessionRefreshHandler(refreshSession);
     return () => dynamoService.setSessionRefreshHandler(null);
   }, []);
-
-  const setViewMode = (mode: 'admin' | 'user') => {
-    setViewModeState(mode);
-    AsyncStorage.setItem(VIEW_MODE_KEY, mode).catch(() => {});
-  };
 
   const loadUserSettings = async (userId: string) => {
     try {
@@ -558,9 +541,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSettings(null);
     setNeedsOtpVerification(false);
     setPendingPhone(null);
-    // Reset view mode to admin when signing out
-    setViewModeState('admin');
-    AsyncStorage.removeItem(VIEW_MODE_KEY).catch(() => {});
     console.log('✅ Signed out');
   };
 
@@ -606,8 +586,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     pendingEmail,
     needsOtpVerification,
     pendingPhone,
-    viewMode,
-    setViewMode,
     signIn,
     signUp,
     confirmSignUp,

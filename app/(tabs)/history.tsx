@@ -25,9 +25,13 @@ import { SUPPORTED_LANGUAGES } from '@/lib/constants';
 // Languages available for replay (no 'auto' option)
 const REPLAY_LANGUAGES = SUPPORTED_LANGUAGES.filter(l => l.code !== 'auto');
 
+// History always shows the 5 most recent conversations, for every account —
+// no role-based carve-out (see the account/view-mode cleanup this shipped
+// alongside; owner vs. regular-customer accounts see identical History).
+const HISTORY_DISPLAY_LIMIT = 5;
+
 export default function HistoryScreen() {
-  const { user, viewMode, settings } = useAuth();
-  const isUserView = user?.role === 'USER' || viewMode === 'user';
+  const { user, settings } = useAuth();
 
   const [history, setHistory] = useState<ConversationHistory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +55,7 @@ export default function HistoryScreen() {
       return;
     }
     try {
-      const data = await dynamoService.getConversationHistory(user.id, isUserView ? 5 : undefined);
+      const data = await dynamoService.getConversationHistory(user.id, HISTORY_DISPLAY_LIMIT);
       setHistory(data);
     } catch (error) {
       console.error('Error in loadHistory:', error);
@@ -60,7 +64,7 @@ export default function HistoryScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user, isUserView]);
+  }, [user]);
 
   useFocusEffect(
     useCallback(() => {
@@ -233,13 +237,9 @@ export default function HistoryScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>History</Text>
-          <Text style={styles.subtitle}>
-            {isUserView
-              ? 'Last 5 translations'
-              : `${history.length} translation${history.length !== 1 ? 's' : ''}`}
-          </Text>
+          <Text style={styles.subtitle}>Last {HISTORY_DISPLAY_LIMIT} translations</Text>
         </View>
-        {history.length > 0 && !isUserView && (
+        {history.length > 0 && (
           <TouchableOpacity onPress={handleClearHistory} style={styles.clearButton}>
             <Trash2 size={20} color="#ef4444" />
             <Text style={styles.clearButtonText}>Clear All</Text>

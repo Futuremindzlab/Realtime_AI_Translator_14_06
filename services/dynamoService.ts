@@ -152,21 +152,6 @@ class DynamoService {
     }
   }
 
-  // OWNER-only testing tool — see backend/src/handlers/settings.mjs's
-  // adminSetPlan(). No streaming/live pipeline gates currently read `plan` in
-  // this codebase, so this only exercises the billing UI/state without a real
-  // purchase — useful for QA without spending real money via Razorpay.
-  async adminSetPlan(plan: 'basic' | 'plus' | 'live', targetUserId?: string): Promise<UserSettings | null> {
-    try {
-      return await this.request<UserSettings>('/v1/admin/set-plan', {
-        method: 'PATCH',
-        body:   JSON.stringify({ plan, ...(targetUserId ? { user_id: targetUserId } : {}) }),
-      });
-    } catch (error) {
-      console.error('❌ adminSetPlan error:', error);
-      return null;
-    }
-  }
 
   // ── BILLING / RAZORPAY ──────────────────────────────────────────────────────
   // Real purchase flow for 'plus'/'live' — see services/billingService.ts for
