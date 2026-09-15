@@ -15,4 +15,4 @@ export const PLAN_INFO: Record<SubscriptionPlan, { label: string; description: s
 // Monthly price shown on upgrade buttons — mirrors backend/src/lib/razorpay.mjs's
 // PAID_PLAN_PRICING (kept as a display-only literal here; the backend is the
 // only place that actually charges an amount, via the Razorpay Plan it created).
-export const PAID_PLAN_PRICE: Record<'plus' | 'live', string> = { plus: '₹200/mo', live: '₹360/mo' };
+export const PAID_PLAN_PRICE: Record<'plus' | 'live', string> = { plus: '₹100/mo', live: '₹200/mo' };

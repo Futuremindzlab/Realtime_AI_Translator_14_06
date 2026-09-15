@@ -84,12 +84,12 @@ Parameters:
   RazorpayPlanIdPlus:
     Type: String
     Default: ""
-    Description: Razorpay Plan ID for the 'plus' tier (₹200/month) — created once via scripts/setup-razorpay-plans.mjs, immutable afterward.
+    Description: Razorpay Plan ID for the 'plus' tier (₹100/month) — created once via scripts/setup-razorpay-plans.mjs, immutable afterward.
 
   RazorpayPlanIdLive:
     Type: String
     Default: ""
-    Description: Razorpay Plan ID for the 'live' tier (₹360/month) — created once via scripts/setup-razorpay-plans.mjs, immutable afterward.
+    Description: Razorpay Plan ID for the 'live' tier (₹200/month) — created once via scripts/setup-razorpay-plans.mjs, immutable afterward.
 
   # ── Cost monitoring — see the EstimatedChargesAlarm resource below for the
   # two manual, one-time account-level prerequisites CloudFormation cannot

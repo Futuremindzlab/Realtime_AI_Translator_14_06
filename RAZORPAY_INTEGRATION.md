@@ -1,6 +1,6 @@
 # Razorpay Integration — Recurring Subscriptions
 
-Real payment processing for the `plus` (₹200/month) and `live` (₹360/month) tiers already defined in `backend/src/lib/entitlement.mjs`. Before this, the only way to change a user's `plan` was `PATCH /v1/admin/set-plan` — an OWNER-only testing shortcut with no billing behind it (still present, still works, untouched by this change — see `app/(tabs)/settings.tsx`'s "Developer Mode" card).
+Real payment processing for the `plus` (₹100/month) and `live` (₹200/month) tiers already defined in `backend/src/lib/entitlement.mjs`. Before this, the only way to change a user's `plan` was `PATCH /v1/admin/set-plan` — an OWNER-only testing shortcut with no billing behind it (still present, still works, untouched by this change — see `app/(tabs)/settings.tsx`'s "Developer Mode" card).
 
 Sources consulted while building this (Razorpay's own docs domain is blocked by this environment's egress policy, so these are the third-party/GitHub references actually used):
 - [react-native-razorpay (GitHub)](https://github.com/razorpay/react-native-razorpay) — Checkout usage
