@@ -229,7 +229,13 @@ export async function adminSetPlan(event) {
     const result = await db.send(new UpdateCommand({
       TableName:                 SETTINGS_TABLE,
       Key:                       { user_id: targetUserId },
-      UpdateExpression:          'SET plan = :p, updated_at = :u',
+      // 'plan' is a DynamoDB reserved keyword — see the identical fix and
+      // full explanation on applySubscriptionState in billing.mjs, which
+      // hit the exact same "Invalid UpdateExpression: Attribute name is a
+      // reserved word" failure this endpoint would otherwise have too,
+      // including as the manual-recovery path for that bug.
+      UpdateExpression:          'SET #plan = :p, updated_at = :u',
+      ExpressionAttributeNames:  { '#plan': 'plan' },
       ExpressionAttributeValues: { ':p': plan, ':u': new Date().toISOString() },
       ReturnValues:              'ALL_NEW',
     }));

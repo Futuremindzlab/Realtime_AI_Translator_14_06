@@ -21,7 +21,21 @@ async function applySubscriptionState(userId, { plan, subscriptionId, status }) 
   const result = await db.send(new UpdateCommand({
     TableName: SETTINGS_TABLE,
     Key: { user_id: userId },
-    UpdateExpression: 'SET plan = :p, razorpay_subscription_id = :s, razorpay_subscription_status = :st, updated_at = :u',
+    // 'plan' is a DynamoDB reserved keyword (part of its SQL-like expression
+    // grammar) — using it bare in an UpdateExpression fails at request time
+    // with "Invalid UpdateExpression: Attribute name is a reserved word",
+    // regardless of what's actually stored in the table. Every caller of
+    // this function (the post-checkout verify path AND both webhook
+    // branches — see call sites below) hit this on every real attempt,
+    // silently failing to ever activate or downgrade a subscription: the
+    // customer's payment succeeds on Razorpay's side, but their `plan` here
+    // never updates. ExpressionAttributeNames aliases it to sidestep the
+    // reserved-word rule; see the DynamoDB reserved-words list for others
+    // (https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ReservedWords.html).
+    UpdateExpression: 'SET #plan = :p, razorpay_subscription_id = :s, razorpay_subscription_status = :st, updated_at = :u',
+    ExpressionAttributeNames: {
+      '#plan': 'plan',
+    },
     ExpressionAttributeValues: {
       ':p': plan,
       ':s': subscriptionId,
