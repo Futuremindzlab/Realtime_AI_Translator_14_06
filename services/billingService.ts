@@ -115,6 +115,13 @@ export async function subscribeToPlan(plan: 'plus' | 'live'): Promise<UserSettin
         // (subscription) payment sheet rather than a one-time order.
         recurring: true,
         theme: { color: '#2563eb' },
+        // Opens Checkout directly on the UPI tab instead of Card — a hint,
+        // not a restriction: the customer can still switch to any other
+        // method the Razorpay account has enabled. This only actually shows
+        // a UPI option once UPI Autopay is turned on for the account
+        // (Dashboard → Settings → Payment Methods) — it can't surface a
+        // method the account doesn't have enabled.
+        prefill: { method: 'upi' },
       };
       checkoutResult = (await RazorpayCheckout.open(options as CheckoutOptions)) as unknown as SubscriptionCheckoutSuccess;
     } catch (err: any) {
