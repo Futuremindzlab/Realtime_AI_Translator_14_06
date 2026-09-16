@@ -130,6 +130,24 @@ export async function subscribeToPlan(plan: 'plus' | 'live'): Promise<UserSettin
       throw new Error(err?.description || 'Payment failed — please try again.');
     }
 
+    // Checkout can resolve WITHOUT throwing for a payment method whose
+    // authorization doesn't complete synchronously — an eNACH/eMandate bank
+    // mandate is the known case: it can finish registration and resolve the
+    // Checkout promise before there's an actual razorpay_payment_id to hand
+    // back (the mandate itself is still pending bank/NPCI confirmation,
+    // sometimes up to T+1 business day — see RAZORPAY_INTEGRATION.md). Without
+    // this guard, that incomplete result got forwarded straight to
+    // /v1/billing/razorpay/verify, which correctly 400s ("razorpay_payment_id,
+    // razorpay_subscription_id and razorpay_signature are required") — but as
+    // a raw API error dumped in front of the user instead of an explanation.
+    if (!checkoutResult?.razorpay_payment_id || !checkoutResult?.razorpay_subscription_id || !checkoutResult?.razorpay_signature) {
+      throw new Error(
+        'Your payment method needs extra bank confirmation before it can be verified (this happens with some bank-account-based ' +
+        'payment methods). Check Settings in a few minutes — if the subscription doesn’t activate on its own once your bank ' +
+        'confirms it, try again with a card or UPI instead.'
+      );
+    }
+
     return await dynamoService.verifyRazorpayPayment(checkoutResult);
   } finally {
     checkoutInProgress = false;
