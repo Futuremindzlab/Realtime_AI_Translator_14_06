@@ -16,6 +16,7 @@
 import { getUserId } from '../auth.mjs';
 import { sendSuccess, sendError, handleError } from '../response.mjs';
 import { enforceDailyAiCallLimit } from '../lib/usageLimits.mjs';
+import { requirePlan } from '../lib/entitlement.mjs';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -211,10 +212,18 @@ export async function proxyElevenLabsTts(event) {
 // POST /v1/proxy/elevenlabs/voice-clone
 // Body: { name, audioBase64, mimeType?, fileName? }
 // Returns: { voice_id }
+//
+// Live-plan differentiator: cloning a caller's own voice into TTS output
+// doesn't cost more per generation than a stock voice (ElevenLabs bills by
+// character count either way), but it's a real, already-working feature —
+// unlike Live's other headline feature (continuous interpretation), which
+// isn't built yet. Gated here rather than just hidden client-side, same
+// pattern requirePlan documents itself for.
 // ─────────────────────────────────────────────────────────
 export async function proxyElevenLabsVoiceClone(event) {
   try {
     const userId = getUserId(event);
+    await requirePlan(userId, 'live');
     await enforceDailyAiCallLimit(userId);
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) return sendError(500, 'ElevenLabs is not configured on the server');
