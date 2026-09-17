@@ -7,6 +7,20 @@ below; any other signed-in account only ever gets `/my-history`, since
 caller's own Cognito `sub`. `components/NavBar.tsx` just hides links a plain
 USER account can't use — the actual enforcement is server-side per route.
 
+## Access gate (added 2026-09-17)
+
+`middleware.ts` puts the whole site behind a single shared HTTP Basic Auth
+credential, in front of even the sign-in form — set `DASHBOARD_ACCESS_USER`
+and `DASHBOARD_ACCESS_PASSWORD` in the hosting environment (e.g. Vercel
+project settings → Environment Variables; **not** prefixed `NEXT_PUBLIC_`, so
+it stays server-only) and share those two values only with directors/owners.
+This is a reachability gate, not the real access control — the OWNER-role
+check on every admin API route and the per-user `sub` scoping on
+`/my-history`'s routes are what actually decide who sees what data; this just
+keeps the dashboard's existence off the open internet for anyone without the
+shared credential. Left unset, the gate is a no-op, so local `npm run dev`
+needs no extra setup.
+
 ## `/subscriptions` — live (added 2026-09-17)
 
 Wired to `GET /v1/admin/subscriptions` (OWNER role required, same sign-in
