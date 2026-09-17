@@ -1,0 +1,11 @@
+# Scopes this Next.js app's own build settings when it's deployed as a
+# SEPARATE Netlify site from theonelingo.com (whose config lives in the
+# repo-root netlify.toml, pinned to base = "website" for the same reason
+# this file exists: this repo holds multiple apps, and Netlify's framework
+# auto-detection has repeatedly picked the wrong one). When creating that
+# second site, set its "Base directory" (Site settings → Build & deploy →
+# Build settings) to metrics_dashboards_2026_07_20 — Netlify then reads
+# THIS file, not the repo-root one, so the two sites' configs never collide.
+[build]
+  command = "npm run build"
+  publish = ".next"
