@@ -61,6 +61,26 @@ Parameters:
     Default: 90
     Description: Days to retain stored translation audio (source + TTS) in S3 before automatic expiration
 
+  # ── India DLT (TRAI) SMS registration — see DOCUMENTATION.md's "Phone + OTP
+  # login" section. All three optional; leave blank until AWS has confirmed
+  # your DLT Entity ID + Template ID via an AWS Support case — createAuthChallenge.mjs
+  # only attaches these to outbound SMS when set, so leaving them unset changes
+  # nothing for non-Indian numbers or before registration is complete.
+  SnsDltEntityId:
+    Type: String
+    Default: ""
+    Description: TRAI DLT Principal Entity ID, confirmed by AWS Support — optional, required for reliable OTP delivery to +91 numbers
+
+  SnsDltTemplateId:
+    Type: String
+    Default: ""
+    Description: TRAI DLT Template ID for the OTP message (must match createAuthChallenge.mjs's buildOtpMessage() text exactly) — optional, required for reliable OTP delivery to +91 numbers
+
+  SnsSenderId:
+    Type: String
+    Default: ""
+    Description: Registered DLT header/Sender ID (e.g. ONELNG) — optional, required for reliable OTP delivery to +91 numbers
+
   # ── Razorpay recurring subscriptions — see backend/scripts/setup-razorpay-plans.mjs
   # and RAZORPAY_INTEGRATION.md. Key/secret/webhook-secret are held server-side
   # only, same treatment as the AI provider keys above.
@@ -283,6 +303,11 @@ Resources:
       Policies:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - !Ref SnsPublishPolicy
+      Environment:
+        Variables:
+          SNS_DLT_ENTITY_ID:   !Ref SnsDltEntityId
+          SNS_DLT_TEMPLATE_ID: !Ref SnsDltTemplateId
+          SNS_SENDER_ID:       !Ref SnsSenderId
 
   VerifyAuthChallengeResponseFunction:
     Type: AWS::Serverless::Function
