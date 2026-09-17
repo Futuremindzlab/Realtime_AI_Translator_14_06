@@ -55,6 +55,14 @@ function todayKey() {
  */
 export async function enforceDailyAiCallLimit(userId) {
   const plan = await getUserPlan(userId);
+
+  // TEMPORARY: plus/live caps disabled — the ~11/~19 calls/day sized in the
+  // comment above are stale relative to current ₹100/₹200 pricing and cut
+  // off paying subscribers after a handful of translations. Re-enable by
+  // removing this early return once the caps are re-sized (see the comment
+  // on DAILY_AI_CALL_LIMITS above for the pricing calculator to re-run).
+  if (plan === 'plus' || plan === 'live') return;
+
   const limit = DAILY_AI_CALL_LIMITS[plan] ?? DAILY_AI_CALL_LIMITS.basic;
 
   const day = todayKey();
