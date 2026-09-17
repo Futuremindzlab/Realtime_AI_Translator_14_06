@@ -347,6 +347,37 @@ export class AudioService {
       let hasSpeech = false;
       let resolved = false;
 
+      // ── Adaptive noise-floor calibration ──────────────────────────────
+      // Bug: `silenceThresholdDb` (e.g. -45dB) was applied as a fixed
+      // absolute cutoff. That only works in a quiet room. In a noisy one
+      // (fan/AC/traffic/crosstalk) the ambient floor can sit well above
+      // -45dB, so metering never dips below the fixed threshold — every
+      // turn then silently runs to the full `fixedDurationMs` hard cap
+      // instead of ending shortly after the person actually stops talking,
+      // and ambient noise alone can even be mistaken for speech. That's the
+      // long "Listening…/Transcribing…" stall and inconsistent-input-capture
+      // behavior seen in noisy environments.
+      // Fix: sample the first CALIBRATION_MS of this recording — background
+      // noise, since real speech rarely starts in the first ~0.7s — to
+      // estimate the actual ambient floor, then require metering to clear
+      // that floor by SPEECH_MARGIN_DB before counting it as speech, and
+      // drop back to within SILENCE_MARGIN_DB of the floor before counting
+      // it as silence again (a small hysteresis gap between the two avoids
+      // flicker right at the boundary). Falls back to the fixed threshold
+      // if calibration collected no samples (e.g. metering unsupported).
+      const CALIBRATION_MS = 700;
+      const SPEECH_MARGIN_DB = 9;
+      const SILENCE_MARGIN_DB = 4;
+      const MIN_EFFECTIVE_THRESHOLD_DB = -55;
+      const MAX_EFFECTIVE_THRESHOLD_DB = -18;
+      const clampDb = (db: number) =>
+        Math.max(MIN_EFFECTIVE_THRESHOLD_DB, Math.min(MAX_EFFECTIVE_THRESHOLD_DB, db));
+
+      const calibrationSamples: number[] = [];
+      let noiseFloorDb: number | null = null;
+      let speechThresholdDb = silenceThresholdDb;
+      let silenceResumeThresholdDb = silenceThresholdDb;
+
       const finish = async () => {
         if (resolved) return;
         resolved = true;
@@ -377,8 +408,19 @@ export class AudioService {
         recording.setOnRecordingStatusUpdate((status: any) => {
           if (resolved) return;
 
-          // GUARD: Ignore status updates during first 1 second
           const elapsed = Date.now() - recordingStart;
+
+          // Collect ambient-noise calibration samples as early as possible —
+          // real speech essentially never starts in the first CALIBRATION_MS,
+          // so this window is a reliable read on the room's noise floor.
+          // Metering readings are safe to sample immediately; it's
+          // specifically `isRecording === false` that isn't trustworthy this
+          // early (see guard below), so this runs ahead of that guard.
+          if (elapsed < CALIBRATION_MS && status.isRecording && typeof status.metering === 'number') {
+            calibrationSamples.push(status.metering);
+          }
+
+          // GUARD: Ignore status updates during first 1 second
           if (elapsed < 1000) return;
 
           if (!status.isRecording) {
@@ -418,12 +460,33 @@ export class AudioService {
 
           if (elapsed < minRecordingMs) return;
 
+          // Finalize calibration once, the first time we reach here.
+          if (noiseFloorDb === null) {
+            if (calibrationSamples.length > 0) {
+              const sorted = [...calibrationSamples].sort((a, b) => a - b);
+              noiseFloorDb = sorted[Math.floor(sorted.length / 2)]; // median
+              speechThresholdDb = clampDb(noiseFloorDb + SPEECH_MARGIN_DB);
+              silenceResumeThresholdDb = clampDb(noiseFloorDb + SILENCE_MARGIN_DB);
+              console.log(
+                `🎚️ [AutoStop] Calibrated noise floor=${noiseFloorDb.toFixed(1)}dB → ` +
+                `speech>${speechThresholdDb.toFixed(1)}dB, silence<${silenceResumeThresholdDb.toFixed(1)}dB ` +
+                `(fixed fallback was ${silenceThresholdDb}dB)`,
+              );
+            } else {
+              // No calibration data (metering unsupported this early) — keep
+              // the fixed threshold behavior as before.
+              noiseFloorDb = silenceThresholdDb;
+              speechThresholdDb = silenceThresholdDb;
+              silenceResumeThresholdDb = silenceThresholdDb;
+            }
+          }
+
           const metering: number | undefined = status.metering;
           if (metering !== undefined) {
-            if (metering >= silenceThresholdDb) {
+            if (metering >= speechThresholdDb) {
               hasSpeech = true;
               silenceStart = null;
-            } else if (hasSpeech) {
+            } else if (hasSpeech && metering < silenceResumeThresholdDb) {
               if (!silenceStart) {
                 silenceStart = Date.now();
               } else if (Date.now() - silenceStart >= silenceDurationMs) {
