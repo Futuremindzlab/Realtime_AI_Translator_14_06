@@ -1,10 +1,18 @@
 /**
  * audioProcessor.ts — Client-side audio preprocessing before Whisper submission.
  *
- * iOS (WAV/PCM): full pipeline — normalize RMS to -20 dBFS, strip leading/trailing silence.
+ * iOS (WAV/PCM): full pipeline — high-pass filter (removes sub-110Hz rumble/AC hum),
+ *   adaptive noise gate (attenuates low-level background noise throughout the clip,
+ *   not just at the edges), normalize RMS to -20 dBFS, then strip leading/trailing
+ *   silence. This is the fix for inconsistent transcription in noisy rooms: without
+ *   it, a noisy recording only got its edges trimmed — any hum/hiss under and
+ *   between spoken words passed straight through to Whisper unfiltered.
  * Android (m4a/AAC): cannot decode compressed audio in JS without a native codec;
  *   returns the original URI unchanged. Whisper API is resilient to amplitude variation
  *   in AAC, so Android recordings are transcribed reliably without normalization.
+ *   (Noise-robustness for Android turn-taking is instead handled upstream, by
+ *   audioService's adaptive silence-threshold calibration, which works off live
+ *   metering rather than decoded samples and so applies on both platforms.)
  *
  * The pipeline is always non-destructive: on any error it returns the original URI
  * so the translation pipeline never fails due to preprocessing.
@@ -29,11 +37,18 @@ const SILENCE_THRESHOLD_DBFS = -40;   // Amplitude below this is considered sile
 const SILENCE_PAD_SAMPLES = 800;      // Keep 50 ms of context around speech edges (at 16 kHz)
 const MAX_GAIN_DB = 24;               // Cap amplification — don't boost noise floors
 
+const HPF_CUTOFF_HZ = 110;            // Removes rumble/AC hum/handling noise below this
+const NOISE_GATE_FRAME_MS = 20;       // Frame size used to make gate on/off decisions
+const NOISE_GATE_MARGIN_DB = 6;       // Frames within this of the estimated floor are gated
+const NOISE_GATE_ATTENUATION_DB = -18; // How much a gated (noise-only) frame is turned down
+const NOISE_GATE_RAMP_FRAMES = 3;     // Frames over which gain moves, so gating doesn't click
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
  * Preprocess a recorded audio file for Whisper submission.
- * - iOS WAV: normalize to -20 dBFS RMS, strip leading/trailing silence
+ * - iOS WAV: high-pass filter, adaptive noise gate, normalize to -20 dBFS RMS,
+ *   strip leading/trailing silence
  * - Android m4a: returned as-is (AAC cannot be decoded in JS)
  * - Web: returned as-is
  * Never throws — returns original URI on any failure.
@@ -62,10 +77,25 @@ export async function preprocessForWhisper(audioUri: string): Promise<string> {
     const { dataOffset, numSamples, sampleRate } = header;
     const samples = extractSamples(bytes, dataOffset, numSamples);
 
-    // Step 1 — Normalize RMS to TARGET_RMS_DBFS
-    const normalizedSamples = normalizeRms(samples, TARGET_RMS_DBFS, MAX_GAIN_DB);
+    // Step 1 — High-pass filter: strips sub-110Hz rumble/AC hum/handling
+    // noise that would otherwise sit under the speech band and get boosted
+    // right along with it by the RMS normalization below.
+    const filtered = highPassFilter(samples, sampleRate, HPF_CUTOFF_HZ);
 
-    // Step 2 — Strip leading / trailing silence
+    // Step 2 — Adaptive noise gate: estimates the clip's own ambient noise
+    // floor and attenuates frames close to it throughout the recording —
+    // not just the leading/trailing edges — so hiss/hum audible between
+    // words doesn't ride along into Whisper at full level.
+    const noiseFloorDbfs = estimateNoiseFloorDbfs(filtered, NOISE_GATE_FRAME_MS, sampleRate);
+    const gated = applyNoiseGate(
+      filtered, sampleRate, NOISE_GATE_FRAME_MS, noiseFloorDbfs,
+      NOISE_GATE_MARGIN_DB, NOISE_GATE_ATTENUATION_DB, NOISE_GATE_RAMP_FRAMES,
+    );
+
+    // Step 3 — Normalize RMS to TARGET_RMS_DBFS
+    const normalizedSamples = normalizeRms(gated, TARGET_RMS_DBFS, MAX_GAIN_DB);
+
+    // Step 4 — Strip leading / trailing silence
     const trimmedSamples = stripSilence(
       normalizedSamples,
       SILENCE_THRESHOLD_DBFS,
@@ -85,7 +115,7 @@ export async function preprocessForWhisper(audioUri: string): Promise<string> {
     const savedBytes = bytes.length - outBytes.length;
     console.log(
       `✅ [audioProcessor] ${bytes.length}B → ${outBytes.length}B ` +
-      `(${durationSec}s, saved ${savedBytes}B silence)`,
+      `(${durationSec}s, noise floor=${noiseFloorDbfs.toFixed(1)}dBFS, saved ${savedBytes}B silence)`,
     );
 
     return outUri;
@@ -151,6 +181,95 @@ function extractSamples(bytes: Uint8Array, dataOffset: number, numSamples: numbe
 }
 
 // ─── DSP ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Single-pole high-pass filter (RC circuit difference equation). Removes
+ * low-frequency rumble — AC/fan hum, traffic, handling noise, breath —
+ * that sits below the speech band and would otherwise get amplified right
+ * alongside speech by RMS normalization.
+ */
+function highPassFilter(samples: Int16Array, sampleRate: number, cutoffHz: number): Float64Array {
+  const out = new Float64Array(samples.length);
+  if (samples.length === 0) return out;
+
+  const dt = 1 / sampleRate;
+  const rc = 1 / (2 * Math.PI * cutoffHz);
+  const alpha = rc / (rc + dt);
+
+  out[0] = samples[0];
+  for (let i = 1; i < samples.length; i++) {
+    out[i] = alpha * (out[i - 1] + samples[i] - samples[i - 1]);
+  }
+  return out;
+}
+
+function frameRmsDbfs(samples: Float64Array, start: number, end: number): number {
+  let sumSq = 0;
+  const n = end - start;
+  for (let i = start; i < end; i++) sumSq += samples[i] * samples[i];
+  const rms = Math.sqrt(sumSq / Math.max(1, n));
+  return rms < 1 ? -96 : 20 * Math.log10(rms / 32767);
+}
+
+/**
+ * Estimates the clip's ambient noise floor as the 15th percentile of
+ * per-frame RMS levels — low enough to reflect quiet/background frames
+ * rather than speech, without depending on there being true silence
+ * anywhere in the clip (which a noisy room may never have).
+ */
+function estimateNoiseFloorDbfs(samples: Float64Array, frameMs: number, sampleRate: number): number {
+  const frameSize = Math.max(1, Math.round((frameMs / 1000) * sampleRate));
+  const frameDbs: number[] = [];
+  for (let start = 0; start < samples.length; start += frameSize) {
+    const end = Math.min(samples.length, start + frameSize);
+    frameDbs.push(frameRmsDbfs(samples, start, end));
+  }
+  if (frameDbs.length === 0) return -60;
+  frameDbs.sort((a, b) => a - b);
+  const idx = Math.floor(frameDbs.length * 0.15);
+  return frameDbs[idx];
+}
+
+/**
+ * Adaptive noise gate: frames within `marginDb` of the estimated noise
+ * floor are attenuated by `attenuationDb` (turned down, not muted — a hard
+ * cut clicks and can bite into quiet speech); frames clearly above the
+ * floor pass through unchanged. Gain moves gradually over `rampFrames` so
+ * gating transitions don't produce audible clicks.
+ */
+function applyNoiseGate(
+  samples: Float64Array,
+  sampleRate: number,
+  frameMs: number,
+  noiseFloorDbfs: number,
+  marginDb: number,
+  attenuationDb: number,
+  rampFrames: number,
+): Int16Array {
+  const frameSize = Math.max(1, Math.round((frameMs / 1000) * sampleRate));
+  const gateThresholdDbfs = noiseFloorDbfs + marginDb;
+  const attenuationLinear = Math.pow(10, attenuationDb / 20);
+
+  const out = new Int16Array(samples.length);
+  let currentGain = 1;
+  const gainStep = 1 / Math.max(1, rampFrames);
+
+  for (let start = 0; start < samples.length; start += frameSize) {
+    const end = Math.min(samples.length, start + frameSize);
+    const frameDbfs = frameRmsDbfs(samples, start, end);
+    const targetGain = frameDbfs <= gateThresholdDbfs ? attenuationLinear : 1;
+
+    for (let i = start; i < end; i++) {
+      // Move currentGain toward targetGain one gainStep per frame, applied
+      // smoothly per-sample within the frame for a click-free ramp.
+      const t = (i - start) / Math.max(1, end - start);
+      const gain = currentGain + (targetGain - currentGain) * Math.min(1, gainStep + t * gainStep);
+      out[i] = Math.max(-32768, Math.min(32767, Math.round(samples[i] * gain)));
+    }
+    currentGain += (targetGain - currentGain) * Math.min(1, gainStep);
+  }
+  return out;
+}
 
 function normalizeRms(samples: Int16Array, targetDbfs: number, maxGainDb: number): Int16Array {
   if (samples.length === 0) return samples;
