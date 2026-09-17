@@ -3,6 +3,7 @@ import { db, SETTINGS_TABLE } from '../db.mjs';
 import { getUserId } from '../auth.mjs';
 import { sendSuccess, sendError, handleError } from '../response.mjs';
 import { razorpay, planIdFor, verifySubscriptionPaymentSignature, verifyWebhookSignature } from '../lib/razorpay.mjs';
+import { fetchAllPayments } from '../lib/razorpayReports.mjs';
 
 const PAID_PLANS = ['plus', 'live'];
 
@@ -162,6 +163,45 @@ export async function cancelSubscription(event) {
     return sendSuccess(result.Attributes);
   } catch (err) {
     return handleError(err);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// GET /v1/billing/history
+// Self-serve payment history — the user-facing counterpart to
+// adminPayments.mjs's OWNER-only view. Reuses the same fetchAllPayments
+// (most-recent-1000 Razorpay payments) and filters down to payments whose
+// notes.user_id matches the caller, rather than trusting anything the
+// client sends — same "notes is the source of truth" pattern verify/webhook
+// already use above.
+// ─────────────────────────────────────────────────────────
+export async function getMyBillingHistory(event) {
+  try {
+    const userId = getUserId(event);
+
+    const payments = await fetchAllPayments();
+    const items = payments
+      .filter((p) => p.notes?.user_id === userId)
+      .map((p) => ({
+        id: p.id,
+        amount: Math.round(p.amount) / 100, // paise → rupees
+        currency: p.currency,
+        status: p.status,
+        method: p.method || null,
+        plan: p.notes?.plan || null,
+        createdAt: new Date(p.created_at * 1000).toISOString(),
+      }))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    return sendSuccess({ available: true, items });
+  } catch (err) {
+    if (err.statusCode) return handleError(err);
+    console.error('Razorpay payments fetch failed:', err.message);
+    return sendSuccess({
+      available: false,
+      reason: 'Razorpay unreachable or not configured (RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET) — see RAZORPAY_INTEGRATION.md',
+      items: [],
+    });
   }
 }
 

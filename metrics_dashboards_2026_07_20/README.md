@@ -1,5 +1,45 @@
 # Metrics Dashboards (started 2026-07-20)
 
+Two-level access, enforced by the backend rather than the client: an OWNER-role
+Cognito account (checked via `cognito:groups`) sees every OWNER-only dashboard
+below; any other signed-in account only ever gets `/my-history`, since
+`GET /v1/translations` and `GET /v1/billing/history` both key strictly off the
+caller's own Cognito `sub`. `components/NavBar.tsx` just hides links a plain
+USER account can't use — the actual enforcement is server-side per route.
+
+## `/subscriptions` — live (added 2026-09-17)
+
+Wired to `GET /v1/admin/subscriptions` (OWNER role required, same sign-in
+gate/session as the other OWNER-only pages). Purpose-built payment-tracking
+view, separate from `/payments`'s broader "everything about payments" page:
+
+- **Active subscribers + MRR, by plan** — plus vs. live, counted from
+  Razorpay subscriptions with status `active`/`authenticated`.
+- **Renewing within 7 days** — any active subscription (regardless of
+  cancellation status) whose current billing cycle ends within a week.
+  Broader than `/user_analytics`'s Churn table, which only covers
+  subscriptions a user has already asked to cancel.
+- **Needs attention** — subscriptions Razorpay reports as `pending`/`halted`,
+  i.e. a renewal charge is actively failing.
+- **Status breakdown** — every subscription this account has ever created,
+  grouped by its current Razorpay status.
+
+See `backend/src/lib/razorpayReports.mjs`'s `computeSubscriptionsOverview` for
+exactly how each section is derived — built entirely from Razorpay's own
+subscription objects (`notes.user_id`/`notes.plan`), no DynamoDB scan needed.
+
+## `/my-history` — live (added 2026-09-17)
+
+The USER-facing counterpart to the OWNER dashboards — any signed-in account
+(OWNER or plain USER) can view this page, and always sees only its own data:
+
+- **Translation history** — `GET /v1/translations` (existing route, already
+  scoped by the caller's Cognito `sub` — this page is the first web client
+  for it, mirroring what the mobile app's History screen already does).
+- **Billing history** — `GET /v1/billing/history` (added 2026-09-17),
+  the self-serve counterpart to `adminPayments.mjs`'s OWNER-only view:
+  same Razorpay payments feed, filtered to `notes.user_id === caller`.
+
 ## `/user_analytics` — live
 
 Wired to the real backend (`GET /v1/admin/user-analytics`, added 2026-07-20, OWNER role required). Requires signing in with a Cognito account in the `owner` group — the page shows a sign-in form first.
@@ -38,23 +78,35 @@ Wired to `GET /v1/admin/infra-metrics` (OWNER role required, same sign-in gate/s
     app/
       user_analytics/page.tsx   client component: sign-in gate + live fetch
       infra_security/page.tsx   client component: same sign-in gate + partially-live fetch
-    components/                  shared StatCard, SectionCard, BarList, DonutChart, StatusBadge
+      payments/page.tsx         client component: same sign-in gate, OWNER-only
+      subscriptions/page.tsx    client component: same sign-in gate, OWNER-only
+      my-history/page.tsx       client component: sign-in gate, any signed-in account (own data only)
+    components/                  shared StatCard, SectionCard, BarList, DonutChart, StatusBadge, NavBar
     lib/
       cognitoAuth.ts             Cognito sign-in (amazon-cognito-identity-js)
+      session.ts                 shared sessionStorage read/write for the Session Cognito sign-in returns
       userAnalyticsApi.ts        fetch wrapper for /v1/admin/user-analytics
       dashboardMetricsApi.ts     fetch wrapper for /v1/admin/dashboard-metrics
       infraMetricsApi.ts         fetch wrapper for /v1/admin/infra-metrics
+      paymentsApi.ts             fetch wrapper for /v1/admin/payments
+      subscriptionsApi.ts        fetch wrapper for /v1/admin/subscriptions
+      myHistoryApi.ts            fetch wrappers for /v1/translations and /v1/billing/history (caller's own data)
       mockInfraSecurity.ts       mock data for the still-unwired parts of the infra board (keys, SSL, CVEs)
 
 ## Backend
 
-Three admin routes, all OWNER-only, all in the main `TranslatorFunction` Lambda:
+All in the main `TranslatorFunction` Lambda:
 
-- `backend/src/handlers/adminAnalytics.mjs` — per-user usage table (`/v1/admin/user-analytics`).
-- `backend/src/handlers/dashboardMetrics.mjs` — Revenue/Engagement/AWS Cost/Churn (`/v1/admin/dashboard-metrics`).
-- `backend/src/handlers/infraMetrics.mjs` — AWS resource usage/cost + per-route request counts (`/v1/admin/infra-metrics`, added 2026-07-27).
-- `backend/src/lib/usageAnalytics.mjs` — shared `conversation_history` scan + per-user aggregation used by all three.
+- `backend/src/handlers/adminAnalytics.mjs` — per-user usage table (`/v1/admin/user-analytics`, OWNER-only).
+- `backend/src/handlers/dashboardMetrics.mjs` — Revenue/Engagement/AWS Cost/Churn (`/v1/admin/dashboard-metrics`, OWNER-only).
+- `backend/src/handlers/infraMetrics.mjs` — AWS resource usage/cost + per-route request counts (`/v1/admin/infra-metrics`, OWNER-only, added 2026-07-27).
+- `backend/src/handlers/adminPayments.mjs` — active users by plan + live Razorpay orders (`/v1/admin/payments`, OWNER-only).
+- `backend/src/handlers/adminSubscriptions.mjs` — active subs by plan/MRR, renewing-within-week, needs-attention (`/v1/admin/subscriptions`, OWNER-only, added 2026-09-17).
+- `backend/src/handlers/billing.mjs`'s `getMyBillingHistory` — caller's own Razorpay payments only (`/v1/billing/history`, any authenticated account, added 2026-09-17).
+- `backend/src/handlers/translations.mjs`'s `listTranslations` — caller's own translation history (`/v1/translations`, pre-existing, also used by the mobile app).
+- `backend/src/lib/usageAnalytics.mjs` — shared `conversation_history` scan + per-user aggregation used by the OWNER-only handlers above.
 - `backend/src/lib/routeMetrics.mjs` — emits the CloudWatch EMF per-route request metric (added 2026-07-27); `index.mjs`'s `TRACKED_ROUTES` decides which 4 routes get counted.
+- `backend/src/lib/razorpayReports.mjs` — shared Razorpay pagination + the `computeRevenueByTier`/`computeChurn`/`computeSubscriptionsOverview` pure functions.
 
 IAM additions in `backend/template.yaml`: `cognito-idp:ListUsers` (CognitoAdminPolicy), `ce:GetCostAndUsage` (CostExplorerPolicy), and `cloudwatch:GetMetricData` + `logs:DescribeLogGroups` (new `InfraMetricsPolicy`, added 2026-07-27 — all account-wide resource scope, none of those actions support resource-level restriction). The API Gateway resource (`TranslatorApi`) was given an explicit `Name` so its CloudWatch `ApiName` dimension is deterministic; passed to the Lambda as `API_GATEWAY_NAME`. `@aws-sdk/client-cost-explorer`, `@aws-sdk/client-cloudwatch`, `@aws-sdk/client-cloudwatch-logs` in `backend/package.json`.
 

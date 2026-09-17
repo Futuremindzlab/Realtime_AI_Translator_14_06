@@ -1,4 +1,4 @@
-import { razorpay } from './razorpay.mjs';
+import { razorpay, PAID_PLAN_PRICING } from './razorpay.mjs';
 
 // Safety cap on pagination — 10 pages * 100/page = 1,000 most-recent records.
 // Fine at this business's current scale (a new launch); revisit if it ever
@@ -88,4 +88,88 @@ export function computeChurn(dbUsers, subscriptions, identifierMap) {
     .sort((a, b) => a.expiresInDays - b.expiresInDays);
 
   return { available: true, users };
+}
+
+// A subscription counts as "active" for the byPlan/MRR/expiring-soon
+// sections once its mandate is confirmed — Razorpay's own lifecycle uses
+// 'authenticated' right after the first charge succeeds and 'active' from
+// the second cycle on, so both are "currently paying", unlike 'created'
+// (checkout not finished), 'pending'/'halted' (payment friction — surfaced
+// separately in needsAttention below) or 'cancelled'/'completed'/'expired'.
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set(['active', 'authenticated']);
+
+// Payment friction Razorpay is actively retrying or has given up on — these
+// are the subscriptions most likely to silently lapse without anyone
+// noticing, so they're surfaced regardless of how close current_end is.
+const ATTENTION_STATUSES = new Set(['pending', 'halted']);
+
+/**
+ * Owner-facing subscriptions overview, built entirely from Razorpay's own
+ * subscription objects (each carries `notes.user_id`/`notes.plan`, set once
+ * at creation by billing.mjs's createSubscription) cross-referenced only
+ * with Cognito for a human-readable identifier — no DynamoDB scan needed,
+ * unlike computeChurn above.
+ *
+ * Three sections:
+ *   - byPlan: active-subscriber count + MRR, split plus vs. live.
+ *   - expiringWithinWeek: any ACTIVE subscription whose current billing
+ *     cycle (current_end, falling back to charge_at for a subscription
+ *     between cycles) ends within 7 days — renewals due soon, not just
+ *     cancellations already in flight (see computeChurn for that narrower,
+ *     cancel_requested-only view).
+ *   - needsAttention: subscriptions Razorpay flags as pending/halted —
+ *     i.e. a renewal charge is failing — regardless of how far out
+ *     current_end is, since these are the ones actually at risk of lapsing.
+ */
+export function computeSubscriptionsOverview(subscriptions, identifierMap) {
+  const now = Math.floor(Date.now() / 1000);
+
+  const byPlan = {
+    plus: { activeCount: 0, mrr: 0 },
+    live: { activeCount: 0, mrr: 0 },
+  };
+  const statusBreakdown = {};
+  const expiringWithinWeek = [];
+  const needsAttention = [];
+
+  for (const sub of subscriptions) {
+    const plan = sub.notes?.plan;
+    const status = sub.status;
+    statusBreakdown[status] = (statusBreakdown[status] || 0) + 1;
+
+    const identifier = identifierMap.get(sub.notes?.user_id) || sub.notes?.user_id || 'unknown';
+
+    if (ACTIVE_SUBSCRIPTION_STATUSES.has(status) && (plan === 'plus' || plan === 'live')) {
+      byPlan[plan].activeCount += 1;
+      byPlan[plan].mrr += PAID_PLAN_PRICING[plan].amountPaise / 100;
+
+      const endsAt = sub.current_end ?? sub.charge_at ?? null;
+      if (endsAt !== null) {
+        const expiresInDays = Math.max(0, Math.round((endsAt - now) / 86400));
+        if (expiresInDays <= 7) {
+          expiringWithinWeek.push({
+            userId: sub.notes?.user_id || null,
+            identifier,
+            plan,
+            subscriptionId: sub.id,
+            expiresInDays,
+          });
+        }
+      }
+    }
+
+    if (ATTENTION_STATUSES.has(status)) {
+      needsAttention.push({
+        userId: sub.notes?.user_id || null,
+        identifier,
+        plan: plan || 'unknown',
+        subscriptionId: sub.id,
+        status,
+      });
+    }
+  }
+
+  expiringWithinWeek.sort((a, b) => a.expiresInDays - b.expiresInDays);
+
+  return { available: true, byPlan, statusBreakdown, expiringWithinWeek, needsAttention };
 }
