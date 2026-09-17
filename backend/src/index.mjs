@@ -46,6 +46,7 @@
  *   GET    /v1/admin/dashboard-metrics                  getDashboardMetrics
  *   GET    /v1/admin/infra-metrics                      getInfraMetrics
  *   GET    /v1/admin/payments                           getPaymentsOverview
+ *   GET    /v1/admin/subscriptions                       getSubscriptionsOverview
  *   PATCH  /v1/admin/set-plan                           adminSetPlan (no billing yet — dev/testing only)
  *
  * Auth (unauthenticated — no token exists yet)
@@ -56,6 +57,7 @@
  *   POST   /v1/billing/razorpay/verify                 verifySubscriptionPayment
  *   POST   /v1/billing/razorpay/cancel                 cancelSubscription
  *   POST   /v1/billing/razorpay/webhook                 handleWebhook (unauthenticated — Razorpay calls this directly)
+ *   GET    /v1/billing/history                          getMyBillingHistory (caller's own payments only)
  */
 
 import {
@@ -89,6 +91,7 @@ import {
   createSubscription,
   verifySubscriptionPayment,
   cancelSubscription,
+  getMyBillingHistory,
   handleWebhook as handleRazorpayWebhook,
 } from './handlers/billing.mjs';
 
@@ -96,6 +99,7 @@ import { getUserAnalytics } from './handlers/adminAnalytics.mjs';
 import { getDashboardMetrics } from './handlers/dashboardMetrics.mjs';
 import { getInfraMetrics } from './handlers/infraMetrics.mjs';
 import { getPaymentsOverview } from './handlers/adminPayments.mjs';
+import { getSubscriptionsOverview } from './handlers/adminSubscriptions.mjs';
 import { recordRouteRequest } from './lib/routeMetrics.mjs';
 
 import {
@@ -161,6 +165,7 @@ export const handler = async (event) => {
   if (method === 'POST' && path === '/v1/billing/razorpay/create-subscription') return createSubscription(event);
   if (method === 'POST' && path === '/v1/billing/razorpay/verify')              return verifySubscriptionPayment(event);
   if (method === 'POST' && path === '/v1/billing/razorpay/cancel')              return cancelSubscription(event);
+  if (method === 'GET'  && path === '/v1/billing/history')                      return getMyBillingHistory(event);
 
   // ── AI provider proxy ───────────────────────────────────
   if (method === 'POST' && path === '/v1/proxy/openai/chat')           return proxyOpenAIChat(event);
@@ -175,6 +180,7 @@ export const handler = async (event) => {
   if (method === 'GET' && path === '/v1/admin/dashboard-metrics') return getDashboardMetrics(event);
   if (method === 'GET' && path === '/v1/admin/infra-metrics')     return getInfraMetrics(event);
   if (method === 'GET' && path === '/v1/admin/payments')          return getPaymentsOverview(event);
+  if (method === 'GET' && path === '/v1/admin/subscriptions')     return getSubscriptionsOverview(event);
   if (method === 'PATCH' && path === '/v1/admin/set-plan')        return adminSetPlan(event);
 
   // ── Account (required by app-store review policy for account deletion) ──

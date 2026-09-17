@@ -5,16 +5,9 @@ import { StatCard } from "@/components/StatCard";
 import { SectionCard } from "@/components/SectionCard";
 import { BarList } from "@/components/BarList";
 import { signIn, type Session } from "@/lib/cognitoAuth";
+import { loadStoredSession, storeSession } from "@/lib/session";
 import { fetchUserAnalytics, type UserAnalyticsResponse } from "@/lib/userAnalyticsApi";
 import { fetchDashboardMetrics, type DashboardMetricsResponse } from "@/lib/dashboardMetricsApi";
-
-const SESSION_KEY = "ops_dashboard_session";
-
-function loadStoredSession(): Session | null {
-  if (typeof window === "undefined") return null;
-  const raw = sessionStorage.getItem(SESSION_KEY);
-  return raw ? (JSON.parse(raw) as Session) : null;
-}
 
 function SignInForm({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
   const [email, setEmail] = useState("");
@@ -28,7 +21,7 @@ function SignInForm({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
     setLoading(true);
     try {
       const session = await signIn(email, password);
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+      storeSession(session);
       onSignedIn(session);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed");
