@@ -23,7 +23,13 @@ async function scanActiveUsers() {
   do {
     const result = await db.send(new ScanCommand({
       TableName: SETTINGS_TABLE,
-      ProjectionExpression: 'user_id, plan, razorpay_subscription_id, razorpay_subscription_status, updated_at',
+      // 'plan' is a DynamoDB reserved keyword — same bug class as the
+      // UpdateExpression fix in billing.mjs/settings.mjs, but here it's a
+      // ProjectionExpression on a Scan, which fails the exact same way:
+      // "Invalid ProjectionExpression: Attribute name is a reserved
+      // keyword; reserved keyword: plan", on every real request.
+      ProjectionExpression: 'user_id, #plan, razorpay_subscription_id, razorpay_subscription_status, updated_at',
+      ExpressionAttributeNames: { '#plan': 'plan' },
       ExclusiveStartKey: lastEvaluatedKey,
     }));
     items.push(...(result.Items || []));
