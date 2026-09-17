@@ -582,12 +582,30 @@ export default function SettingsScreen() {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Voice Cloning</Text>
             <Text style={styles.sectionDescription}>
-              {isUserView
+              {currentPlan !== 'live'
+                ? 'Available on the Live plan — hear translations spoken in your own voice.'
+                : isUserView
                 ? 'Record your voice to personalize translations.'
                 : 'Clone your voice so translations sound like you. Record 30-60 seconds of clear speech. Works with ElevenLabs TTS.'}
             </Text>
 
-            {settings?.custom_voice_id ? (
+            {currentPlan !== 'live' && !settings?.custom_voice_id ? (
+              <TouchableOpacity
+                style={[styles.secondaryButton, styles.upgradeButton]}
+                disabled={subscribingPlan !== null}
+                onPress={() => handleSubscribe('live')}>
+                {subscribingPlan === 'live' ? (
+                  <ActivityIndicator size="small" color={t.personB} />
+                ) : (
+                  <>
+                    <Zap size={18} color={t.personB} />
+                    <Text style={[styles.secondaryButtonText, { color: t.personB }]}>
+                      Upgrade to {PLAN_INFO.live.label} — {PAID_PLAN_PRICE.live}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : settings?.custom_voice_id ? (
               <View>
                 <View style={[styles.voiceStatus, { backgroundColor: t.personBBg }]}>
                   <Text style={[styles.voiceStatusText, { color: t.success }]}>

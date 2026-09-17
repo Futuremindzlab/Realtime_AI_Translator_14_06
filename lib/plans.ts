@@ -9,7 +9,7 @@ import { SubscriptionPlan } from '@/types';
 export const PLAN_INFO: Record<SubscriptionPlan, { label: string; description: string }> = {
   basic: { label: 'Basic', description: "Today's pipeline — record, transcribe, translate, then speak." },
   plus:  { label: 'Plus',  description: 'Streaming pipeline — starts speaking the translation before it finishes generating.' },
-  live:  { label: 'Live',  description: 'Continuous live interpretation, no record/stop steps. (Coming soon)' },
+  live:  { label: 'Live',  description: 'Everything in Plus, plus translations spoken in your own cloned voice. (Continuous live interpretation coming soon)' },
 };
 
 // Monthly price shown on upgrade buttons — mirrors backend/src/lib/razorpay.mjs's
