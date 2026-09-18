@@ -54,6 +54,11 @@ export default function TabLayout() {
         name="phrases"
         options={{
           title: 'Phrases',
+          // href: null hides the tab from the tab bar (Expo Router v3) while
+          // keeping the screen/route and its data intact — same technique
+          // already used below for Dashboard. Requested removal from nav
+          // only; phrasebookService.ts and this route are untouched.
+          href: null,
           tabBarIcon: ({ size, color }) => <BookOpen size={size} color={color} />,
         }}
       />

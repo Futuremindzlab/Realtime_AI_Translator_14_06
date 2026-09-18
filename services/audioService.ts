@@ -357,15 +357,30 @@ export class AudioService {
       // and ambient noise alone can even be mistaken for speech. That's the
       // long "Listening…/Transcribing…" stall and inconsistent-input-capture
       // behavior seen in noisy environments.
-      // Fix: sample the first CALIBRATION_MS of this recording — background
-      // noise, since real speech rarely starts in the first ~0.7s — to
-      // estimate the actual ambient floor, then require metering to clear
-      // that floor by SPEECH_MARGIN_DB before counting it as speech, and
-      // drop back to within SILENCE_MARGIN_DB of the floor before counting
-      // it as silence again (a small hysteresis gap between the two avoids
-      // flicker right at the boundary). Falls back to the fixed threshold
-      // if calibration collected no samples (e.g. metering unsupported).
-      const CALIBRATION_MS = 700;
+      // Fix: sample metering readings for the whole pre-`minRecordingMs`
+      // guard window — background noise, since real speech essentially
+      // never starts and finishes before that window closes — to estimate
+      // the actual ambient floor, then require metering to clear that floor
+      // by SPEECH_MARGIN_DB before counting it as speech, and drop back to
+      // within SILENCE_MARGIN_DB of the floor before counting it as silence
+      // again (a small hysteresis gap between the two avoids flicker right
+      // at the boundary). Falls back to the fixed threshold if calibration
+      // collected no samples (e.g. metering unsupported).
+      //
+      // Bug fix (regression report): an earlier version of this calibration
+      // only sampled the first ~700ms after the listener attaches, which is
+      // itself already ~300ms+ into the turn (post `startRecording()`
+      // stabilization delay). On repeat turns within one conversation,
+      // native mic/session startup latency was observed to grow enough that
+      // the first metering callback sometimes didn't arrive until after that
+      // narrow window closed — calibrationSamples stayed empty, calibration
+      // silently fell back to the fixed threshold, and the turn reproduced
+      // the exact original stall. Collecting through the full
+      // `minRecordingMs` window (1.5s by default, not ~0.4-0.7s) gives
+      // native startup jitter far more room and this should no longer
+      // starve calibration of samples turn after turn. The median-based
+      // floor estimate below still tolerates a few early-speech samples
+      // bleeding into a wider window.
       const SPEECH_MARGIN_DB = 9;
       const SILENCE_MARGIN_DB = 4;
       const MIN_EFFECTIVE_THRESHOLD_DB = -55;
@@ -384,6 +399,12 @@ export class AudioService {
         clearTimeout(fallbackTimer);
         this.pendingAutoStopFinish = null;
         console.log(`🎤 [AutoStop] Finishing recording (hasSpeech=${hasSpeech})`);
+        // Defensively detach this turn's status listener before tearing the
+        // recording down — rules out any stale-callback interference on
+        // later turns within the same conversation (belt-and-braces; not a
+        // confirmed cause, just cheap insurance since each turn creates a
+        // brand-new native Recording instance and listener).
+        try { recording.setOnRecordingStatusUpdate(null as any); } catch (e) {}
         if (this.recording === recording) {
           const uri = await this.stopRecording();
           resolve(uri);
@@ -410,13 +431,15 @@ export class AudioService {
 
           const elapsed = Date.now() - recordingStart;
 
-          // Collect ambient-noise calibration samples as early as possible —
-          // real speech essentially never starts in the first CALIBRATION_MS,
-          // so this window is a reliable read on the room's noise floor.
-          // Metering readings are safe to sample immediately; it's
-          // specifically `isRecording === false` that isn't trustworthy this
-          // early (see guard below), so this runs ahead of that guard.
-          if (elapsed < CALIBRATION_MS && status.isRecording && typeof status.metering === 'number') {
+          // Collect ambient-noise calibration samples for the whole guard
+          // window (through minRecordingMs) — real speech essentially never
+          // starts AND finishes before that window closes, so this is a
+          // reliable read on the room's noise floor even accounting for
+          // startup-latency jitter on later turns. Metering readings are
+          // safe to sample immediately; it's specifically
+          // `isRecording === false` that isn't trustworthy this early (see
+          // guard below), so this runs ahead of that guard.
+          if (elapsed < minRecordingMs && status.isRecording && typeof status.metering === 'number') {
             calibrationSamples.push(status.metering);
           }
 
