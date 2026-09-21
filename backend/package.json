@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "description": "API Gateway + Lambda backend for Realtime AI Translator",
+  "scripts": {
+    "setup-razorpay-plans": "node scripts/setup-razorpay-plans.mjs",
+    "test": "node --test"
+  },
   "dependencies": {
     "@aws-sdk/client-cloudwatch": "^3.991.0",
     "@aws-sdk/client-cloudwatch-logs": "^3.991.0",
@@ -12,6 +16,7 @@
     "@aws-sdk/client-s3": "^3.991.0",
     "@aws-sdk/client-sns": "^3.991.0",
     "@aws-sdk/lib-dynamodb": "^3.991.0",
-    "@aws-sdk/s3-request-presigner": "^3.991.0"
+    "@aws-sdk/s3-request-presigner": "^3.991.0",
+    "razorpay": "^2.9.6"
   }
 }

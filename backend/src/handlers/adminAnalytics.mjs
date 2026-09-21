@@ -16,31 +16,10 @@
  * data source yet, rather than inferring it from missing fields.
  */
 
-import { CognitoIdentityProviderClient, ListUsersCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { getRole } from '../auth.mjs';
 import { sendSuccess, sendError, handleError } from '../response.mjs';
 import { scanAllTranslations, buildUsageByUser, countActiveWithin } from '../lib/usageAnalytics.mjs';
-
-const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION || 'us-east-1' });
-
-async function listAllCognitoUsers(userPoolId) {
-  const users = [];
-  let paginationToken;
-  do {
-    const result = await cognito.send(new ListUsersCommand({
-      UserPoolId: userPoolId,
-      PaginationToken: paginationToken,
-    }));
-    users.push(...(result.Users || []));
-    paginationToken = result.PaginationToken;
-  } while (paginationToken);
-  return users;
-}
-
-function attr(user, name) {
-  const found = (user.Attributes || []).find((a) => a.Name === name);
-  return found ? found.Value : null;
-}
+import { listAllCognitoUsers, attr } from '../lib/cognitoUsers.mjs';
 
 // ─────────────────────────────────────────────────────────
 // GET /v1/admin/user-analytics  (OWNER only)

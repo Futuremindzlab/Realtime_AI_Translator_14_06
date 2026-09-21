@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,15 +6,18 @@ import {
   StyleSheet,
   TouchableOpacity,
   Keyboard,
-  Switch,
   Dimensions,
   Platform,
   AppState,
   AppStateStatus,
+  Modal,
 } from 'react-native';
-import { Mic, Square, Users, User } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { Mic, Square, Users, User, Settings as SettingsIcon, Clock, Volume2 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { LanguagePicker } from '@/components/LanguagePicker';
+import { LanguagePairControl } from '@/components/conversation/LanguagePairControl';
+import { SplitFaceToFace } from '@/components/conversation/SplitFaceToFace';
+import { PaywallView } from '@/components/onboarding/PaywallView';
 import {
   realtimeTranslationService,
   TranslationProgress,
@@ -22,13 +25,18 @@ import {
 import { audioService } from '@/services/audioService';
 import { ttsService } from '@/services/ttsService';
 import { whisperService } from '@/services/whisperService';
+import { dynamoService } from '@/services/dynamoService';
 import { SUPPORTED_LANGUAGES } from '@/lib/constants';
+import { logger } from '@/lib/logger';
+import { canvasTheme as t } from '@/lib/canvasTheme';
+import { TrialStatus } from '@/types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CONTENT_MAX_WIDTH = Math.min(SCREEN_WIDTH, 600);
 
 export default function HomeScreen() {
-  const { user, settings } = useAuth();
+  const { user, settings, refreshSettings } = useAuth();
+  const router = useRouter();
 
   const [sourceLanguage, setSourceLanguage] = useState('auto');
   const [targetLanguage, setTargetLanguage] = useState('es');
@@ -37,6 +45,44 @@ export default function HomeScreen() {
   const [isConversationRunning, setIsConversationRunning] = useState(false);
   const [progress, setProgress] = useState<TranslationProgress | null>(null);
   const [isButtonDisabled, setIsButtonDisabled] = useState(false);
+  const [isReplaying, setIsReplaying] = useState(false);
+  const backgroundDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── 7-day free trial (see backend/src/lib/trialLimits.mjs) ──
+  const [trialStatus, setTrialStatus] = useState<TrialStatus | null>(null);
+  const [paywallVisible, setPaywallVisible] = useState(false);
+  const [paywallReason, setPaywallReason] = useState<'trial_expired' | 'trial_limit_reached'>('trial_limit_reached');
+
+  useEffect(() => {
+    dynamoService.getTrialStatus().then(setTrialStatus).catch(() => {});
+  }, []);
+
+  /** Spends one unit of trial usage for `kind` before the action it gates
+   *  actually starts (see handleStartRecording/handleStartConversation) —
+   *  returns whether the action may proceed. Fails OPEN on a network/server
+   *  error: a transient blip shouldn't block a translation the trial would
+   *  have allowed, and the daily AI-call cap (usageLimits.mjs) remains the
+   *  real cost backstop regardless of this check. A 'plus'/'live' user (or
+   *  any error) resolves to allowed:true without ever touching the UI below. */
+  const checkTrialAllowance = async (kind: 'translation' | 'conversation'): Promise<boolean> => {
+    try {
+      const result = await dynamoService.consumeTrialUsage(kind);
+      if (result.allowed) {
+        setTrialStatus(prev =>
+          prev && !prev.unlimited && prev.used
+            ? { ...prev, trial_started: true, used: { ...prev.used, [kind]: (prev.used[kind] || 0) + 1 } }
+            : prev
+        );
+        return true;
+      }
+      setPaywallReason(result.reason || 'trial_limit_reached');
+      setPaywallVisible(true);
+      return false;
+    } catch (error) {
+      logger.error('Trial allowance check failed — proceeding', error, { kind });
+      return true;
+    }
+  };
 
   // ── 1. Startup voices + sync settings ──
   // Provider API keys live server-side (backend AI proxy) — nothing to initialise here.
@@ -63,20 +109,52 @@ export default function HomeScreen() {
     whisperService.initialize().catch(() => {});
 
     const handleAppState = (next: AppStateStatus) => {
+      // Diagnostic: captured in Settings -> Share Diagnostics. Reported bug was
+      // "Person A: Listening…" appearing then disappearing instantly on Android
+      // with no other error — a spurious 'background' transition right as
+      // recording starts (audio-focus negotiation, OEM overlay, the mic-privacy
+      // indicator, etc. can all momentarily pull focus on some Android builds)
+      // would immediately tear the whole conversation down via the branch below
+      // and look exactly like that. This log will confirm or rule that out.
+      logger.info('AppState changed', { next, wasConversationActive: realtimeTranslationService.getIsActive() });
+
       if (next === 'background') {
         // True background: OS kills mic access — must stop everything.
         // NOTE: 'inactive' is intentionally excluded — on iOS it fires for
         // notification overlays, permission dialogs, and control center
         // (mic is NOT killed). Stopping on 'inactive' would drop conversations
         // at startup (permission dialog) or on any incoming notification.
-        if (realtimeTranslationService.getIsActive()) {
-          realtimeTranslationService.stopConversation();
-          audioService.forceCleanup().catch(() => {});
-          setIsRecording(false);
-          setIsConversationRunning(false);
-          setProgress(null);
-        }
+        //
+        // Debounced: a genuine backgrounding (home button, app switch) persists;
+        // starting an audio recording can momentarily trigger a transient
+        // 'background' blip on some Android devices that does not. Re-confirm
+        // AppState is still 'background' after a short delay before actually
+        // tearing the conversation down, instead of reacting to the very first
+        // event — Android's own mic-access revocation on a real backgrounding
+        // is unaffected by this, so a genuine background is still handled
+        // correctly, just ~600ms later.
+        if (backgroundDebounceRef.current) clearTimeout(backgroundDebounceRef.current);
+        backgroundDebounceRef.current = setTimeout(() => {
+          backgroundDebounceRef.current = null;
+          if (AppState.currentState !== 'background') {
+            logger.info('AppState background was transient — ignoring', { currentState: AppState.currentState });
+            return;
+          }
+          if (realtimeTranslationService.getIsActive()) {
+            logger.warn('AppState confirmed background — stopping conversation', {});
+            realtimeTranslationService.stopConversation();
+            audioService.forceCleanup().catch(() => {});
+            setIsRecording(false);
+            setIsConversationRunning(false);
+            setProgress(null);
+          }
+        }, 600);
       } else if (next === 'active') {
+        // Cancel a pending debounce from a background blip that already recovered.
+        if (backgroundDebounceRef.current) {
+          clearTimeout(backgroundDebounceRef.current);
+          backgroundDebounceRef.current = null;
+        }
         // App came back to foreground — re-attach callback and reconcile state
         realtimeTranslationService.setProgressCallback(setProgress);
         if (!realtimeTranslationService.getIsActive()) {
@@ -91,11 +169,15 @@ export default function HomeScreen() {
 
     return () => {
       sub.remove();
+      if (backgroundDebounceRef.current) clearTimeout(backgroundDebounceRef.current);
       // Feb pattern: do NOT clear the progress callback on unmount so any in-flight
       // progress from a final cleanup cycle is still routed correctly.
       realtimeTranslationService.cleanup().catch(() => {});
     };
   }, []);
+
+  const getLangName = (code: string) =>
+    SUPPORTED_LANGUAGES.find(l => l.code === code)?.name ?? (code ? code.toUpperCase() : '—');
 
   // ── Button handler ──
   const handleToggleRecording = async () => {
@@ -108,7 +190,7 @@ export default function HomeScreen() {
         if (isConversationRunning) {
           await handleStopConversation();
         } else {
-          handleStartConversation();
+          await handleStartConversation();
         }
       } else {
         if (isRecording) {
@@ -124,6 +206,8 @@ export default function HomeScreen() {
 
   // ── Single Translation Mode ──
   const handleStartRecording = async () => {
+    const allowed = await checkTrialAllowance('translation');
+    if (!allowed) return;
     try {
       await realtimeTranslationService.startRealtimeRecording(
         sourceLanguage,
@@ -153,7 +237,9 @@ export default function HomeScreen() {
   };
 
   // ── Conversation Mode ──
-  const handleStartConversation = () => {
+  const handleStartConversation = async () => {
+    const allowed = await checkTrialAllowance('conversation');
+    if (!allowed) return;
     setIsConversationRunning(true);
     realtimeTranslationService
       .startConversation(
@@ -182,8 +268,26 @@ export default function HomeScreen() {
     realtimeTranslationService.interruptCurrentTurn();
   };
 
-  const getLangName = (code: string) =>
-    SUPPORTED_LANGUAGES.find(l => l.code === code)?.name ?? code.toUpperCase();
+  // Re-synthesizes and plays the current transaction's translation again —
+  // this only ever needs to reach for `progress` (the latest turn), since the
+  // full multi-turn record now lives in History (DB-backed) rather than a
+  // session-only list on this screen.
+  const handleReplay = async () => {
+    if (isActive || isReplaying || !progress?.translatedText) return;
+    const targetLangCode = progress.currentTargetLanguage || targetLanguage;
+    setIsReplaying(true);
+    try {
+      const uri = await ttsService.generateSpeech(
+        progress.translatedText, targetLangCode, settings?.tts_provider || 'device',
+      );
+      await audioService.forceCleanup();
+      if (uri) await audioService.playAudio(uri);
+    } catch (error) {
+      logger.error('Current-transaction replay failed', error, { platform: Platform.OS });
+    } finally {
+      setIsReplaying(false);
+    }
+  };
 
   const getStatusText = () => {
     if (!progress) return 'Tap the mic to start speaking';
@@ -219,6 +323,7 @@ export default function HomeScreen() {
   };
 
   const isActive = isRecording || isConversationRunning;
+  const showCanvas = conversationMode && isConversationRunning;
 
   return (
     <View style={styles.container}>
@@ -230,93 +335,116 @@ export default function HomeScreen() {
       >
         {/* ── Header ── */}
         <View style={styles.header}>
-          <Text style={styles.title}>AI Translator</Text>
-          <Text style={styles.subtitle}>Real-time voice translation</Text>
+          <View>
+            <Text style={styles.title}>OneLingo</Text>
+            <Text style={styles.subtitle}>Real-time voice translation</Text>
+          </View>
+          <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/settings')}>
+            <SettingsIcon color={t.text} size={18} />
+          </TouchableOpacity>
         </View>
 
-        {/* ── Language Pickers ── */}
-        <View style={styles.card}>
-          <View style={styles.pickerSection}>
-            <LanguagePicker
-              label="Source Language"
-              selectedLanguage={sourceLanguage}
-              onSelectLanguage={setSourceLanguage}
-              allowAuto
-              disabled={isActive}
-            />
-            <View style={styles.pickerDivider} />
-            <LanguagePicker
-              label="Target Language"
-              selectedLanguage={targetLanguage}
-              onSelectLanguage={setTargetLanguage}
-              excludeLanguage="auto"
-              disabled={isActive}
-            />
-          </View>
+        {/* ── Free-trial banner — only ever shown to a 'basic'-plan user; a
+            subscriber's status comes back {unlimited:true} and this renders
+            nothing. Tapping it opens the same paywall a blocked action would. ── */}
+        {trialStatus && !trialStatus.unlimited && trialStatus.caps && (
+          <TouchableOpacity
+            style={[styles.section, styles.trialBanner]}
+            onPress={() => { setPaywallReason('trial_limit_reached'); setPaywallVisible(true); }}
+          >
+            <Clock size={14} color={t.warning} />
+            <Text style={styles.trialBannerText}>
+              Free trial · {Math.max(0, trialStatus.caps.translation - (trialStatus.used?.translation || 0))} translations
+              · {Math.max(0, trialStatus.caps.conversation - (trialStatus.used?.conversation || 0))} conversations left
+              {trialStatus.trial_started ? ` · ${trialStatus.days_remaining}d left` : ''}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        {/* ── Language Pair ── */}
+        <View style={styles.section}>
+          <LanguagePairControl
+            sourceLanguage={sourceLanguage}
+            targetLanguage={targetLanguage}
+            onSelectSource={setSourceLanguage}
+            onSelectTarget={setTargetLanguage}
+            onSwap={() => {
+              setSourceLanguage(targetLanguage === 'auto' ? sourceLanguage : targetLanguage);
+              setTargetLanguage(sourceLanguage === 'auto' ? targetLanguage : sourceLanguage);
+            }}
+            disabled={isActive}
+          />
         </View>
 
         {/* ── Mode Toggle ── */}
-        <View style={[styles.card, styles.modeCard, conversationMode && styles.modeCardActive]}>
-          <View style={styles.modeLeft}>
-            {conversationMode
-              ? <Users color="#2563eb" size={24} />
-              : <User  color="#6b7280" size={24} />}
-            <View style={styles.modeText}>
-              <Text style={styles.modeTitle}>
-                {conversationMode ? 'Conversation Mode' : 'Single Translation'}
-              </Text>
-              <Text style={styles.modeSub}>
-                {conversationMode
-                  ? 'Auto-detects silence, swaps speakers'
-                  : 'One-time translation only'}
-              </Text>
-            </View>
-          </View>
-          <Switch
-            value={conversationMode}
-            onValueChange={setConversationMode}
+        <View style={[styles.section, styles.seg]}>
+          <TouchableOpacity
+            style={[styles.segItem, !conversationMode && styles.segItemOn]}
+            onPress={() => !isActive && setConversationMode(false)}
             disabled={isActive}
-            trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
-            thumbColor={conversationMode ? '#2563eb' : '#f3f4f6'}
-          />
+          >
+            <User size={15} color={!conversationMode ? t.personB : t.textMuted} />
+            <Text style={[styles.segText, !conversationMode && styles.segTextOn]}>Single</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segItem, conversationMode && styles.segItemOn]}
+            onPress={() => !isActive && setConversationMode(true)}
+            disabled={isActive}
+          >
+            <Users size={15} color={conversationMode ? t.personB : t.textMuted} />
+            <Text style={[styles.segText, conversationMode && styles.segTextOn]}>Conversation</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Conversation hint ── */}
         {conversationMode && !isConversationRunning && (
-          <View style={styles.hintBox}>
+          <View style={[styles.section, styles.hintBox]}>
             <Text style={styles.hintText}>
-              Tap the mic to start. Each person gets 10 s to speak. Tap stop to end.
+              Tap the mic to start. Each person gets 10s to speak — the phone lies flat between you
+              and the other side reads their translation right-side up.
             </Text>
           </View>
         )}
 
-        {/* ── Mic Button ── */}
-        <View style={styles.micSection}>
-          <TouchableOpacity
-            style={[styles.micButton, isActive && styles.micButtonActive]}
-            onPress={handleToggleRecording}
-            disabled={isButtonDisabled}
-            activeOpacity={0.8}
-          >
-            {isActive
-              ? <Square color="white" size={36} fill="white" />
-              : <Mic    color="white" size={36} />}
-          </TouchableOpacity>
-          <Text style={[
-            styles.statusText,
-            {
-              color: isActive
-                ? '#ef4444'
-                : progress?.stage === 'error'
-                ? '#dc2626'
-                : progress?.stage === 'complete'
-                ? '#16a34a'
-                : '#6b7280',
-            },
-          ]}>
-            {getStatusText()}
-          </Text>
-        </View>
+        {/* ── Primary control: face-to-face canvas while a conversation is live, otherwise the idle/solo mic ── */}
+        {showCanvas ? (
+          <View style={styles.section}>
+            <SplitFaceToFace
+              progress={progress}
+              isActive={isActive}
+              disabled={isButtonDisabled}
+              onTogglePress={handleToggleRecording}
+              getLangName={getLangName}
+            />
+          </View>
+        ) : (
+          <View style={styles.micSection}>
+            <TouchableOpacity
+              style={[styles.micButton, isActive && styles.micButtonActive]}
+              onPress={handleToggleRecording}
+              disabled={isButtonDisabled}
+              activeOpacity={0.85}
+            >
+              {isActive
+                ? <Square color="white" size={34} fill="white" />
+                : <Mic    color="white" size={34} />}
+            </TouchableOpacity>
+            <Text style={[
+              styles.statusText,
+              {
+                color: isActive
+                  ? '#fca5a5'
+                  : progress?.stage === 'error'
+                  ? '#fca5a5'
+                  : progress?.stage === 'complete'
+                  ? t.success
+                  : t.textMuted,
+              },
+            ]}>
+              {getStatusText()}
+            </Text>
+          </View>
+        )}
 
         {/* Feature: immediate-stop control — ends the current speaker's turn right
             now instead of waiting out the silence timeout. Only shown mid-recording
@@ -327,41 +455,79 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* ── Results ── */}
-        {progress && (progress.sourceText || progress.translatedText) && (
-          <View style={styles.results}>
-            {conversationMode && progress.currentPerson && (
-              <View style={styles.personBadge}>
-                <Text style={styles.personBadgeText}>Person {progress.currentPerson}</Text>
-                <Text style={styles.personBadgeSub}>
-                  {getLangName(progress.currentSourceLanguage || sourceLanguage)} →{' '}
-                  {getLangName(progress.currentTargetLanguage || targetLanguage)}
-                </Text>
-              </View>
-            )}
-
-            {progress.sourceText && (
-              <View style={styles.textBox}>
-                <Text style={styles.textBoxLabel}>
+        {/* ── Current transaction ──
+            Only the latest result — not a growing session list. The full,
+            persistent record of every past translation already lives in the
+            History tab (DB-backed there), so this screen doesn't need to
+            duplicate it; showing just "what did I hear/say just now" is what
+            actually belongs on the screen you're actively translating from. */}
+        {!showCanvas && progress?.sourceText && progress?.translatedText && (
+          <View style={styles.section}>
+            <Text style={styles.sectTitleText}>Current Transaction</Text>
+            <View style={styles.currentCard}>
+              <View style={styles.currentBlock}>
+                <Text style={styles.currentLabel}>
                   {getLangName(progress.currentSourceLanguage || sourceLanguage)}
                 </Text>
-                <Text style={styles.textBoxContent}>{progress.sourceText}</Text>
+                <Text style={styles.currentText}>{progress.sourceText}</Text>
               </View>
-            )}
-
-            {progress.translatedText && (
-              <View style={[styles.textBox, styles.translatedBox]}>
-                <Text style={styles.textBoxLabel}>
-                  Translation → {getLangName(progress.currentTargetLanguage || targetLanguage)}
+              <View style={[styles.currentBlock, styles.currentBlockTranslated]}>
+                <Text style={[styles.currentLabel, styles.currentLabelTranslated]}>
+                  {getLangName(progress.currentTargetLanguage || targetLanguage)}
                 </Text>
-                <Text style={styles.textBoxContent}>{progress.translatedText}</Text>
+                <Text style={[styles.currentText, styles.currentTextTranslated]}>{progress.translatedText}</Text>
               </View>
-            )}
+              <TouchableOpacity
+                style={[styles.replayRow, (isActive || isReplaying) && styles.replayRowDisabled]}
+                onPress={handleReplay}
+                disabled={isActive || isReplaying}
+              >
+                <Volume2 size={14} color={t.personB} />
+                <Text style={styles.replayRowText}>{isReplaying ? 'Playing…' : 'Replay'}</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.disclaimerText}>
+              AI translations may contain errors. Not intended for medical, legal, or other critical use.
+            </Text>
           </View>
         )}
 
         <View style={{ height: 32 }} />
       </ScrollView>
+
+      {/* ── Trial-limit paywall — shown when checkTrialAllowance blocks a
+          start-recording/start-conversation attempt. Dismissible ("Not now")
+          rather than a hard block: the user simply can't record again until
+          they subscribe, which re-shows this same modal on the next attempt. ── */}
+      <Modal
+        visible={paywallVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPaywallVisible(false)}
+      >
+        <View style={styles.paywallOverlay}>
+          <View style={styles.paywallSheet}>
+            <ScrollView contentContainerStyle={styles.paywallScrollContent} showsVerticalScrollIndicator={false}>
+              <PaywallView
+                title={paywallReason === 'trial_expired' ? 'Your free trial has ended' : "You've used your free trial"}
+                subtitle={
+                  paywallReason === 'trial_expired'
+                    ? "Your 7-day trial window is over — subscribe to keep translating."
+                    : "You've reached your free trial's usage limit — subscribe to keep translating."
+                }
+                onSubscribed={async () => {
+                  setPaywallVisible(false);
+                  await refreshSettings();
+                  dynamoService.getTrialStatus().then(setTrialStatus).catch(() => {});
+                }}
+              />
+            </ScrollView>
+            <TouchableOpacity style={styles.paywallCloseButton} onPress={() => setPaywallVisible(false)}>
+              <Text style={styles.paywallCloseText}>Not now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -369,7 +535,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: t.bg,
     alignItems: 'center',
   },
   scrollView: {
@@ -382,188 +548,229 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
   },
   header: {
-    alignItems: 'center',
-    marginBottom: 24,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 20,
     width: '100%',
     maxWidth: CONTENT_MAX_WIDTH,
   },
   title: {
-    fontSize: 30,
+    fontSize: 26,
     fontWeight: '800',
-    color: '#1e3a5f',
-    letterSpacing: -0.5,
+    color: t.text,
+    letterSpacing: -0.6,
   },
   subtitle: {
-    fontSize: 15,
-    color: '#64748b',
-    marginTop: 4,
+    fontSize: 13.5,
+    color: t.textMuted,
+    marginTop: 3,
   },
-  card: {
+  iconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    backgroundColor: t.card,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  section: {
     width: '100%',
     maxWidth: CONTENT_MAX_WIDTH,
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
     marginBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 6,
-    elevation: 3,
-    overflow: 'visible',
   },
-  pickerSection: {
-    padding: 4,
-    zIndex: 5000,
+  seg: {
+    flexDirection: 'row',
+    gap: 6,
+    padding: 5,
+    borderRadius: 16,
+    backgroundColor: t.card,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
   },
-  pickerDivider: {
-    height: 1,
-    backgroundColor: '#f1f5f9',
-    marginHorizontal: 12,
-  },
-  modeCard: {
+  segItem: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
-  modeCardActive: {
-    borderColor: '#93c5fd',
-    backgroundColor: '#f0f7ff',
+  segItemOn: {
+    backgroundColor: 'rgba(56,189,248,0.14)',
   },
-  modeLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 12,
-  },
-  modeText: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  modeTitle: {
-    fontSize: 15,
+  segText: {
+    fontSize: 12.5,
     fontWeight: '700',
-    color: '#1e293b',
-    marginBottom: 2,
+    color: t.textMuted,
   },
-  modeSub: {
-    fontSize: 12,
-    color: '#64748b',
-    lineHeight: 16,
+  segTextOn: {
+    color: t.personB,
   },
   hintBox: {
-    width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
-    backgroundColor: '#eff6ff',
-    borderRadius: 10,
-    paddingVertical: 10,
+    backgroundColor: t.personBBg,
+    borderRadius: 14,
+    paddingVertical: 12,
     paddingHorizontal: 14,
-    marginBottom: 14,
     borderLeftWidth: 3,
-    borderLeftColor: '#2563eb',
+    borderLeftColor: t.personB,
   },
   hintText: {
-    fontSize: 13,
-    color: '#1e40af',
+    fontSize: 12.5,
+    color: t.text,
     fontWeight: '500',
     lineHeight: 18,
   },
   interruptButton: {
     alignSelf: 'center',
     borderWidth: 1,
-    borderColor: '#2563eb',
+    borderColor: t.personB,
     borderRadius: 8,
     paddingVertical: 8,
     paddingHorizontal: 16,
     marginBottom: 16,
   },
   interruptButtonText: {
-    color: '#2563eb',
+    color: t.personB,
     fontSize: 13,
     fontWeight: '600',
   },
   micSection: {
     alignItems: 'center',
-    marginVertical: 20,
+    marginVertical: 18,
     width: '100%',
     maxWidth: CONTENT_MAX_WIDTH,
   },
   micButton: {
     width: 88,
     height: 88,
-    borderRadius: 44,
-    backgroundColor: '#2563eb',
+    borderRadius: 28,
+    backgroundColor: t.idleGradient[1],
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 8,
-    shadowColor: '#2563eb',
+    shadowColor: t.idleGradient[1],
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
   },
   micButtonActive: {
-    backgroundColor: '#ef4444',
-    shadowColor: '#ef4444',
+    backgroundColor: '#dc2626',
+    shadowColor: '#dc2626',
   },
   statusText: {
     marginTop: 14,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
     textAlign: 'center',
     paddingHorizontal: 20,
   },
-  results: {
-    width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
+  sectTitleText: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: t.text,
+    letterSpacing: -0.3,
+    marginBottom: 12,
+    paddingHorizontal: 2,
   },
-  personBadge: {
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    marginBottom: 10,
+  currentCard: {
+    backgroundColor: t.card,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
+    borderRadius: 18,
+    padding: 16,
+    gap: 12,
+  },
+  currentBlock: {
+    gap: 5,
+  },
+  currentBlockTranslated: {
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: t.cardBorder,
+  },
+  currentLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: t.textFaint,
+  },
+  currentLabelTranslated: {
+    color: t.personB,
+  },
+  currentText: {
+    fontSize: 15,
+    lineHeight: 21,
+    color: t.text,
+  },
+  currentTextTranslated: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  replayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     alignSelf: 'flex-start',
   },
-  personBadgeText: {
-    fontSize: 15,
+  replayRowDisabled: {
+    opacity: 0.5,
+  },
+  replayRowText: {
+    fontSize: 12.5,
     fontWeight: '700',
-    color: '#ffffff',
+    color: t.personB,
   },
-  personBadgeSub: {
+  disclaimerText: {
+    fontSize: 11,
+    color: t.textFaint,
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  trialBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(251,191,36,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.25)',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  trialBannerText: {
+    flex: 1,
     fontSize: 12,
-    color: '#dbeafe',
-    marginTop: 2,
+    fontWeight: '600',
+    color: t.warning,
   },
-  textBox: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 4,
-    elevation: 3,
-    borderLeftWidth: 4,
-    borderLeftColor: '#94a3b8',
+  paywallOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
   },
-  translatedBox: {
-    borderLeftColor: '#2563eb',
-    backgroundColor: '#eff6ff',
+  paywallSheet: {
+    backgroundColor: t.bgElevated,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '88%',
+    paddingTop: 20,
+    paddingHorizontal: 20,
   },
-  textBoxLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#64748b',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
+  paywallScrollContent: {
+    paddingBottom: 8,
   },
-  textBoxContent: {
-    fontSize: 17,
-    color: '#1e293b',
-    lineHeight: 26,
+  paywallCloseButton: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  paywallCloseText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: t.textMuted,
   },
 });

@@ -7,7 +7,7 @@ import {
   UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 import { db, TRANSLATIONS_TABLE } from '../db.mjs';
-import { getUserId, getRole } from '../auth.mjs';
+import { getUserId } from '../auth.mjs';
 import { sendSuccess, sendCreated, sendNoContent, sendError, handleError } from '../response.mjs';
 import { uploadAudio, getAudioPresignedUrl, audioObjectExists, deleteAudioObjects } from '../s3.mjs';
 
@@ -188,12 +188,12 @@ export async function getTranslationAudioUrl(event) {
 export async function listTranslations(event) {
   try {
     const userId = getUserId(event);
-    const role = getRole(event);
     const qs = event.queryStringParameters || {};
-    // OWNER: max 200 items per page; USER: hard-capped at 5 regardless of requested limit
+    // Flat 200-item ceiling for every account — no more OWNER/USER split.
+    // The History screen itself requests exactly 5 (its own product
+    // decision, made client-side); this is just the server-side abuse ceiling.
     const parsedLimit = parseInt(qs.limit || '50', 10);
-    const requestedLimit = Math.min(Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 50, 200);
-    const limit = role === 'USER' ? Math.min(requestedLimit, 5) : requestedLimit;
+    const limit = Math.min(Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 50, 200);
     const lastKey = qs.lastKey
       ? JSON.parse(Buffer.from(qs.lastKey, 'base64').toString('utf8'))
       : undefined;

@@ -58,6 +58,9 @@ export class TTSService {
   private voiceGender: VoiceGender = 'female';
   private selectedVoiceId: string | null = null;
 
+  // Device TTS voice, pinned per locale once resolved — see resolveDeviceVoiceId().
+  private deviceVoiceCache: Record<string, string | null> = {};
+
   setSelectedVoiceId(id: string | null) {
     this.selectedVoiceId = id;
   }
@@ -325,9 +328,20 @@ export class TTSService {
     // Approximate gender via pitch: female=1.15 (slightly higher), male=0.82 (slightly lower)
     const pitch = this.voiceGender === 'male' ? 0.82 : 1.15;
 
+    // Bug fix: passing only `language` (a locale, not a voice) left the OS free
+    // to pick whichever installed TTS voice it wanted for that locale on each
+    // call. On Android, with more than one voice/engine installed for the same
+    // locale, that pick isn't guaranteed stable across calls — reported as
+    // conversation mode's translated voice sounding consistent for the first
+    // couple of turns, then abruptly different ("random voice") on a later
+    // one. Pin a specific voice identifier, resolved once per locale and
+    // reused for every subsequent call, so it can't drift mid-conversation.
+    const voiceId = await this.resolveDeviceVoiceId(locale);
+
     await new Promise<void>((resolve, reject) => {
       Speech.speak(text, {
         language: locale,
+        ...(voiceId ? { voice: voiceId } : {}),
         rate: 0.9,
         pitch,
         onDone: resolve,
@@ -335,6 +349,41 @@ export class TTSService {
         onStopped: resolve, // treat stop as done (user may have interrupted)
       });
     });
+  }
+
+  /**
+   * Resolve (and cache) a single, stable voice identifier for a given locale so
+   * repeated calls use the exact same installed voice instead of leaving the
+   * pick up to the OS each time. Falls back to undefined (OS default) if the
+   * device reports no matching voice or the lookup itself fails — device TTS
+   * must never throw just because voice enumeration isn't available.
+   */
+  private async resolveDeviceVoiceId(locale: string): Promise<string | undefined> {
+    if (locale in this.deviceVoiceCache) {
+      return this.deviceVoiceCache[locale] ?? undefined;
+    }
+    try {
+      const voices = await Speech.getAvailableVoicesAsync();
+      const languagePrefix = locale.split('-')[0].toLowerCase();
+      const matches = voices.filter(v => v.language?.toLowerCase().startsWith(languagePrefix));
+
+      // Deterministic pick: prefer Enhanced quality, then sort by identifier so
+      // the same voice is chosen every time regardless of the array's original
+      // (possibly OS-session-dependent) order.
+      matches.sort((a, b) => {
+        if (a.quality !== b.quality) return a.quality === 'Enhanced' ? -1 : 1;
+        return a.identifier.localeCompare(b.identifier);
+      });
+
+      const chosen = matches[0]?.identifier ?? null;
+      this.deviceVoiceCache[locale] = chosen;
+      console.log(`🔊 Device TTS: pinned voice for ${locale} = ${chosen ?? '(OS default — no match found)'}`);
+      return chosen ?? undefined;
+    } catch (err) {
+      console.warn(`⚠️ Device TTS: voice enumeration failed for ${locale}, using OS default:`, err);
+      this.deviceVoiceCache[locale] = null;
+      return undefined;
+    }
   }
 
   private async generateWithOpenAI(text: string, language: string): Promise<string> {

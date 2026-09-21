@@ -27,6 +27,11 @@ Parameters:
     Type: String
     Default: user_settings
 
+  UsageTable:
+    Type: String
+    Default: ai_usage
+    Description: Per-user, per-day AI-proxy call counters (see lib/usageLimits.mjs) — disposable, TTL-expired after ~2 days, not a source of truth for anything.
+
   # ── AI provider keys — held server-side only; never shipped to the client.
   # Pass via `sam deploy --parameter-overrides` (or samconfig.toml), not source control.
   OpenAIApiKey:
@@ -63,6 +68,50 @@ Parameters:
     Default: 90
     Description: Days to retain stored translation audio (source + TTS) in S3 before automatic expiration
 
+  # ── Razorpay recurring subscriptions — see backend/scripts/setup-razorpay-plans.mjs
+  # and RAZORPAY_INTEGRATION.md. Key/secret/webhook-secret are held server-side
+  # only, same treatment as the AI provider keys above.
+  RazorpayKeyId:
+    Type: String
+    Default: ""
+    Description: Razorpay Key ID (rzp_test_... or rzp_live_...) — public, but still passed as a parameter to keep all Razorpay config in one place. Leave blank to disable billing routes.
+
+  RazorpayKeySecret:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Razorpay Key Secret — used to create subscriptions and verify post-checkout payment signatures. Never sent to the client.
+
+  RazorpayWebhookSecret:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Webhook secret configured in the Razorpay Dashboard for the /v1/billing/razorpay/webhook endpoint — distinct from RazorpayKeySecret.
+
+  RazorpayPlanIdPlus:
+    Type: String
+    Default: ""
+    Description: Razorpay Plan ID for the 'plus' tier (₹100/month) — created once via scripts/setup-razorpay-plans.mjs, immutable afterward.
+
+  RazorpayPlanIdLive:
+    Type: String
+    Default: ""
+    Description: Razorpay Plan ID for the 'live' tier (₹200/month) — created once via scripts/setup-razorpay-plans.mjs, immutable afterward.
+
+  # ── Cost monitoring — see the EstimatedChargesAlarm resource below for the
+  # two manual, one-time account-level prerequisites CloudFormation cannot
+  # set for you (billing alerts must be enabled, and this stack must deploy
+  # to us-east-1).
+  BillingAlarmEmail:
+    Type: String
+    Default: ""
+    Description: Email to notify when estimated AWS charges exceed BillingAlarmThresholdUSD. Leave blank to create the alarm with no destination (add a subscription manually later). AWS emails a confirmation link to this address after deploy — the alarm stays silent until it's clicked.
+
+  BillingAlarmThresholdUSD:
+    Type: Number
+    Default: 25
+    Description: Placeholder threshold (USD) for the estimated-charges billing alarm — tune based on your actual expected spend once you have real usage data.
+
 # ──────────────────────────────────────────────────────────
 # Globals — applied to every Lambda function
 # ──────────────────────────────────────────────────────────
@@ -78,6 +127,12 @@ Globals:
         TRANSLATIONS_TABLE: !Ref TranslationsTable
         SETTINGS_TABLE:     !Ref SettingsTable
         NODE_OPTIONS:       "--enable-source-maps"
+
+# ──────────────────────────────────────────────────────────
+# Conditions
+# ──────────────────────────────────────────────────────────
+Conditions:
+  HasBillingAlarmEmail: !Not [!Equals [!Ref BillingAlarmEmail, ""]]
 
 # ──────────────────────────────────────────────────────────
 # Resources
@@ -97,13 +152,6 @@ Resources:
         # CorsAllowedOrigins (see backend/src/response.mjs); this only covers
         # gateway-generated responses.
         AllowOrigin:  "'*'"
-      # Blanket throttle so no single caller — including on the unauthenticated
-      # OTP route — can flood the API (there is no usage plan on this stack).
-      MethodSettings:
-        - ResourcePath: "/*"
-          HttpMethod:   "*"
-          ThrottlingRateLimit:  50
-          ThrottlingBurstLimit: 100
       Auth:
         DefaultAuthorizer: CognitoJwtAuthorizer
         AddDefaultAuthorizerToCorsPreflight: false
@@ -112,6 +160,26 @@ Resources:
             UserPoolArn: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}"
             Identity:
               Header: Authorization
+      # Stage-level throttling — nothing here before, so a single leaked
+      # token (or a bug looping requests) had no ceiling beyond the account's
+      # very high default API Gateway limits (10,000 burst / 5,000 rps).
+      # Placeholder numbers — tune against real traffic once you have it.
+      # The two truly public, unauthenticated POST routes (phone-otp request,
+      # Razorpay webhook) get their own tighter overrides below, since they
+      # need no Cognito token to reach at all.
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod:   '*'
+          ThrottlingBurstLimit: 50
+          ThrottlingRateLimit:  25
+        - ResourcePath: /v1/auth/phone/request-otp
+          HttpMethod:   POST
+          ThrottlingBurstLimit: 5
+          ThrottlingRateLimit:  2
+        - ResourcePath: /v1/billing/razorpay/webhook
+          HttpMethod:   POST
+          ThrottlingBurstLimit: 20
+          ThrottlingRateLimit:  10
 
   # ── Lambda Function ─────────────────────────────────────
   TranslatorFunction:
@@ -137,6 +205,12 @@ Resources:
           RATE_LIMIT_TABLE:    !Ref RateLimitTable
           CORS_ALLOWED_ORIGINS: !Ref CorsAllowedOrigins
           API_GATEWAY_NAME:    !Sub "ai-translator-api-${Stage}"
+          RAZORPAY_KEY_ID:         !Ref RazorpayKeyId
+          RAZORPAY_KEY_SECRET:     !Ref RazorpayKeySecret
+          RAZORPAY_WEBHOOK_SECRET: !Ref RazorpayWebhookSecret
+          RAZORPAY_PLAN_ID_PLUS:   !Ref RazorpayPlanIdPlus
+          RAZORPAY_PLAN_ID_LIVE:   !Ref RazorpayPlanIdLive
+          USAGE_TABLE:             !Ref UsageTable
       Events:
         # Catch-all proxy — routes every path+method to the single handler
         ProxyRoot:
@@ -170,6 +244,26 @@ Resources:
           Properties:
             RestApiId: !Ref TranslatorApi
             Path:      /v1/auth/phone/request-otp
+            Method:    OPTIONS
+            Auth:
+              Authorizer: NONE
+        # Unauthenticated Razorpay webhook — Razorpay's servers call this
+        # directly (no Cognito token exists for a server-to-server webhook),
+        # same explicit-override pattern as the phone-OTP route above. The
+        # handler verifies X-Razorpay-Signature itself (see billing.mjs).
+        RazorpayWebhook:
+          Type:       Api
+          Properties:
+            RestApiId: !Ref TranslatorApi
+            Path:      /v1/billing/razorpay/webhook
+            Method:    POST
+            Auth:
+              Authorizer: NONE
+        RazorpayWebhookOptions:
+          Type:       Api
+          Properties:
+            RestApiId: !Ref TranslatorApi
+            Path:      /v1/billing/razorpay/webhook
             Method:    OPTIONS
             Auth:
               Authorizer: NONE
@@ -210,6 +304,37 @@ Resources:
       Handler:      src/handlers/verifyAuthChallengeResponse.handler
       Policies:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # ── Scheduled data-retention sweep ──────────────────────
+  # Account-agnostic (Scan-based, not per-user Query) so it can run on a
+  # schedule with no authenticated caller — see retentionSweep.mjs's header
+  # comment for why this has to be separate from the per-user
+  # DELETE /v1/translations/old route. Shares AudioRetentionDays with the
+  # S3 lifecycle rule below so there's one source of truth for how long data
+  # is actually kept, matching whatever the privacy policy states.
+  RetentionSweepFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "ai-translator-retention-sweep-${Stage}"
+      CodeUri:      ./
+      Handler:      src/handlers/retentionSweep.handler
+      Timeout:      120
+      Policies:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Ref DynamoDBPolicy
+        - !Ref S3AudioPolicy
+      Environment:
+        Variables:
+          RETENTION_DAYS: !Ref AudioRetentionDays
+          AUDIO_BUCKET:   !Ref AudioBucket
+      Events:
+        DailySweep:
+          Type: Schedule
+          Properties:
+            Schedule:    rate(1 day)
+            Name:        !Sub "ai-translator-retention-sweep-${Stage}"
+            Description: "Daily cleanup of conversation_history rows (+ S3 audio) past AudioRetentionDays"
+            Enabled:     true
 
   # ── DynamoDB Tables ─────────────────────────────────────
   ConversationHistoryTable:
@@ -315,6 +440,28 @@ Resources:
         - AttributeName: user_id
           KeyType:        HASH
 
+  # ── Disposable per-user/per-day AI-proxy call counters (lib/usageLimits.mjs) ──
+  # No PITR — this is a cost-control counter, not durable data; a lost counter
+  # on restore would just under-enforce for a day, not lose anything real.
+  AiUsageTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:   !Ref UsageTable
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: day
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType:        HASH
+        - AttributeName: day
+          KeyType:        RANGE
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
   # ── IAM policy for Lambda → DynamoDB ───────────────────
   DynamoDBPolicy:
     Type: AWS::IAM::ManagedPolicy
@@ -337,6 +484,7 @@ Resources:
               - !Sub "${ConversationHistoryTable.Arn}/index/*"
               - !GetAtt UserSettingsTable.Arn
               - !GetAtt RateLimitTable.Arn
+              - !GetAtt AiUsageTable.Arn
 
   # ── IAM policy for Lambda → S3 audio bucket ─────────────
   # Scoped to objects only (bucket/*), not the bucket itself — no ListBucket,
@@ -422,9 +570,53 @@ Resources:
               - cognito-idp:AdminCreateUser
               - cognito-idp:AdminGetUser
               - cognito-idp:AdminSetUserPassword
+              - cognito-idp:AdminDeleteUser
               - cognito-idp:ListUsers
             Resource:
               - !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}"
+
+  # ── Cost monitoring ──────────────────────────────────────
+  # Two manual, one-time prerequisites CloudFormation cannot set for you:
+  #   1. This stack must deploy to us-east-1 — the AWS/Billing namespace's
+  #      EstimatedCharges metric is published ONLY there, regardless of which
+  #      region your actual resources run in (already true here — see
+  #      backend/samconfig.toml's region).
+  #   2. The account's Billing preferences must have "Receive Billing Alerts"
+  #      checked (Billing console → Billing preferences) — an account-level
+  #      setting with no CloudFormation equivalent. Until it's checked, this
+  #      metric simply never populates and the alarm stays permanently in
+  #      INSUFFICIENT_DATA, not ALARM — it isn't broken, it has no data yet.
+  BillingAlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "ai-translator-billing-alarm-${Stage}"
+
+  BillingAlarmEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasBillingAlarmEmail
+    Properties:
+      TopicArn: !Ref BillingAlarmTopic
+      Protocol: email
+      Endpoint: !Ref BillingAlarmEmail
+
+  EstimatedChargesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName:        !Sub "ai-translator-estimated-charges-${Stage}"
+      AlarmDescription: !Sub "Estimated AWS charges exceeded $${BillingAlarmThresholdUSD} — see the BillingAlarmThresholdUSD parameter to tune."
+      Namespace:         AWS/Billing
+      MetricName:        EstimatedCharges
+      Dimensions:
+        - Name:  Currency
+          Value: USD
+      Statistic:          Maximum
+      Period:             21600 # 6 hours — this metric itself only updates a few times/day
+      EvaluationPeriods:  1
+      ComparisonOperator: GreaterThanThreshold
+      Threshold:          !Ref BillingAlarmThresholdUSD
+      TreatMissingData:   notBreaching
+      AlarmActions:
+        - !Ref BillingAlarmTopic
 
 # ──────────────────────────────────────────────────────────
 # Outputs

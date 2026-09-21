@@ -3,8 +3,12 @@ const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/$/, "")
 export interface RevenueMetric {
   available: boolean;
   reason?: string;
-  totalUsd: number | null;
-  byTier: { tier: string; totalUsd: number }[];
+  // This business bills in INR (Razorpay) — not USD. `currency` is always
+  // "INR" today but kept explicit rather than hardcoding a ₹ sign, in case
+  // that ever changes.
+  currency: string;
+  total: number | null;
+  byTier: { tier: string; total: number }[];
 }
 
 export interface EngagementMetric {
@@ -26,8 +30,8 @@ export interface AwsCostMetric {
 export interface ChurnUser {
   userId: string;
   identifier: string;
+  plan: string;
   expiresInDays: number;
-  renewalNotificationSent: boolean;
 }
 
 export interface ChurnMetric {

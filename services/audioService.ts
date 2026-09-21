@@ -1,6 +1,7 @@
 import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
 import { preprocessForWhisper } from './audioProcessor';
+import { logger } from '@/lib/logger';
 
 // expo-file-system is native-only. On web, TTS audio arrives as blob: URLs and
 // recording produces blob: URIs — neither path touches FileSystem, so a no-op
@@ -318,6 +319,7 @@ export class AudioService {
     await this.startRecording();
     if (!this.recording) {
       console.error('🎤 [AutoStop] Recording failed to start');
+      logger.error('AutoStop: startRecording() left this.recording null', undefined, { platform: Platform.OS });
       return null;
     }
 
@@ -327,9 +329,16 @@ export class AudioService {
     // Wait briefly for recording to stabilize before attaching listeners
     await new Promise(r => setTimeout(r, 300));
 
-    // If recording was stopped externally during the wait
+    // If recording was stopped externally during the wait — diagnostic: this
+    // path (not the status-callback one already fixed) is the other possible
+    // explanation for "Listening… appears then disappears instantly" if
+    // something else in the app (e.g. a spurious AppState 'background' event)
+    // is calling forceCleanup()/stopRecording() within this 300ms window.
     if (this.recording !== recording) {
       console.log('🎤 [AutoStop] Recording stopped during startup');
+      logger.warn('AutoStop: recording instance changed during 300ms startup wait — something else stopped it', {
+        platform: Platform.OS,
+      });
       return null;
     }
 
@@ -338,12 +347,64 @@ export class AudioService {
       let hasSpeech = false;
       let resolved = false;
 
+      // ── Adaptive noise-floor calibration ──────────────────────────────
+      // Bug: `silenceThresholdDb` (e.g. -45dB) was applied as a fixed
+      // absolute cutoff. That only works in a quiet room. In a noisy one
+      // (fan/AC/traffic/crosstalk) the ambient floor can sit well above
+      // -45dB, so metering never dips below the fixed threshold — every
+      // turn then silently runs to the full `fixedDurationMs` hard cap
+      // instead of ending shortly after the person actually stops talking,
+      // and ambient noise alone can even be mistaken for speech. That's the
+      // long "Listening…/Transcribing…" stall and inconsistent-input-capture
+      // behavior seen in noisy environments.
+      // Fix: sample metering readings for the whole pre-`minRecordingMs`
+      // guard window — background noise, since real speech essentially
+      // never starts and finishes before that window closes — to estimate
+      // the actual ambient floor, then require metering to clear that floor
+      // by SPEECH_MARGIN_DB before counting it as speech, and drop back to
+      // within SILENCE_MARGIN_DB of the floor before counting it as silence
+      // again (a small hysteresis gap between the two avoids flicker right
+      // at the boundary). Falls back to the fixed threshold if calibration
+      // collected no samples (e.g. metering unsupported).
+      //
+      // Bug fix (regression report): an earlier version of this calibration
+      // only sampled the first ~700ms after the listener attaches, which is
+      // itself already ~300ms+ into the turn (post `startRecording()`
+      // stabilization delay). On repeat turns within one conversation,
+      // native mic/session startup latency was observed to grow enough that
+      // the first metering callback sometimes didn't arrive until after that
+      // narrow window closed — calibrationSamples stayed empty, calibration
+      // silently fell back to the fixed threshold, and the turn reproduced
+      // the exact original stall. Collecting through the full
+      // `minRecordingMs` window (1.5s by default, not ~0.4-0.7s) gives
+      // native startup jitter far more room and this should no longer
+      // starve calibration of samples turn after turn. The median-based
+      // floor estimate below still tolerates a few early-speech samples
+      // bleeding into a wider window.
+      const SPEECH_MARGIN_DB = 9;
+      const SILENCE_MARGIN_DB = 4;
+      const MIN_EFFECTIVE_THRESHOLD_DB = -55;
+      const MAX_EFFECTIVE_THRESHOLD_DB = -18;
+      const clampDb = (db: number) =>
+        Math.max(MIN_EFFECTIVE_THRESHOLD_DB, Math.min(MAX_EFFECTIVE_THRESHOLD_DB, db));
+
+      const calibrationSamples: number[] = [];
+      let noiseFloorDb: number | null = null;
+      let speechThresholdDb = silenceThresholdDb;
+      let silenceResumeThresholdDb = silenceThresholdDb;
+
       const finish = async () => {
         if (resolved) return;
         resolved = true;
         clearTimeout(fallbackTimer);
         this.pendingAutoStopFinish = null;
         console.log(`🎤 [AutoStop] Finishing recording (hasSpeech=${hasSpeech})`);
+        // Defensively detach this turn's status listener before tearing the
+        // recording down — rules out any stale-callback interference on
+        // later turns within the same conversation (belt-and-braces; not a
+        // confirmed cause, just cheap insurance since each turn creates a
+        // brand-new native Recording instance and listener).
+        try { recording.setOnRecordingStatusUpdate(null as any); } catch (e) {}
         if (this.recording === recording) {
           const uri = await this.stopRecording();
           resolve(uri);
@@ -368,29 +429,87 @@ export class AudioService {
         recording.setOnRecordingStatusUpdate((status: any) => {
           if (resolved) return;
 
-          // GUARD: Ignore status updates during first 1 second
           const elapsed = Date.now() - recordingStart;
+
+          // Collect ambient-noise calibration samples for the whole guard
+          // window (through minRecordingMs) — real speech essentially never
+          // starts AND finishes before that window closes, so this is a
+          // reliable read on the room's noise floor even accounting for
+          // startup-latency jitter on later turns. Metering readings are
+          // safe to sample immediately; it's specifically
+          // `isRecording === false` that isn't trustworthy this early (see
+          // guard below), so this runs ahead of that guard.
+          if (elapsed < minRecordingMs && status.isRecording && typeof status.metering === 'number') {
+            calibrationSamples.push(status.metering);
+          }
+
+          // GUARD: Ignore status updates during first 1 second
           if (elapsed < 1000) return;
 
           if (!status.isRecording) {
-            console.log('🎤 [AutoStop] Recording stopped externally');
-            if (!resolved) {
-              resolved = true;
-              clearTimeout(fallbackTimer);
-              this.pendingAutoStopFinish = null;
-              resolve(null);
+            // Bug fix: this native status field was being trusted at face value
+            // to mean "the recording was stopped externally" (e.g. by
+            // stopConversation() -> forceCleanup()). On Android it has been
+            // observed to report false spuriously shortly after a perfectly
+            // successful start — with nothing in our own code having stopped
+            // anything — which bailed the whole turn out with a null result on
+            // the very first metering callback. On screen that reads as
+            // "Person A: Listening…" flashing and disappearing almost
+            // instantly. Single Translation mode's manual start/stop recording
+            // never attaches this status callback at all and is unaffected,
+            // which is exactly the signature of a bug in this callback, not in
+            // recording itself.
+            //
+            // The only signal that WE intentionally stopped this recording is
+            // our own instance reference changing (set by stopRecording() /
+            // forceCleanup()) — plain JS state, not a value reported by the
+            // native bridge. Trust that instead of this field.
+            if (this.recording !== recording) {
+              console.log('🎤 [AutoStop] Recording stopped externally (instance changed)');
+              if (!resolved) {
+                resolved = true;
+                clearTimeout(fallbackTimer);
+                this.pendingAutoStopFinish = null;
+                resolve(null);
+              }
+            } else {
+              console.warn('⚠️ [AutoStop] Ignoring spurious isRecording=false (recording instance unchanged)');
+              logger.warn('AutoStop: ignored spurious isRecording=false from native status callback', {
+                platform: Platform.OS, elapsedMs: elapsed,
+              });
             }
             return;
           }
 
           if (elapsed < minRecordingMs) return;
 
+          // Finalize calibration once, the first time we reach here.
+          if (noiseFloorDb === null) {
+            if (calibrationSamples.length > 0) {
+              const sorted = [...calibrationSamples].sort((a, b) => a - b);
+              noiseFloorDb = sorted[Math.floor(sorted.length / 2)]; // median
+              speechThresholdDb = clampDb(noiseFloorDb + SPEECH_MARGIN_DB);
+              silenceResumeThresholdDb = clampDb(noiseFloorDb + SILENCE_MARGIN_DB);
+              console.log(
+                `🎚️ [AutoStop] Calibrated noise floor=${noiseFloorDb.toFixed(1)}dB → ` +
+                `speech>${speechThresholdDb.toFixed(1)}dB, silence<${silenceResumeThresholdDb.toFixed(1)}dB ` +
+                `(fixed fallback was ${silenceThresholdDb}dB)`,
+              );
+            } else {
+              // No calibration data (metering unsupported this early) — keep
+              // the fixed threshold behavior as before.
+              noiseFloorDb = silenceThresholdDb;
+              speechThresholdDb = silenceThresholdDb;
+              silenceResumeThresholdDb = silenceThresholdDb;
+            }
+          }
+
           const metering: number | undefined = status.metering;
           if (metering !== undefined) {
-            if (metering >= silenceThresholdDb) {
+            if (metering >= speechThresholdDb) {
               hasSpeech = true;
               silenceStart = null;
-            } else if (hasSpeech) {
+            } else if (hasSpeech && metering < silenceResumeThresholdDb) {
               if (!silenceStart) {
                 silenceStart = Date.now();
               } else if (Date.now() - silenceStart >= silenceDurationMs) {

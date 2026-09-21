@@ -1,13 +1,15 @@
 /**
  * Business dashboard metrics — OWNER role required.
  *
- * Four sections in one payload: engagement (WAU/MAU) and awsCost are real,
- * computed from conversation_history/Cognito and AWS Cost Explorer. revenue
- * and churn are NOT real — there is no Transactions table, no product-tier
- * field, and no subscription/expiry data anywhere in this backend (billing
- * is still just the Razorpay design in BILLING.md, not implemented). Both
- * are returned with `available: false` and a reason instead of being
- * silently omitted or faked, so the client can render an honest empty state.
+ * Four sections in one payload: engagement (WAU/MAU), awsCost, revenue and
+ * churn are all real now. revenue/churn are computed from Razorpay
+ * (backend/src/lib/razorpayReports.mjs) cross-referenced with this table's
+ * own `plan`/`razorpay_subscription_id`/`razorpay_subscription_status`
+ * fields — see that file's header comments for exactly how "revenue by
+ * tier" and "expiring within 7 days" are derived. Each section still
+ * degrades to `available: false` with a `reason` (rather than a fake zero)
+ * if Razorpay/Cost Explorer is unreachable or unconfigured, so the client
+ * can render an honest empty state instead of a misleading one.
  *
  * Cost Explorer bills $0.01 per API request — cached in-memory for the
  * lifetime of the warm Lambda container (COST_CACHE_TTL_MS) so repeated
@@ -15,10 +17,14 @@
  */
 
 import { CostExplorerClient, GetCostAndUsageCommand } from '@aws-sdk/client-cost-explorer';
+import { ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { getRole } from '../auth.mjs';
 import { sendSuccess, sendError, handleError } from '../response.mjs';
 import { scanAllTranslations, buildUsageByUser, countActiveWithin } from '../lib/usageAnalytics.mjs';
 import { CognitoIdentityProviderClient, ListUsersCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { listAllCognitoUsers, buildIdentifierMap } from '../lib/cognitoUsers.mjs';
+import { fetchAllPayments, fetchAllSubscriptions, computeRevenueByTier, computeChurn } from '../lib/razorpayReports.mjs';
+import { db, SETTINGS_TABLE } from '../db.mjs';
 
 // Cost Explorer is a global service reachable only via the us-east-1 endpoint,
 // regardless of which region the rest of this stack runs in.
@@ -45,6 +51,28 @@ async function countCognitoUsers(userPoolId) {
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
+}
+
+/** Every settings record's billing-relevant fields — used by computeChurn(). */
+async function scanUserSubscriptionStates() {
+  const items = [];
+  let lastEvaluatedKey;
+  do {
+    const result = await db.send(new ScanCommand({
+      TableName: SETTINGS_TABLE,
+      // 'plan' is a DynamoDB reserved keyword — same bug class as the
+      // UpdateExpression fix in billing.mjs/settings.mjs, but here it's a
+      // ProjectionExpression on a Scan, which fails the exact same way:
+      // "Invalid ProjectionExpression: Attribute name is a reserved
+      // keyword; reserved keyword: plan", on every real request.
+      ProjectionExpression: 'user_id, #plan, razorpay_subscription_id, razorpay_subscription_status',
+      ExpressionAttributeNames: { '#plan': 'plan' },
+      ExclusiveStartKey: lastEvaluatedKey,
+    }));
+    items.push(...(result.Items || []));
+    lastEvaluatedKey = result.LastEvaluatedKey;
+  } while (lastEvaluatedKey);
+  return items;
 }
 
 // Exported so infraMetrics.mjs can reuse the same Cost Explorer call (and its
@@ -106,22 +134,50 @@ export async function getDashboardMetrics(event) {
   try {
     if (getRole(event) !== 'OWNER') return sendError(403, 'OWNER role required');
 
-    const [translations, totalMembers, awsCost] = await Promise.all([
-      scanAllTranslations(),
-      countCognitoUsers(process.env.USER_POOL_ID),
-      getAwsCost(),
-    ]);
+    const [translations, totalMembers, awsCost, paymentsResult, subscriptionsResult, dbUsers, cognitoUsers] =
+      await Promise.all([
+        scanAllTranslations(),
+        countCognitoUsers(process.env.USER_POOL_ID),
+        getAwsCost(),
+        // Degrade to null (→ available: false below) rather than failing the
+        // whole dashboard payload — same treatment getAwsCost() gives Cost
+        // Explorer being unreachable/unconfigured.
+        fetchAllPayments().catch((err) => {
+          console.error('Razorpay payments fetch failed:', err.message);
+          return null;
+        }),
+        fetchAllSubscriptions().catch((err) => {
+          console.error('Razorpay subscriptions fetch failed:', err.message);
+          return null;
+        }),
+        scanUserSubscriptionStates(),
+        listAllCognitoUsers(process.env.USER_POOL_ID),
+      ]);
 
     const usageByUser = buildUsageByUser(translations);
+    const identifierMap = buildIdentifierMap(cognitoUsers);
+
+    const revenue = paymentsResult
+      ? computeRevenueByTier(paymentsResult)
+      : {
+          available: false,
+          reason: 'Razorpay unreachable or not configured (RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET) — see RAZORPAY_INTEGRATION.md',
+          currency: 'INR',
+          total: null,
+          byTier: [],
+        };
+
+    const churn = subscriptionsResult
+      ? computeChurn(dbUsers, subscriptionsResult, identifierMap)
+      : {
+          available: false,
+          reason: 'Razorpay unreachable or not configured (RAZORPAY_KEY_ID/RAZORPAY_KEY_SECRET) — see RAZORPAY_INTEGRATION.md',
+          users: [],
+        };
 
     return sendSuccess({
       generatedAt: new Date().toISOString(),
-      revenue: {
-        available: false,
-        reason: 'No Transactions table or billing system implemented yet — see BILLING.md',
-        totalUsd: null,
-        byTier: [],
-      },
+      revenue,
       engagement: {
         available: true,
         totalMembers,
@@ -129,11 +185,7 @@ export async function getDashboardMetrics(event) {
         mau: countActiveWithin(usageByUser, 30, totalMembers),
       },
       awsCost,
-      churn: {
-        available: false,
-        reason: 'No subscription/expiry data exists yet — no GSI, no renewal_notification_sent field',
-        users: [],
-      },
+      churn,
     });
   } catch (err) {
     return handleError(err);

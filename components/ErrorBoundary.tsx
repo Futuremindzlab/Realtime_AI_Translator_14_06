@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { logger } from '@/lib/logger';
 
 interface Props {
   children: React.ReactNode;
@@ -20,7 +21,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('💥 Uncaught render error:', error, info.componentStack);
+    logger.error('💥 Uncaught render error', error, { componentStack: info.componentStack });
   }
 
   render() {

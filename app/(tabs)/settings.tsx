@@ -8,18 +8,42 @@ import {
   Alert,
   ActivityIndicator,
   Switch,
+  Share,
+  Linking,
+  Platform,
 } from 'react-native';
-import { LogOut, Save, Mic, Trash2 } from 'lucide-react-native';
+import { LogOut, Save, Mic, Trash2, Bug, Zap } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { audioService } from '@/services/audioService';
 import { ttsService, TTSService } from '@/services/ttsService';
+import { subscribeToPlan, cancelSubscription as cancelRazorpaySubscription, CheckoutCancelledError } from '@/services/billingService';
+import { SubscriptionPlan } from '@/types';
+import { logger } from '@/lib/logger';
+import { PLAN_INFO, PAID_PLAN_PRICE } from '@/lib/plans';
+import { canvasTheme as t } from '@/lib/canvasTheme';
+
+// Customer-facing (isUserView) voice picker: exactly 4 curated OpenAI voices —
+// 2 female/2 male, 1 Indian-script-tuned + 1 global each — pulled from the
+// existing 6-voice OPENAI_VOICES list rather than duplicating voice data.
+// Owners keep the full provider/voice picker below unchanged; this is
+// additive, shown only on the isUserView branch.
+const CURATED_VOICES = TTSService.OPENAI_VOICES.filter(v =>
+  ['nova', 'shimmer', 'echo', 'onyx'].includes(v.id)
+);
 
 export default function SettingsScreen() {
   // AuthGate (app/_layout.tsx) guarantees `user` is non-null by the time any
   // screen renders — sign-in/sign-up/OTP/password-reset UI lives there now,
   // not here.
-  const { user, settings, signOut, updateSettings, viewMode, setViewMode } = useAuth();
-  const isUserView = user?.role === 'USER' || viewMode === 'user';
+  const { user, settings, signOut, deleteAccount, updateSettings, refreshSettings } = useAuth();
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  // Real OWNER vs. regular-customer distinction (Cognito role) — no more
+  // same-account preview toggle; an owner wanting the regular-customer
+  // experience signs in as one of the dedicated regular accounts instead.
+  const isUserView = user?.role === 'USER';
+  const currentPlan: SubscriptionPlan = settings?.plan || 'basic';
+  const [subscribingPlan, setSubscribingPlan] = useState<'plus' | 'live' | null>(null);
+  const [cancellingSubscription, setCancellingSubscription] = useState(false);
 
   const [ttsProvider, setTtsProvider] = useState<'elevenlabs' | 'openai' | 'device' | 'azure'>('device');
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('female');
@@ -63,6 +87,96 @@ export default function SettingsScreen() {
     }
   };
 
+  // Real purchase flow — see services/billingService.ts.
+  const handleSubscribe = async (plan: 'plus' | 'live') => {
+    if (subscribingPlan || plan === currentPlan) return;
+    setSubscribingPlan(plan);
+    try {
+      await subscribeToPlan(plan);
+      await refreshSettings();
+      Alert.alert('Subscribed!', `You're now on the ${PLAN_INFO[plan].label} plan.`);
+    } catch (error) {
+      if (error instanceof CheckoutCancelledError) {
+        // User backed out of Checkout — not an error worth alerting about.
+        return;
+      }
+      console.error('Subscribe error:', error);
+      Alert.alert('Payment failed', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setSubscribingPlan(null);
+    }
+  };
+
+  const handleCancelSubscription = () => {
+    Alert.alert(
+      'Cancel subscription?',
+      `You'll keep ${PLAN_INFO[currentPlan].label} access until the end of your current billing cycle, then move to Basic.`,
+      [
+        { text: 'Keep subscription', style: 'cancel' },
+        {
+          text: 'Cancel subscription',
+          style: 'destructive',
+          onPress: async () => {
+            setCancellingSubscription(true);
+            try {
+              await cancelRazorpaySubscription();
+              await refreshSettings();
+              Alert.alert('Cancelled', "You'll move to Basic at the end of your current billing cycle.");
+            } catch (error) {
+              console.error('Cancel subscription error:', error);
+              Alert.alert('Error', 'Failed to cancel subscription. Please try again.');
+            } finally {
+              setCancellingSubscription(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Irreversible — double-confirmed given what it actually does (cancels any
+  // active subscription immediately, permanently deletes translation history
+  // and audio, then deletes the account itself). See
+  // backend/src/handlers/account.mjs for the exact order of operations.
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete account?',
+      'This permanently deletes your account, translation history, and cancels any active subscription immediately. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Are you absolutely sure?',
+              'There is no way to recover your account or data after this.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete my account',
+                  style: 'destructive',
+                  onPress: async () => {
+                    setDeletingAccount(true);
+                    try {
+                      await deleteAccount();
+                      // No success alert — deleteAccount() already signs out,
+                      // which unmounts this screen behind AuthGate's sign-in view.
+                    } catch (error) {
+                      console.error('Delete account error:', error);
+                      Alert.alert('Error', 'Failed to delete account. Please try again.');
+                      setDeletingAccount(false);
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  };
+
   const handleSaveSettings = async () => {
     if (!user) {
       Alert.alert('Error', 'Please sign in to save settings');
@@ -73,7 +187,13 @@ export default function SettingsScreen() {
       ttsService.setVoiceGender(voiceGender);
       ttsService.setSelectedVoiceId(selectedVoiceId);
       await updateSettings({
-        ...(isUserView ? {} : { tts_provider: ttsProvider }),
+        // isUserView customers now pick from the 4-voice curated OpenAI
+        // picker above, not a provider list — pin their account to 'openai'
+        // so that choice is what actually plays, rather than silently
+        // leaving whatever provider was on the account before (which used
+        // to be the effect of omitting tts_provider here entirely). Owners
+        // keep full control via their own provider picker, unchanged.
+        tts_provider: isUserView ? 'openai' : ttsProvider,
         conversation_mode_default: conversationModeDefault,
         voice_gender: voiceGender,
         selected_voice_id: selectedVoiceId || undefined,
@@ -155,6 +275,50 @@ export default function SettingsScreen() {
     }
   };
 
+  // There's no way to pull `adb logcat` off a user's real device — this is the
+  // only practical way to see what actually happened on-device (which stage of
+  // a conversation turn ran, what error was thrown, network vs. non-network)
+  // instead of guessing from a secondhand description of the symptom.
+  //
+  // Opens the device's mail app pre-addressed to support, subject + diagnostic
+  // log already filled in, so a user reporting a problem doesn't have to type
+  // the address themselves or explain what went wrong from memory. mailto:
+  // URLs have no universal length ceiling, but some mail clients truncate or
+  // reject very long ones — cap the log body defensively rather than find out
+  // in the field. Falls back to the plain OS share sheet if no mail app can
+  // handle mailto: at all (e.g. a device with no email account configured).
+  const SUPPORT_EMAIL = 'Admin@futuremindzlab.com';
+  const MAILTO_BODY_MAX_CHARS = 1500;
+
+  const handleShareDiagnostics = async () => {
+    const buildSha = process.env.EXPO_PUBLIC_BUILD_SHA ? process.env.EXPO_PUBLIC_BUILD_SHA.substring(0, 7) : 'dev';
+    const header = `OneLingo diagnostics\nBuild: ${buildSha}  Platform: ${Platform.OS} ${Platform.Version}\nGenerated: ${new Date().toISOString()}\n${'-'.repeat(40)}\n`;
+    const log = logger.formatRecentEntries();
+    const body = header + log;
+
+    const mailBody = body.length > MAILTO_BODY_MAX_CHARS
+      ? `${body.slice(0, MAILTO_BODY_MAX_CHARS)}\n…(truncated — full log available via Share if needed)`
+      : body;
+    const subject = `OneLingo support — diagnostics (${buildSha})`;
+    const mailtoUrl = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(mailBody)}`;
+
+    try {
+      const canOpenMail = await Linking.canOpenURL(mailtoUrl);
+      if (canOpenMail) {
+        await Linking.openURL(mailtoUrl);
+        return;
+      }
+    } catch {
+      // fall through to the generic share sheet below
+    }
+
+    try {
+      await Share.share({ message: `To: ${SUPPORT_EMAIL}\nSubject: ${subject}\n\n${body}` });
+    } catch {
+      Alert.alert('Error', 'Failed to share diagnostics');
+    }
+  };
+
   const handleRemoveCustomVoice = async () => {
     Alert.alert(
       'Remove Custom Voice',
@@ -193,28 +357,73 @@ export default function SettingsScreen() {
             <Text style={styles.sectionTitle}>Account</Text>
             <Text style={styles.userEmail}>{user.email}</Text>
             <TouchableOpacity style={styles.secondaryButton} onPress={handleSignOut}>
-              <LogOut size={20} color="#ef4444" />
+              <LogOut size={20} color={t.danger} />
               <Text style={styles.secondaryButtonText}>Sign Out</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.secondaryButton, { marginTop: 12 }]}
+              disabled={deletingAccount}
+              onPress={handleDeleteAccount}>
+              {deletingAccount ? (
+                <ActivityIndicator size="small" color={t.danger} />
+              ) : (
+                <>
+                  <Trash2 size={20} color={t.danger} />
+                  <Text style={styles.secondaryButtonText}>Delete Account</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
 
-          {user?.role === 'OWNER' && (
-            <View style={styles.card}>
-              <Text style={styles.sectionTitle}>Developer Mode</Text>
-              <View style={styles.switchRow}>
-                <View>
-                  <Text style={styles.switchLabel}>Admin View</Text>
-                  <Text style={styles.switchDescription}>Toggle off to preview User experience</Text>
-                </View>
-                <Switch
-                  value={viewMode === 'admin'}
-                  onValueChange={(v) => setViewMode(v ? 'admin' : 'user')}
-                  trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
-                  thumbColor={viewMode === 'admin' ? '#2563eb' : '#f4f3f4'}
-                />
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Your Plan</Text>
+            <View style={styles.planBadgeRow}>
+              <View style={styles.planBadge}>
+                <Zap size={14} color={t.personB} />
+                <Text style={styles.planBadgeText}>{PLAN_INFO[currentPlan].label}</Text>
               </View>
             </View>
-          )}
+            <Text style={styles.sectionDescription}>{PLAN_INFO[currentPlan].description}</Text>
+
+            {currentPlan === 'basic' ? (
+              // Real purchase flow — Razorpay recurring subscription checkout.
+              (['plus', 'live'] as const).map((plan) => (
+                <TouchableOpacity
+                  key={plan}
+                  style={[styles.secondaryButton, styles.upgradeButton]}
+                  disabled={subscribingPlan !== null}
+                  onPress={() => handleSubscribe(plan)}>
+                  {subscribingPlan === plan ? (
+                    <ActivityIndicator size="small" color={t.personB} />
+                  ) : (
+                    <>
+                      <Zap size={18} color={t.personB} />
+                      <Text style={[styles.secondaryButtonText, { color: t.personB }]}>
+                        Upgrade to {PLAN_INFO[plan].label} — {PAID_PLAN_PRICE[plan]}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              ))
+            ) : settings?.razorpay_subscription_id ? (
+              settings.razorpay_subscription_status === 'cancel_requested' ? (
+                <Text style={styles.sectionDescription}>
+                  Cancellation scheduled — you&apos;ll move to Basic at the end of your current billing cycle.
+                </Text>
+              ) : (
+                <TouchableOpacity
+                  style={styles.secondaryButton}
+                  disabled={cancellingSubscription}
+                  onPress={handleCancelSubscription}>
+                  {cancellingSubscription ? (
+                    <ActivityIndicator size="small" color={t.danger} />
+                  ) : (
+                    <Text style={[styles.secondaryButtonText, { color: t.danger }]}>Cancel Subscription</Text>
+                  )}
+                </TouchableOpacity>
+              )
+            ) : null}
+          </View>
 
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Preferences</Text>
@@ -275,13 +484,25 @@ export default function SettingsScreen() {
             )}
 
             <Text style={styles.inputLabel}>Voice</Text>
-            {ttsProvider === 'openai' && (
+            {isUserView ? (
+              // Customer-facing simplified picker: exactly 4 curated OpenAI
+              // voices (2 male/2 female, 1 Indian-script-tuned + 1 global
+              // each) instead of exposing the provider/per-provider voice
+              // lists below (owner-only, unchanged). Selecting one pins this
+              // account to the OpenAI engine — the only provider change made
+              // on the isUserView path — so the choice actually takes effect;
+              // the owner-only provider/voice picker in the else-branch below
+              // (and everything it drives in ttsService.ts) is untouched.
               <View style={styles.radioGroup}>
-                {TTSService.OPENAI_VOICES.map(v => (
+                {CURATED_VOICES.map(v => (
                   <TouchableOpacity
                     key={v.id}
                     style={styles.radioOption}
-                    onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}>
+                    onPress={() => {
+                      setTtsProvider('openai');
+                      setSelectedVoiceId(v.id);
+                      setVoiceGender(v.gender === 'male' ? 'male' : 'female');
+                    }}>
                     <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
                       {selectedVoiceId === v.id && <View style={styles.radioDot} />}
                     </View>
@@ -292,76 +513,97 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-            )}
-            {ttsProvider === 'elevenlabs' && (
-              <View style={styles.radioGroup}>
-                {TTSService.ELEVENLABS_VOICES.map(v => (
-                  <TouchableOpacity
-                    key={v.id}
-                    style={styles.radioOption}
-                    onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}>
-                    <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
-                      {selectedVoiceId === v.id && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>{v.label}</Text>
-                      <Text style={styles.voiceDesc}>{v.desc}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            {ttsProvider === 'device' && (
-              <View style={styles.radioGroup}>
-                <TouchableOpacity
-                  style={styles.radioOption}
-                  onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
-                  <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
-                    {voiceGender === 'female' && <View style={styles.radioDot} />}
+            ) : (
+              <>
+                {ttsProvider === 'openai' && (
+                  <View style={styles.radioGroup}>
+                    {TTSService.OPENAI_VOICES.map(v => (
+                      <TouchableOpacity
+                        key={v.id}
+                        style={styles.radioOption}
+                        onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}>
+                        <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
+                          {selectedVoiceId === v.id && <View style={styles.radioDot} />}
+                        </View>
+                        <View>
+                          <Text style={styles.radioLabel}>{v.label}</Text>
+                          <Text style={styles.voiceDesc}>{v.desc}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
                   </View>
-                  <View>
-                    <Text style={styles.radioLabel}>Female Voice</Text>
-                    <Text style={styles.voiceDesc}>Higher pitch · Device TTS · OpenAI Shimmer / ElevenLabs George</Text>
+                )}
+                {ttsProvider === 'elevenlabs' && (
+                  <View style={styles.radioGroup}>
+                    {TTSService.ELEVENLABS_VOICES.map(v => (
+                      <TouchableOpacity
+                        key={v.id}
+                        style={styles.radioOption}
+                        onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}>
+                        <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
+                          {selectedVoiceId === v.id && <View style={styles.radioDot} />}
+                        </View>
+                        <View>
+                          <Text style={styles.radioLabel}>{v.label}</Text>
+                          <Text style={styles.voiceDesc}>{v.desc}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
                   </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.radioOption}
-                  onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
-                  <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
-                    {voiceGender === 'male' && <View style={styles.radioDot} />}
+                )}
+                {ttsProvider === 'device' && (
+                  <View style={styles.radioGroup}>
+                    <TouchableOpacity
+                      style={styles.radioOption}
+                      onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
+                      <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
+                        {voiceGender === 'female' && <View style={styles.radioDot} />}
+                      </View>
+                      <View>
+                        <Text style={styles.radioLabel}>Female Voice</Text>
+                        <Text style={styles.voiceDesc}>Higher pitch · Device TTS · OpenAI Shimmer / ElevenLabs George</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.radioOption}
+                      onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
+                      <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
+                        {voiceGender === 'male' && <View style={styles.radioDot} />}
+                      </View>
+                      <View>
+                        <Text style={styles.radioLabel}>Male Voice</Text>
+                        <Text style={styles.voiceDesc}>Lower pitch · Device TTS · George (ElevenLabs) for Indian/Arabic</Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
-                  <View>
-                    <Text style={styles.radioLabel}>Male Voice</Text>
-                    <Text style={styles.voiceDesc}>Lower pitch · Device TTS · George (ElevenLabs) for Indian/Arabic</Text>
+                )}
+                {ttsProvider === 'azure' && (
+                  <View style={styles.radioGroup}>
+                    <TouchableOpacity
+                      style={styles.radioOption}
+                      onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
+                      <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
+                        {voiceGender === 'female' && <View style={styles.radioDot} />}
+                      </View>
+                      <View>
+                        <Text style={styles.radioLabel}>Female Voice</Text>
+                        <Text style={styles.voiceDesc}>Sobhana · Native Malayalam neural voice</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.radioOption}
+                      onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
+                      <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
+                        {voiceGender === 'male' && <View style={styles.radioDot} />}
+                      </View>
+                      <View>
+                        <Text style={styles.radioLabel}>Male Voice</Text>
+                        <Text style={styles.voiceDesc}>Midhun · Native Malayalam neural voice</Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
-              </View>
-            )}
-            {ttsProvider === 'azure' && (
-              <View style={styles.radioGroup}>
-                <TouchableOpacity
-                  style={styles.radioOption}
-                  onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
-                  <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
-                    {voiceGender === 'female' && <View style={styles.radioDot} />}
-                  </View>
-                  <View>
-                    <Text style={styles.radioLabel}>Female Voice</Text>
-                    <Text style={styles.voiceDesc}>Sobhana · Native Malayalam neural voice</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.radioOption}
-                  onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
-                  <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
-                    {voiceGender === 'male' && <View style={styles.radioDot} />}
-                  </View>
-                  <View>
-                    <Text style={styles.radioLabel}>Male Voice</Text>
-                    <Text style={styles.voiceDesc}>Midhun · Native Malayalam neural voice</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
+                )}
+              </>
             )}
 
             <View style={styles.switchRow}>
@@ -372,15 +614,15 @@ export default function SettingsScreen() {
               <Switch
                 value={conversationModeDefault}
                 onValueChange={setConversationModeDefault}
-                trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
-                thumbColor={conversationModeDefault ? '#2563eb' : '#f4f3f4'}
+                trackColor={{ false: t.cardBorderStrong, true: t.personBBorder }}
+                thumbColor={conversationModeDefault ? t.personB : t.textFaint}
               />
             </View>
 
             <TouchableOpacity
               style={styles.saveButton}
               onPress={handleSaveSettings}>
-              <Save size={20} color="#ffffff" />
+              <Save size={20} color={t.bg} />
               <Text style={styles.saveButtonText}>Save Preferences</Text>
             </TouchableOpacity>
           </View>
@@ -388,22 +630,40 @@ export default function SettingsScreen() {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>Voice Cloning</Text>
             <Text style={styles.sectionDescription}>
-              {isUserView
+              {currentPlan !== 'live'
+                ? 'Available on the Live plan — hear translations spoken in your own voice.'
+                : isUserView
                 ? 'Record your voice to personalize translations.'
                 : 'Clone your voice so translations sound like you. Record 30-60 seconds of clear speech. Works with ElevenLabs TTS.'}
             </Text>
 
-            {settings?.custom_voice_id ? (
+            {currentPlan !== 'live' && !settings?.custom_voice_id ? (
+              <TouchableOpacity
+                style={[styles.secondaryButton, styles.upgradeButton]}
+                disabled={subscribingPlan !== null}
+                onPress={() => handleSubscribe('live')}>
+                {subscribingPlan === 'live' ? (
+                  <ActivityIndicator size="small" color={t.personB} />
+                ) : (
+                  <>
+                    <Zap size={18} color={t.personB} />
+                    <Text style={[styles.secondaryButtonText, { color: t.personB }]}>
+                      Upgrade to {PLAN_INFO.live.label} — {PAID_PLAN_PRICE.live}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : settings?.custom_voice_id ? (
               <View>
-                <View style={[styles.voiceStatus, { backgroundColor: '#ecfdf5' }]}>
-                  <Text style={[styles.voiceStatusText, { color: '#059669' }]}>
+                <View style={[styles.voiceStatus, { backgroundColor: t.personBBg }]}>
+                  <Text style={[styles.voiceStatusText, { color: t.success }]}>
                     {isUserView ? 'Custom voice active ✓' : 'Custom voice active'}
                   </Text>
                 </View>
                 <TouchableOpacity
                   style={[styles.secondaryButton, { marginTop: 12 }]}
                   onPress={handleRemoveCustomVoice}>
-                  <Trash2 size={18} color="#ef4444" />
+                  <Trash2 size={18} color={t.danger} />
                   <Text style={styles.secondaryButtonText}>
                     {isUserView ? 'Reset to Default Voice' : 'Remove Custom Voice'}
                   </Text>
@@ -411,7 +671,7 @@ export default function SettingsScreen() {
               </View>
             ) : isCloningVoice ? (
               <View style={styles.cloningContainer}>
-                <ActivityIndicator size="large" color="#2563eb" />
+                <ActivityIndicator size="large" color={t.personB} />
                 <Text style={styles.cloningText}>
                   {isUserView ? 'Applying your voice...' : 'Cloning your voice...'}
                 </Text>
@@ -419,17 +679,17 @@ export default function SettingsScreen() {
               </View>
             ) : isRecordingVoice ? (
               <View>
-                <View style={[styles.voiceStatus, { backgroundColor: '#fef2f2' }]}>
-                  <Text style={[styles.voiceStatusText, { color: '#dc2626' }]}>
+                <View style={[styles.voiceStatus, { backgroundColor: 'rgba(252,165,165,0.14)' }]}>
+                  <Text style={[styles.voiceStatusText, { color: t.danger }]}>
                     {isUserView
                       ? `Recording... ${recordingSeconds}s`
                       : `Recording... ${recordingSeconds}s / 60s`}
                   </Text>
                 </View>
                 <TouchableOpacity
-                  style={[styles.primaryButton, { backgroundColor: '#dc2626', marginTop: 12 }]}
+                  style={[styles.primaryButton, { backgroundColor: t.recordGradient[0], marginTop: 12 }]}
                   onPress={handleStopVoiceRecording}>
-                  <Mic size={20} color="#ffffff" />
+                  <Mic size={20} color={t.text} />
                   <Text style={styles.primaryButtonText}>
                     {isUserView
                       ? 'Stop & Apply Voice'
@@ -439,9 +699,9 @@ export default function SettingsScreen() {
               </View>
             ) : (
               <TouchableOpacity
-                style={[styles.primaryButton, { backgroundColor: '#7c3aed' }]}
+                style={[styles.primaryButton, { backgroundColor: t.personA }]}
                 onPress={handleStartVoiceRecording}>
-                <Mic size={20} color="#ffffff" />
+                <Mic size={20} color={t.text} />
                 <Text style={styles.primaryButtonText}>
                   {isUserView ? 'Record & Apply My Voice' : 'Record My Voice'}
                 </Text>
@@ -449,8 +709,23 @@ export default function SettingsScreen() {
             )}
           </View>
 
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Diagnostics</Text>
+            <Text style={styles.sectionDescription}>
+              If a translation or conversation-mode issue happens, share this log right after —
+              it captures what actually happened on this device (stage-by-stage), which is far more
+              useful than a description of the symptom.
+            </Text>
+            <TouchableOpacity
+              style={[styles.secondaryButton, { borderColor: t.cardBorderStrong }]}
+              onPress={handleShareDiagnostics}>
+              <Bug size={18} color={t.textMuted} />
+              <Text style={[styles.secondaryButtonText, { color: t.textMuted }]}>Share Diagnostics</Text>
+            </TouchableOpacity>
+          </View>
+
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Realtime Modern AI Translator</Text>
+        <Text style={styles.footerText}>OneLingo</Text>
         <Text style={styles.footerSubtext}>Powered by OpenAI & Advanced TTS</Text>
         {/* versionCode/versionName never change between builds — this is the only
             way to tell whether an installed APK is actually the latest build. */}
@@ -465,7 +740,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: t.bg,
   },
   contentContainer: {
     padding: 20,
@@ -478,44 +753,41 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#111827',
+    color: t.text,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#6b7280',
+    color: t.textMuted,
   },
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: t.card,
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#111827',
+    color: t.text,
     marginBottom: 8,
   },
   sectionDescription: {
     fontSize: 14,
-    color: '#6b7280',
+    color: t.textMuted,
     marginBottom: 16,
   },
   userEmail: {
     fontSize: 16,
-    color: '#374151',
+    color: t.textMuted,
     marginBottom: 16,
   },
   secondaryButton: {
-    backgroundColor: '#ffffff',
+    backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: '#ef4444',
+    borderColor: t.danger,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -524,14 +796,36 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   secondaryButtonText: {
-    color: '#ef4444',
+    color: t.danger,
     fontSize: 16,
     fontWeight: '600',
+  },
+  planBadgeRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  planBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: t.personBBg,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+  },
+  planBadgeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: t.personB,
+  },
+  upgradeButton: {
+    borderColor: t.personBBorder,
+    marginTop: 12,
   },
   inputLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#374151',
+    color: t.textMuted,
     marginBottom: 8,
     marginTop: 8,
   },
@@ -552,51 +846,53 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   radioRowSelected: {
-    backgroundColor: '#eef2ff',
+    backgroundColor: t.personBBg,
   },
   radioOption: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    backgroundColor: '#f9fafb',
+    backgroundColor: t.bgElevated,
     borderRadius: 8,
     gap: 12,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
   },
   radio: {
     width: 20,
     height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    borderColor: '#d1d5db',
+    borderColor: t.cardBorderStrong,
     justifyContent: 'center',
     alignItems: 'center',
   },
   radioSelected: {
-    borderColor: '#2563eb',
+    borderColor: t.personB,
   },
   radioDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#2563eb',
+    backgroundColor: t.personB,
   },
   radioLabel: {
     fontSize: 16,
-    color: '#374151',
+    color: t.text,
   },
   voiceDesc: {
     fontSize: 12,
-    color: '#6b7280',
+    color: t.textFaint,
     marginTop: 1,
   },
   voiceHint: {
     fontSize: 13,
-    color: '#6b7280',
+    color: t.textMuted,
     marginBottom: 12,
     fontStyle: 'italic',
   },
   primaryButton: {
-    backgroundColor: '#2563eb',
+    backgroundColor: t.personB,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -605,12 +901,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   primaryButtonText: {
-    color: '#ffffff',
+    color: t.text,
     fontSize: 16,
     fontWeight: '600',
   },
   saveButton: {
-    backgroundColor: '#2563eb',
+    backgroundColor: t.personB,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -620,7 +916,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   saveButtonText: {
-    color: '#ffffff',
+    color: t.bg,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -633,11 +929,11 @@ const styles = StyleSheet.create({
   switchLabel: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#111827',
+    color: t.text,
   },
   switchDescription: {
     fontSize: 14,
-    color: '#6b7280',
+    color: t.textMuted,
     marginTop: 4,
   },
   voiceStatus: {
@@ -657,11 +953,11 @@ const styles = StyleSheet.create({
   cloningText: {
     fontSize: 16,
     fontWeight: '600' as const,
-    color: '#2563eb',
+    color: t.personB,
   },
   cloningSubtext: {
     fontSize: 14,
-    color: '#6b7280',
+    color: t.textMuted,
   },
   footer: {
     marginTop: 40,
@@ -671,11 +967,11 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#374151',
+    color: t.textMuted,
   },
   footerSubtext: {
     fontSize: 12,
-    color: '#9ca3af',
+    color: t.textFaint,
     marginTop: 4,
   },
 });

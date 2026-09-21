@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { ChevronDown } from 'lucide-react-native';
+import { canvasTheme as t } from '@/lib/canvasTheme';
 
 export interface CountryCode {
   dialCode: string;
@@ -44,7 +45,7 @@ export const CountryCodeSelector: React.FC<CountryCodeSelectorProps> = ({
     <View>
       <TouchableOpacity style={styles.selector} onPress={() => setModalVisible(true)}>
         <Text style={styles.selectedText}>{selected.flag} {selected.dialCode}</Text>
-        <ChevronDown size={18} color="#6b7280" />
+        <ChevronDown size={18} color={t.textMuted} />
       </TouchableOpacity>
 
       <Modal
@@ -89,9 +90,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: t.bgElevated,
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: t.cardBorder,
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 14,
@@ -99,16 +100,16 @@ const styles = StyleSheet.create({
   },
   selectedText: {
     fontSize: 16,
-    color: '#111827',
+    color: t.text,
     marginRight: 6,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#ffffff',
+    backgroundColor: t.bgElevated,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     height: 500,
@@ -120,17 +121,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: t.cardBorder,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#111827',
+    color: t.text,
   },
   doneButton: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2563eb',
+    color: t.personB,
   },
   item: {
     flexDirection: 'row',
@@ -138,18 +139,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomColor: t.cardBorder,
   },
   itemSelected: {
-    backgroundColor: '#eff6ff',
+    backgroundColor: t.personBBg,
   },
   itemText: {
     fontSize: 16,
-    color: '#111827',
+    color: t.text,
   },
   itemDialCode: {
     fontSize: 16,
-    color: '#6b7280',
+    color: t.textMuted,
     fontWeight: '600',
   },
 });

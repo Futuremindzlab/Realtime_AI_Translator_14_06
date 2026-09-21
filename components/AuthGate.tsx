@@ -7,10 +7,13 @@ import {
   ScrollView,
   TextInput,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { LogIn } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { CountryCodeSelector } from '@/components/CountryCodeSelector';
+import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
+import { canvasTheme as t } from '@/lib/canvasTheme';
 
 /**
  * Blocks the whole app (every tab, not just Settings) behind sign-in.
@@ -27,11 +30,12 @@ import { CountryCodeSelector } from '@/components/CountryCodeSelector';
  */
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const {
-    user, loading,
+    user, settings, loading,
     signIn, signUp, confirmSignUp, signInWithPhone, confirmOtpCode, cancelPhoneVerification,
     completeNewPassword,
     needsNewPassword, needsConfirmation, pendingEmail, needsOtpVerification, pendingPhone,
     needsForgotPasswordCode, pendingForgotPasswordEmail, forgotPassword, confirmForgotPassword, cancelForgotPassword,
+    updateSettings, refreshSettings,
   } = useAuth();
 
   const [email, setEmail] = useState('');
@@ -55,16 +59,52 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   const [authError, setAuthError] = useState<string | null>(null);
 
+  // First-run brand moment shown once, before the sign-in form — dismissed
+  // by "Get Started" and never shown again for the rest of this mount (the
+  // sign-in card below is otherwise identical to before this was added).
+  const [showWelcome, setShowWelcome] = useState(true);
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2563eb" />
+        <ActivityIndicator size="large" color={t.personB} />
       </View>
     );
   }
 
   if (user) {
+    // `loading` (checked above) only flips false once loadUserSettings has
+    // resolved — settings is always set (to real data or OFFLINE_SETTINGS)
+    // by then in practice, but a defensive spinner beats flashing children
+    // for a frame in the unlikely event it's still null here.
+    if (!settings) {
+      return (
+        <View style={styles.darkLoadingContainer}>
+          <ActivityIndicator size="large" color={t.personB} />
+        </View>
+      );
+    }
+    if (!settings.onboarding_completed) {
+      return <OnboardingFlow updateSettings={updateSettings} refreshSettings={refreshSettings} />;
+    }
     return <>{children}</>;
+  }
+
+  if (showWelcome) {
+    return (
+      <View style={styles.welcomeContainer}>
+        <Image
+          source={require('@/assets/images/logo_mark.png')}
+          style={styles.welcomeLogo}
+          resizeMode="contain"
+        />
+        <Text style={styles.welcomeTitle}>OneLingo</Text>
+        <Text style={styles.welcomeTagline}>UNLIMIT YOUR VOICE</Text>
+        <TouchableOpacity style={styles.welcomeButton} onPress={() => setShowWelcome(false)}>
+          <Text style={styles.primaryButtonText}>Get Started</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
   const handleAuth = async () => {
@@ -237,7 +277,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       keyboardShouldPersistTaps="handled"
     >
       <View style={styles.header}>
-        <Text style={styles.title}>AI Translator</Text>
+        <Text style={styles.title}>OneLingo</Text>
         <Text style={styles.subtitle}>Sign in to start translating</Text>
       </View>
 
@@ -250,6 +290,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
           <TextInput
             style={styles.input}
+            placeholderTextColor={t.textFaint}
             placeholder="New Password"
             value={newPassword}
             onChangeText={setNewPassword}
@@ -258,6 +299,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
           <TextInput
             style={styles.input}
+            placeholderTextColor={t.textFaint}
             placeholder="Confirm New Password"
             value={confirmNewPassword}
             onChangeText={setConfirmNewPassword}
@@ -270,7 +312,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             onPress={handleNewPassword}
             disabled={authLoading}>
             {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
+              <ActivityIndicator size="small" color={t.bg} />
             ) : (
               <Text style={styles.primaryButtonText}>Set Password & Sign In</Text>
             )}
@@ -285,6 +327,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
           <TextInput
             style={styles.input}
+            placeholderTextColor={t.textFaint}
             placeholder="Verification Code"
             value={confirmationCode}
             onChangeText={setConfirmationCode}
@@ -298,7 +341,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             onPress={handleConfirmSignUp}
             disabled={authLoading}>
             {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
+              <ActivityIndicator size="small" color={t.bg} />
             ) : (
               <Text style={styles.primaryButtonText}>Verify & Continue</Text>
             )}
@@ -313,6 +356,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
           <TextInput
             style={styles.input}
+            placeholderTextColor={t.textFaint}
             placeholder="6-digit code"
             value={otpCode}
             onChangeText={setOtpCode}
@@ -326,7 +370,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             onPress={handleVerifyOtp}
             disabled={authLoading}>
             {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
+              <ActivityIndicator size="small" color={t.bg} />
             ) : (
               <Text style={styles.primaryButtonText}>Verify & Continue</Text>
             )}
@@ -347,6 +391,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           <Text style={styles.fieldGroupLabel}>Verification code from email</Text>
           <TextInput
             style={styles.input}
+            placeholderTextColor={t.textFaint}
             placeholder="6-digit code"
             value={resetCode}
             onChangeText={setResetCode}
@@ -358,6 +403,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           <Text style={styles.fieldGroupLabel}>Choose a new password</Text>
           <TextInput
             style={styles.input}
+            placeholderTextColor={t.textFaint}
             placeholder="New password"
             value={newResetPassword}
             onChangeText={setNewResetPassword}
@@ -365,6 +411,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           />
           <TextInput
             style={styles.input}
+            placeholderTextColor={t.textFaint}
             placeholder="Confirm new password"
             value={confirmResetPassword}
             onChangeText={setConfirmResetPassword}
@@ -380,7 +427,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             onPress={handleConfirmResetPassword}
             disabled={authLoading}>
             {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
+              <ActivityIndicator size="small" color={t.bg} />
             ) : (
               <Text style={styles.primaryButtonText}>Reset Password</Text>
             )}
@@ -399,6 +446,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
           <TextInput
             style={styles.input}
+            placeholderTextColor={t.textFaint}
             placeholder="Email"
             value={forgotPasswordEmail}
             onChangeText={setForgotPasswordEmail}
@@ -412,7 +460,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             onPress={handleSendResetCode}
             disabled={authLoading}>
             {authLoading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
+              <ActivityIndicator size="small" color={t.bg} />
             ) : (
               <Text style={styles.primaryButtonText}>Send Reset Code</Text>
             )}
@@ -435,6 +483,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             <>
               <TextInput
                 style={styles.input}
+            placeholderTextColor={t.textFaint}
                 placeholder="Email"
                 value={email}
                 onChangeText={setEmail}
@@ -444,6 +493,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
               <TextInput
                 style={styles.input}
+            placeholderTextColor={t.textFaint}
                 placeholder="Password"
                 value={password}
                 onChangeText={setPassword}
@@ -461,10 +511,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 onPress={handleAuth}
                 disabled={authLoading}>
                 {authLoading ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
+                  <ActivityIndicator size="small" color={t.bg} />
                 ) : (
                   <>
-                    <LogIn size={20} color="#ffffff" />
+                    <LogIn size={20} color={t.bg} />
                     <Text style={styles.primaryButtonText}>
                       {isLogin ? 'Sign In' : 'Sign Up'}
                     </Text>
@@ -491,6 +541,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 <CountryCodeSelector selectedDialCode={dialCode} onSelect={setDialCode} />
                 <TextInput
                   style={[styles.input, styles.phoneInput]}
+                  placeholderTextColor={t.textFaint}
                   placeholder="Phone number"
                   value={phoneNational}
                   onChangeText={setPhoneNational}
@@ -504,10 +555,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 onPress={handleSendOtp}
                 disabled={authLoading}>
                 {authLoading ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
+                  <ActivityIndicator size="small" color={t.bg} />
                 ) : (
                   <>
-                    <LogIn size={20} color="#ffffff" />
+                    <LogIn size={20} color={t.bg} />
                     <Text style={styles.primaryButtonText}>Send Code</Text>
                   </>
                 )}
@@ -529,7 +580,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: t.bg,
   },
   contentContainer: {
     flexGrow: 1,
@@ -540,7 +591,51 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: t.bg,
+  },
+  // Matches OnboardingFlow's dark background — used only for the brief
+  // user-but-no-settings-yet window right before OnboardingFlow renders, so
+  // there's no light-to-dark flash between this and it.
+  darkLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: t.bg,
+  },
+  welcomeContainer: {
+    flex: 1,
+    backgroundColor: t.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  welcomeLogo: {
+    width: 180,
+    height: 137,
+    marginBottom: 28,
+  },
+  welcomeTitle: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: t.text,
+    letterSpacing: -0.5,
+  },
+  welcomeTagline: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: t.personB,
+    letterSpacing: 3,
+    marginTop: 10,
+    marginBottom: 56,
+  },
+  welcomeButton: {
+    backgroundColor: t.personB,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 48,
+    borderRadius: 8,
+    width: '100%',
   },
   header: {
     marginBottom: 24,
@@ -549,38 +644,35 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#111827',
+    color: t.text,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#6b7280',
+    color: t.textMuted,
   },
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: t.card,
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
-    color: '#111827',
+    color: t.text,
     marginBottom: 8,
   },
   sectionDescription: {
     fontSize: 14,
-    color: '#6b7280',
+    color: t.textMuted,
     marginBottom: 16,
   },
   passwordHint: {
     fontSize: 12,
-    color: '#6b7280',
+    color: t.textMuted,
     marginBottom: 12,
     marginTop: -8,
     lineHeight: 18,
@@ -588,7 +680,7 @@ const styles = StyleSheet.create({
   fieldGroupLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#9ca3af',
+    color: t.textFaint,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 6,
@@ -596,24 +688,25 @@ const styles = StyleSheet.create({
   },
   authError: {
     fontSize: 13,
-    color: '#ef4444',
+    color: t.danger,
     marginBottom: 10,
     textAlign: 'center',
   },
   linkText: {
-    color: '#2563eb',
+    color: t.personB,
     fontSize: 14,
     textAlign: 'center',
     marginTop: 16,
   },
   input: {
-    backgroundColor: '#f9fafb',
+    backgroundColor: t.bgElevated,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: t.cardBorder,
     borderRadius: 8,
     padding: 12,
     marginBottom: 16,
     fontSize: 16,
+    color: t.text,
   },
   phoneRow: {
     flexDirection: 'row',
@@ -624,7 +717,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   primaryButton: {
-    backgroundColor: '#2563eb',
+    backgroundColor: t.personB,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -633,7 +726,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   primaryButtonText: {
-    color: '#ffffff',
+    color: t.bg,
     fontSize: 16,
     fontWeight: '600',
   },

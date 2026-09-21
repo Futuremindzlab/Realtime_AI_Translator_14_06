@@ -50,26 +50,56 @@ jobs:
 
       - name: SAM Deploy
         working-directory: backend
+        env:
+          USER_POOL_ID:            ${{ secrets.EXPO_PUBLIC_AWS_USER_POOL_ID }}
+          USER_POOL_CLIENT_ID:     ${{ secrets.EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID }}
+          OPENAI_API_KEY:          ${{ secrets.OPENAI_API_KEY }}
+          ELEVENLABS_API_KEY:      ${{ secrets.ELEVENLABS_API_KEY }}
+          AZURE_SPEECH_KEY:        ${{ secrets.AZURE_SPEECH_KEY }}
+          AZURE_SPEECH_REGION:     ${{ secrets.AZURE_SPEECH_REGION }}
+          RAZORPAY_KEY_ID:         ${{ secrets.RAZORPAY_KEY_ID }}
+          RAZORPAY_KEY_SECRET:     ${{ secrets.RAZORPAY_KEY_SECRET }}
+          RAZORPAY_WEBHOOK_SECRET: ${{ secrets.RAZORPAY_WEBHOOK_SECRET }}
+          RAZORPAY_PLAN_ID_PLUS:   ${{ secrets.RAZORPAY_PLAN_ID_PLUS }}
+          RAZORPAY_PLAN_ID_LIVE:   ${{ secrets.RAZORPAY_PLAN_ID_LIVE }}
+          CORS_ALLOWED_ORIGINS:    ${{ secrets.CORS_ALLOWED_ORIGINS }}
         run: |
+          # `sam deploy --parameter-overrides` rejects a bare `Key=` with an
+          # empty value ("... is not a valid format") — but several of these
+          # are intentionally optional in template.yaml (Default: "", meaning
+          # "leave blank to disable this feature": ElevenLabs, Azure TTS, and
+          # all 5 Razorpay params). Rather than fail the whole deploy whenever
+          # one of those happens to be unset, only add an override when the
+          # secret actually has a value; an omitted one falls through to the
+          # template's own "" default — exactly the "not configured" state
+          # the app code already checks for (e.g. billing.mjs's `if (!planId)`).
+          PARAMS=(
+            "Stage=${STAGE}"
+            "UserPoolId=${USER_POOL_ID}"
+            "UserPoolClientId=${USER_POOL_CLIENT_ID}"
+            "TranslationsTable=conversation_history"
+            "SettingsTable=user_settings"
+            "OpenAIApiKey=${OPENAI_API_KEY}"
+          )
+          [ -n "$ELEVENLABS_API_KEY" ]      && PARAMS+=("ElevenLabsApiKey=${ELEVENLABS_API_KEY}")
+          [ -n "$AZURE_SPEECH_KEY" ]        && PARAMS+=("AzureSpeechKey=${AZURE_SPEECH_KEY}")
+          [ -n "$AZURE_SPEECH_REGION" ]     && PARAMS+=("AzureSpeechRegion=${AZURE_SPEECH_REGION}")
+          [ -n "$RAZORPAY_KEY_ID" ]         && PARAMS+=("RazorpayKeyId=${RAZORPAY_KEY_ID}")
+          [ -n "$RAZORPAY_KEY_SECRET" ]     && PARAMS+=("RazorpayKeySecret=${RAZORPAY_KEY_SECRET}")
+          [ -n "$RAZORPAY_WEBHOOK_SECRET" ] && PARAMS+=("RazorpayWebhookSecret=${RAZORPAY_WEBHOOK_SECRET}")
+          [ -n "$RAZORPAY_PLAN_ID_PLUS" ]   && PARAMS+=("RazorpayPlanIdPlus=${RAZORPAY_PLAN_ID_PLUS}")
+          [ -n "$RAZORPAY_PLAN_ID_LIVE" ]   && PARAMS+=("RazorpayPlanIdLive=${RAZORPAY_PLAN_ID_LIVE}")
+          [ -n "$CORS_ALLOWED_ORIGINS" ]    && PARAMS+=("CorsAllowedOrigins=${CORS_ALLOWED_ORIGINS}")
+
           sam deploy \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --stack-name   ai-translator-stack \
             --resolve-s3 \
             --s3-prefix    ai-translator-stack \
-            --region       ${{ env.AWS_REGION }} \
+            --region       "${AWS_REGION}" \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
-            --parameter-overrides \
-              Stage=${{ env.STAGE }} \
-              UserPoolId=${{ secrets.EXPO_PUBLIC_AWS_USER_POOL_ID }} \
-              UserPoolClientId=${{ secrets.EXPO_PUBLIC_AWS_USER_POOL_CLIENT_ID }} \
-              TranslationsTable=conversation_history \
-              SettingsTable=user_settings \
-              OpenAIApiKey=${{ secrets.OPENAI_API_KEY }} \
-              ElevenLabsApiKey=${{ secrets.ELEVENLABS_API_KEY }} \
-              AzureSpeechKey=${{ secrets.AZURE_SPEECH_KEY }} \
-              AzureSpeechRegion=${{ secrets.AZURE_SPEECH_REGION }} \
-              CorsAllowedOrigins="${{ secrets.CORS_ALLOWED_ORIGINS }}"
+            --parameter-overrides "${PARAMS[@]}"
 
       - name: Print API base URL
         run: |

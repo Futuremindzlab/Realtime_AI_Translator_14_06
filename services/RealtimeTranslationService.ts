@@ -7,6 +7,8 @@ import { dynamoService } from './dynamoService';
 import { resolveLanguage, isCorrectScript, detectScriptLanguage } from '@/lib/constants';
 import { isNetworkError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
+import { withTimeout, TimeoutError } from '@/lib/withTimeout';
+import { isLikelyWhisperHallucination } from '@/lib/whisperHallucinations';
 
 // expo-file-system is native-only — audio history persistence is skipped on
 // web, where recording/TTS URIs are blob: URLs FileSystem can't read anyway.
@@ -311,7 +313,12 @@ export class RealtimeTranslationService {
       }
 
       const actualText = (typeof sourceText === 'string' ? sourceText : '').trim();
-      if (!actualText || actualText.length < 3) {
+      // Bug fix: "Engine sound", "[Music]" etc. showing up as if someone had
+      // said them — Whisper hallucinating a caption-style non-speech
+      // description on ambient noise/silence (see whisperHallucinations.ts
+      // for the full explanation). Treated identically to no speech at all,
+      // since that's what actually happened.
+      if (!actualText || actualText.length < 3 || isLikelyWhisperHallucination(actualText)) {
         this.updateProgress({ stage: 'error', error: 'No speech detected — please speak clearly and try again' });
         this.isActive = false;
         return;
@@ -463,7 +470,12 @@ export class RealtimeTranslationService {
   }
 
   stopConversation(): void {
-    console.log('🛑 CONVERSATION STOPPED by user');
+    console.log('🛑 CONVERSATION STOPPED');
+    // Diagnostic: this name says "by user" but it's also called from
+    // AppState's background handler (index.tsx) — the stack trace here
+    // distinguishes an actual user tap from a spurious background-triggered
+    // stop, which was indistinguishable from the outside otherwise.
+    logger.warn('stopConversation() called', { stack: new Error().stack });
     this.isActive = false;
     this.autoContinueEnabled = false;
     // Stop any in-progress recording or playback immediately
@@ -521,8 +533,21 @@ export class RealtimeTranslationService {
         // - stops automatically after 2.5s of silence following at least 1.5s of speech
         // - hard-caps at this.silenceTimeoutMs regardless (feature: configurable timeout)
         // - returns null if forceCleanup() was called externally (e.g. stopConversation())
-        const audioUri = await audioService.startRecordingWithAutoStop(this.silenceTimeoutMs, -45, 2500, 1500);
+        //
+        // Wrapped in a hard ceiling: this call ultimately depends on a native audio
+        // module bridge call (Audio.Recording.createAsync) resolving. If that bridge
+        // call itself hangs — never resolves or rejects — everything downstream
+        // (the internal fallback timer included) never even gets armed, and this
+        // await would otherwise block forever with the UI stuck on "Listening…"
+        // and no way to recover. Only reachable on-device; web has no native bridge
+        // to hang on, which is why this class of failure never showed up there.
+        const audioUri = await withTimeout(
+          audioService.startRecordingWithAutoStop(this.silenceTimeoutMs, -45, 2500, 1500),
+          this.silenceTimeoutMs + 8000,
+          'Recording',
+        );
         console.log(`🎤 Recording: ${audioUri ? 'OK' : 'null'}`);
+        logger.info('Turn recording finished', { person, platform: Platform.OS, hasAudio: !!audioUri });
 
         if (!this.isActive || !this.autoContinueEnabled) break;
 
@@ -545,7 +570,16 @@ export class RealtimeTranslationService {
         }
 
         // ── STEP 2: PROCESS (transcribe → translate → TTS → play) ──
-        const { success, reason } = await this.processConversationTurn(audioUri);
+        // Same hard-ceiling reasoning as the recording step above — transcribe/TTS/
+        // playback each ultimately touch a native bridge (file read, Audio.Sound)
+        // or a network call already covered by NetworkError, but a generous outer
+        // bound catches anything else that could otherwise hang indefinitely.
+        const { success, reason } = await withTimeout(
+          this.processConversationTurn(audioUri),
+          45_000,
+          'Turn processing',
+        );
+        logger.info('Turn processed', { person, success, reason, platform: Platform.OS });
 
         if (!this.isActive || !this.autoContinueEnabled) break;
 
@@ -587,43 +621,61 @@ export class RealtimeTranslationService {
         await new Promise(r => setTimeout(r, 1800));
 
       } catch (error) {
-        // Bug fix: a fetch-level failure (offline, DNS, CORS, backend unreachable)
-        // used to fall through to the generic retry path below, which `continue`s
-        // the while loop and immediately re-enters `stage: 'recording'` — i.e. the
-        // UI silently went back into "Listening" right after saying the request
-        // failed. A dead network won't recover a moment later, so treat it as
-        // terminal: log it, surface a clear non-retryable message, and stop.
-        if (isNetworkError(error)) {
-          logger.error('Conversation turn aborted — network unreachable', error, { person });
-          await audioService.forceCleanup().catch(() => {});
-          this.updateProgress({
-            stage: 'error',
-            error: 'Connection lost — check your internet connection and restart.',
-            isRealtime: true,
-          });
-          break; // do NOT continue the loop / do NOT re-enter Listening mode
-        }
-
+        // Bug fix (original report): a fetch-level failure (offline, DNS, CORS,
+        // backend unreachable) used to fall through to the generic retry path,
+        // which `continue`s the while loop and immediately re-enters
+        // `stage: 'recording'` — i.e. the UI silently went back into "Listening"
+        // right after saying the request had failed, with no bound on how long
+        // that could keep happening.
+        //
+        // First attempt at this fix made NetworkError terminal on the very first
+        // occurrence (immediate `break`). That is correct for a truly dead
+        // connection, but on a real mobile device (APK) a "Network request
+        // failed" is often just a momentary radio/Wi-Fi-handoff blip — far more
+        // common than on a wired web dev machine — and hard-stopping the whole
+        // conversation on the first blip made conversation mode effectively
+        // unusable on-device even though the connection recovered a second later.
+        // Correct behavior: still bounded (never loops forever, never silently
+        // re-enters Listening without explanation), but network failures now get
+        // the same bounded-retry-with-backoff treatment as any other soft error —
+        // they're just logged and messaged distinctly so a real outage is still
+        // easy to tell apart from a translation/transcription bug in the logs.
+        const networkFailure = isNetworkError(error);
+        const timedOut = error instanceof TimeoutError;
         consecutiveErrors++;
-        logger.error('Conversation turn failed', error, { person, attempt: consecutiveErrors, maxAttempts: MAX_ERRORS });
+        logger.error(
+          networkFailure ? 'Conversation turn failed — network unreachable'
+            : timedOut ? 'Conversation turn failed — hung and hit the safety timeout'
+            : 'Conversation turn failed',
+          error,
+          { person, attempt: consecutiveErrors, maxAttempts: MAX_ERRORS, networkFailure, timedOut }
+        );
         // Ensure we clean up any leftover audio state
         await audioService.forceCleanup().catch(() => {});
 
-        const errorMessage = error instanceof Error ? error.message : 'Conversation failed.';
+        const errorMessage = networkFailure
+          ? 'Connection issue — check your internet connection.'
+          : timedOut
+          ? 'That took too long and was stopped.'
+          : (error instanceof Error ? error.message : 'Conversation failed.');
+
         if (consecutiveErrors >= MAX_ERRORS) {
           this.updateProgress({
             stage: 'error',
-            error: errorMessage,
+            error: (networkFailure || timedOut) ? `${errorMessage} Please restart.` : errorMessage,
             isRealtime: true,
           });
-          break;
+          break; // bound reached — stop, do not re-enter Listening mode
         }
         this.updateProgress({
           stage: 'error',
           error: `${errorMessage} — retrying (${consecutiveErrors}/${MAX_ERRORS})…`,
           isRealtime: true,
         });
-        await new Promise(r => setTimeout(r, 1800));
+        // Back off longer for network failures and timeouts — retrying an
+        // unreachable host or a still-recovering native bridge instantly just
+        // repeats the same failure; give it a moment before the next attempt.
+        await new Promise(r => setTimeout(r, (networkFailure || timedOut) ? 3000 : 1800));
       }
     }
 
@@ -655,10 +707,18 @@ export class RealtimeTranslationService {
     const detectedLanguage = this.resolveDetectedLanguage(rawDetected, actualText);
 
     console.log(`📝 Transcribed: "${actualText.substring(0, 80)}" | Detected: ${detectedLanguage}`);
+    logger.info('Transcribe stage complete', { textLength: actualText.length, detectedLanguage, platform: Platform.OS });
 
-    // Skip if no valid speech
-    if (!actualText || actualText.length < 3) {
-      console.log('⚠️ No valid speech, will retry');
+    // Skip if no valid speech. Also catches Whisper hallucinating a
+    // caption-style non-speech description ("Engine sound", "[Music]", …)
+    // on ambient noise picked up while a person is just listening — this is
+    // the root cause behind conversation mode occasionally "saying" things
+    // nobody said, most visible right after a Person A↔B handover since
+    // that's exactly when the mic is open with nobody talking yet (see
+    // lib/whisperHallucinations.ts). Same handling as true silence: the
+    // caller hands control to the other person instead of retrying.
+    if (!actualText || actualText.length < 3 || isLikelyWhisperHallucination(actualText)) {
+      console.log(`⚠️ No valid speech (or Whisper hallucination: "${actualText}"), will retry`);
       return { success: false, reason: 'No speech detected' };
     }
 
@@ -710,11 +770,14 @@ export class RealtimeTranslationService {
     this.logDuration('translate', translateStartedAt);
 
     if (!translatedText.trim()) {
-      console.error('❌ Empty translation result');
+      logger.error('Empty translation result', undefined, {
+        sourceLanguage: this.currentSourceLanguage, targetLanguage: this.currentTargetLanguage, platform: Platform.OS,
+      });
       return { success: false, reason: 'Translation failed' };
     }
 
     console.log(`✅ Translated: "${translatedText.substring(0, 80)}"`);
+    logger.info('Translate stage complete', { translatedLength: translatedText.length, platform: Platform.OS });
 
     // ── 3. GENERATE TTS ──
     this.updateProgress({
@@ -730,6 +793,7 @@ export class RealtimeTranslationService {
     );
     this.logDuration('tts_generate', ttsStartedAt);
     console.log(`✅ TTS generated`);
+    logger.info('TTS stage complete', { provider: this.currentTtsProvider, hasAudioUri: !!ttsUri, platform: Platform.OS });
 
     // ── 4. PLAY AUDIO (MUST complete before next turn) ──
     // Recording is already stopped (stopRecording was called in conversationLoop).
@@ -749,7 +813,11 @@ export class RealtimeTranslationService {
         this.logDuration('playback', playStartedAt);
         console.log('✅ Audio playback complete');
       } catch (playError) {
-        console.error('❌ Audio playback failed (translation was successful):', playError);
+        // Not fatal to the turn (translation already succeeded), but a silent
+        // playback failure — heard as "nothing happened" — is otherwise
+        // indistinguishable from every other stage succeeding, so log it
+        // distinctly rather than only console.error (invisible on-device).
+        logger.error('Audio playback failed (translation succeeded)', playError, { platform: Platform.OS, ttsProvider: this.currentTtsProvider });
       }
     }
 

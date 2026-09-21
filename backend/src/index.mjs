@@ -17,11 +17,18 @@
  *   DELETE /v1/translations/{timestamp}               deleteTranslation
  *   PATCH  /v1/translations/{timestamp}/favorite      toggleFavorite
  *
+ * Account
+ *   DELETE /v1/account                                 deleteAccount
+ *
  * Settings
  *   GET    /v1/settings                               getSettings
  *   PUT    /v1/settings                               putSettings
  *   PATCH  /v1/settings                               patchSettings
  *   DELETE /v1/settings                               resetSettings
+ *
+ * Trial usage (7-day free trial for 'basic'-plan users — see trialLimits.mjs)
+ *   GET    /v1/usage/trial                            getTrialStatus (read-only)
+ *   POST   /v1/usage/trial/consume                    consumeTrial
  *
  * Health
  *   GET    /v1/health                                 health check
@@ -38,9 +45,19 @@
  *   GET    /v1/admin/user-analytics                    getUserAnalytics
  *   GET    /v1/admin/dashboard-metrics                  getDashboardMetrics
  *   GET    /v1/admin/infra-metrics                      getInfraMetrics
+ *   GET    /v1/admin/payments                           getPaymentsOverview
+ *   GET    /v1/admin/subscriptions                       getSubscriptionsOverview
+ *   PATCH  /v1/admin/set-plan                           adminSetPlan (no billing yet — dev/testing only)
  *
  * Auth (unauthenticated — no token exists yet)
  *   POST   /v1/auth/phone/request-otp                 requestPhoneOtp
+ *
+ * Billing / Razorpay recurring subscriptions
+ *   POST   /v1/billing/razorpay/create-subscription    createSubscription
+ *   POST   /v1/billing/razorpay/verify                 verifySubscriptionPayment
+ *   POST   /v1/billing/razorpay/cancel                 cancelSubscription
+ *   POST   /v1/billing/razorpay/webhook                 handleWebhook (unauthenticated — Razorpay calls this directly)
+ *   GET    /v1/billing/history                          getMyBillingHistory (caller's own payments only)
  */
 
 import {
@@ -63,13 +80,26 @@ import {
   putSettings,
   patchSettings,
   resetSettings,
+  adminSetPlan,
 } from './handlers/settings.mjs';
 
 import { requestPhoneOtp } from './handlers/phoneAuth.mjs';
+import { deleteAccount } from './handlers/account.mjs';
+import { getTrialStatus, consumeTrial } from './handlers/trial.mjs';
+
+import {
+  createSubscription,
+  verifySubscriptionPayment,
+  cancelSubscription,
+  getMyBillingHistory,
+  handleWebhook as handleRazorpayWebhook,
+} from './handlers/billing.mjs';
 
 import { getUserAnalytics } from './handlers/adminAnalytics.mjs';
 import { getDashboardMetrics } from './handlers/dashboardMetrics.mjs';
 import { getInfraMetrics } from './handlers/infraMetrics.mjs';
+import { getPaymentsOverview } from './handlers/adminPayments.mjs';
+import { getSubscriptionsOverview } from './handlers/adminSubscriptions.mjs';
 import { recordRouteRequest } from './lib/routeMetrics.mjs';
 
 import {
@@ -117,6 +147,19 @@ export const handler = async (event) => {
     return requestPhoneOtp(event);
   }
 
+  // ── Razorpay webhook (unauthenticated — Razorpay's servers call this
+  // directly, there's no Cognito token; see template.yaml's explicit
+  // Auth: NONE override for this exact path, same pattern as phone-otp above) ──
+  if (method === 'POST' && path === '/v1/billing/razorpay/webhook') {
+    return handleRazorpayWebhook(event);
+  }
+
+  // ── Billing / Razorpay (authenticated) ─────────────────
+  if (method === 'POST' && path === '/v1/billing/razorpay/create-subscription') return createSubscription(event);
+  if (method === 'POST' && path === '/v1/billing/razorpay/verify')              return verifySubscriptionPayment(event);
+  if (method === 'POST' && path === '/v1/billing/razorpay/cancel')              return cancelSubscription(event);
+  if (method === 'GET'  && path === '/v1/billing/history')                      return getMyBillingHistory(event);
+
   // ── AI provider proxy ───────────────────────────────────
   if (method === 'POST' && path === '/v1/proxy/openai/chat')           return proxyOpenAIChat(event);
   if (method === 'POST' && path === '/v1/proxy/openai/tts')            return proxyOpenAITts(event);
@@ -129,6 +172,16 @@ export const handler = async (event) => {
   if (method === 'GET' && path === '/v1/admin/user-analytics')    return getUserAnalytics(event);
   if (method === 'GET' && path === '/v1/admin/dashboard-metrics') return getDashboardMetrics(event);
   if (method === 'GET' && path === '/v1/admin/infra-metrics')     return getInfraMetrics(event);
+  if (method === 'GET' && path === '/v1/admin/payments')          return getPaymentsOverview(event);
+  if (method === 'GET' && path === '/v1/admin/subscriptions')     return getSubscriptionsOverview(event);
+  if (method === 'PATCH' && path === '/v1/admin/set-plan')        return adminSetPlan(event);
+
+  // ── Account (required by app-store review policy for account deletion) ──
+  if (method === 'DELETE' && path === '/v1/account') return deleteAccount(event);
+
+  // ── Trial usage (7-day free trial gate) ────────────────
+  if (method === 'GET'  && path === '/v1/usage/trial')         return getTrialStatus(event);
+  if (method === 'POST' && path === '/v1/usage/trial/consume') return consumeTrial(event);
 
   // ── Settings ──────────────────────────────────────────
   if (path === '/v1/settings') {

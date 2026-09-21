@@ -12,7 +12,7 @@
  *   EXPO_PUBLIC_API_BASE_URL=https://<api-id>.execute-api.<region>.amazonaws.com/prod
  */
 
-import { UserSettings, ConversationHistory } from '@/types';
+import { UserSettings, ConversationHistory, TrialStatus, TrialConsumeResult } from '@/types';
 import { NetworkError, isNetworkError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 
@@ -150,6 +150,81 @@ class DynamoService {
       console.error('❌ updateUserSettings error:', error);
       return null;
     }
+  }
+
+
+  // ── BILLING / RAZORPAY ──────────────────────────────────────────────────────
+  // Real purchase flow for 'plus'/'live' — see services/billingService.ts for
+  // the RazorpayCheckout wrapper that ties these two calls together with the
+  // native SDK. Errors are rethrown (not swallowed to null like most methods
+  // above) so billingService can distinguish "network/server error" from
+  // "user cancelled the checkout" and surface each correctly.
+
+  /** Creates a Razorpay subscription for the given plan and returns what
+   *  Checkout needs to open (subscription_id + the public key_id). */
+  async createRazorpaySubscription(plan: 'plus' | 'live'): Promise<{ subscription_id: string; key_id: string; plan: string }> {
+    return this.request('/v1/billing/razorpay/create-subscription', {
+      method: 'POST',
+      body:   JSON.stringify({ plan }),
+    });
+  }
+
+  /** Verifies a just-completed Checkout payment and applies the plan server-side.
+   *  This is a fast in-app confirmation only — the Razorpay webhook (handled
+   *  entirely server-side) is the durable source of truth for renewals and
+   *  cancellations, which this call is never involved in. */
+  async verifyRazorpayPayment(payload: {
+    razorpay_payment_id: string;
+    razorpay_subscription_id: string;
+    razorpay_signature: string;
+  }): Promise<UserSettings> {
+    return this.request('/v1/billing/razorpay/verify', {
+      method: 'POST',
+      body:   JSON.stringify(payload),
+    });
+  }
+
+  /** Cancels at the end of the current billing cycle — access continues
+   *  through what's already been paid for; the actual downgrade happens when
+   *  the webhook's subscription.cancelled event lands at cycle end. */
+  async cancelRazorpaySubscription(): Promise<UserSettings> {
+    return this.request('/v1/billing/razorpay/cancel', { method: 'POST' });
+  }
+
+  // ── TRIAL USAGE (7-day free trial — see backend/src/lib/trialLimits.mjs) ──
+
+  /** Read-only trial status (used/remaining/days left) for the "N/10
+   *  translations · N days left" banner — never starts the trial clock. */
+  async getTrialStatus(): Promise<TrialStatus | null> {
+    try {
+      return await this.request<TrialStatus>('/v1/usage/trial');
+    } catch (error) {
+      console.error('❌ getTrialStatus error:', error);
+      return null;
+    }
+  }
+
+  /** Call right before actually starting a single translation or a
+   *  conversation session — not after — so a denial can stop the action
+   *  before it starts. Throws on network/server error (caller decides how to
+   *  treat that; a fail-open default is used in index.tsx so a transient
+   *  network blip never blocks a translation the trial would have allowed). */
+  async consumeTrialUsage(kind: 'translation' | 'conversation'): Promise<TrialConsumeResult> {
+    return this.request('/v1/usage/trial/consume', {
+      method: 'POST',
+      body:   JSON.stringify({ kind }),
+    });
+  }
+
+  // ── ACCOUNT ──────────────────────────────────────────────────────────────
+
+  /** Permanently deletes the signed-in user's account: cancels any live
+   *  Razorpay subscription, purges conversation history + audio, deletes
+   *  settings, then deletes the Cognito user itself. Irreversible — the
+   *  caller (AuthContext.deleteAccount) signs the local session out
+   *  immediately after this resolves, since the account no longer exists. */
+  async deleteAccount(): Promise<void> {
+    await this.request('/v1/account', { method: 'DELETE' });
   }
 
   // ── CONVERSATION HISTORY ────────────────────────────────────────────────────

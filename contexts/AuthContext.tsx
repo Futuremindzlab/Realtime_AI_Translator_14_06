@@ -5,14 +5,14 @@ import {
   CognitoUserAttribute,
   CognitoUserSession,
 } from 'amazon-cognito-identity-js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { userPool, cognitoStorage } from '@/lib/aws';
 import { dynamoService } from '@/services/dynamoService';
 import { ttsService } from '@/services/ttsService';
 import { UserSettings, UserRole } from '@/types';
 import { DEFAULT_SOURCE_LANGUAGE, DEFAULT_TARGET_LANGUAGE } from '@/lib/constants';
+import { isNetworkError } from '@/lib/errors';
+import { logger } from '@/lib/logger';
 
-const VIEW_MODE_KEY = '@rbac_view_mode';
 
 interface AppUser {
   id: string;
@@ -29,8 +29,6 @@ interface AuthContextType {
   pendingEmail: string | null;
   needsOtpVerification: boolean;
   pendingPhone: string | null;
-  viewMode: 'admin' | 'user';
-  setViewMode: (mode: 'admin' | 'user') => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   confirmSignUp: (email: string, code: string) => Promise<void>;
@@ -38,6 +36,8 @@ interface AuthContextType {
   confirmOtpCode: (code: string) => Promise<void>;
   cancelPhoneVerification: () => void;
   signOut: () => Promise<void>;
+  /** Permanently deletes the account server-side, then signs out locally. Irreversible. */
+  deleteAccount: () => Promise<void>;
   completeNewPassword: (newPassword: string) => Promise<void>;
   updateSettings: (settings: Partial<UserSettings>) => Promise<void>;
   refreshSettings: () => Promise<void>;
@@ -92,16 +92,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
   const [needsForgotPasswordCode, setNeedsForgotPasswordCode] = useState(false);
   const [pendingForgotPasswordEmail, setPendingForgotPasswordEmail] = useState<string | null>(null);
-  const [viewMode, setViewModeState] = useState<'admin' | 'user'>('admin');
 
   useEffect(() => {
-    // Hydrate persisted view mode preference
-    AsyncStorage.getItem(VIEW_MODE_KEY).then((stored) => {
-      if (stored === 'user' || stored === 'admin') {
-        setViewModeState(stored);
-      }
-    }).catch(() => {});
-
     // If Cognito is not available, use offline mode immediately
     if (!userPool) {
       console.log('📱 Running in offline mode (no AWS Cognito)');
@@ -173,11 +165,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     dynamoService.setSessionRefreshHandler(refreshSession);
     return () => dynamoService.setSessionRefreshHandler(null);
   }, []);
-
-  const setViewMode = (mode: 'admin' | 'user') => {
-    setViewModeState(mode);
-    AsyncStorage.setItem(VIEW_MODE_KEY, mode).catch(() => {});
-  };
 
   const loadUserSettings = async (userId: string) => {
     try {
@@ -352,7 +339,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           resolve();
         },
         onFailure: (err: Error & { code?: string }) => {
-          console.error('❌ Forgot-password request failed:', err.message);
+          // amazon-cognito-identity-js makes a raw HTTP call here — on a native
+          // (APK) device a transient connectivity blip surfaces as an opaque
+          // "Network error" from the SDK, easy to mistake for the feature being
+          // broken. Log it distinctly (code + message) and give the user an
+          // actionable message instead of whatever raw string the SDK produced.
+          logger.error('Forgot-password request failed', err, { email, code: err.code });
+          if (isNetworkError(err)) {
+            reject(new Error('Unable to reach the server — check your internet connection and try again.'));
+            return;
+          }
           reject(err);
         },
       });
@@ -378,7 +374,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           resolve();
         },
         onFailure: (err: Error & { code?: string }) => {
-          console.error('❌ Password reset confirmation failed:', err.message);
+          logger.error('Password reset confirmation failed', err, { email, code: err.code });
+          if (isNetworkError(err)) {
+            reject(new Error('Unable to reach the server — check your internet connection and try again.'));
+            return;
+          }
           reject(err);
         },
       });
@@ -541,10 +541,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSettings(null);
     setNeedsOtpVerification(false);
     setPendingPhone(null);
-    // Reset view mode to admin when signing out
-    setViewModeState('admin');
-    AsyncStorage.removeItem(VIEW_MODE_KEY).catch(() => {});
     console.log('✅ Signed out');
+  };
+
+  /**
+   * Permanently deletes the account (server-side: Razorpay subscription
+   * cancelled, history + audio purged, Cognito user deleted — see
+   * backend/src/handlers/account.mjs) then signs the local session out,
+   * since re-fetching a session for a user that no longer exists would just
+   * fail confusingly instead of cleanly landing back on the sign-in screen.
+   */
+  const deleteAccount = async () => {
+    await dynamoService.deleteAccount();
+    await signOut();
   };
 
   const updateSettings = async (newSettings: Partial<UserSettings>) => {
@@ -577,8 +586,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     pendingEmail,
     needsOtpVerification,
     pendingPhone,
-    viewMode,
-    setViewMode,
     signIn,
     signUp,
     confirmSignUp,
@@ -586,6 +593,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     confirmOtpCode,
     cancelPhoneVerification,
     signOut,
+    deleteAccount,
     completeNewPassword,
     updateSettings,
     refreshSettings,

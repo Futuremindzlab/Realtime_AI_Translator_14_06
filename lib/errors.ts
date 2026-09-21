@@ -27,9 +27,17 @@ export function isNetworkError(error: unknown): boolean {
   }
   if (error && typeof error === 'object') {
     const code = (error as { code?: string }).code;
-    if (code === 'ENOTFOUND' || code === 'ETIMEDOUT' || code === 'ECONNREFUSED') return true;
+    // 'NetworkError' (exact) is amazon-cognito-identity-js's own wrapping: its
+    // Client.js catches the raw fetch TypeError and rethrows `new
+    // Error('Network error')` with `.code = 'NetworkError'` (see
+    // node_modules/amazon-cognito-identity-js/src/Client.js) — every Cognito
+    // call (sign-in, sign-up, forgot-password, OTP) goes through this, so the
+    // original TypeError never reaches callers at all. Without matching this
+    // shape too, a connectivity blip during e.g. forgotPassword() surfaced as
+    // a bare, unclassified "Network error" instead of being recognized here.
+    if (code === 'ENOTFOUND' || code === 'ETIMEDOUT' || code === 'ECONNREFUSED' || code === 'NetworkError') return true;
     const message = (error as { message?: string }).message?.toLowerCase() ?? '';
-    return message.includes('failed to fetch') || message.includes('network request failed');
+    return message.includes('failed to fetch') || message.includes('network request failed') || message === 'network error';
   }
   return false;
 }
