@@ -2,7 +2,12 @@
 // This uses very few tokens and won't waste credits
 // Run with: node test_direct_openai.js
 
-const OPENAI_API_KEY = 'sk-proj-xxxxxxxx;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+if (!OPENAI_API_KEY) {
+  console.error('❌ Set OPENAI_API_KEY in the environment before running');
+  process.exit(1);
+}
 
 async function testDirectTranslation() {
   console.log('🧪 Testing Direct OpenAI Translation (saves credits!)\n');

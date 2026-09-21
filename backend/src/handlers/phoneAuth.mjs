@@ -6,7 +6,14 @@ import {
   AdminSetUserPasswordCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
 import { toE164, derivePhoneUsername } from '../phone.mjs';
+import { consumeRateLimit } from '../lib/rateLimit.mjs';
 import { sendSuccess, handleError } from '../response.mjs';
+
+// This route is unauthenticated and each call can trigger an SMS and create a
+// Cognito user, so it is limited both per phone number (a user retrying) and
+// per caller IP (one script hammering many numbers).
+const PER_PHONE_LIMIT  = { limit: 5,  windowSeconds: 3600 };
+const PER_SOURCE_LIMIT = { limit: 20, windowSeconds: 3600 };
 
 const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGION || 'us-east-1' });
 
@@ -31,6 +38,11 @@ export async function requestPhoneOtp(event) {
   try {
     const body = JSON.parse(event.body || '{}');
     const phone = toE164(body.phone);
+
+    const sourceIp = event?.requestContext?.identity?.sourceIp;
+    await consumeRateLimit(`otp-phone#${phone}`, PER_PHONE_LIMIT);
+    if (sourceIp) await consumeRateLimit(`otp-ip#${sourceIp}`, PER_SOURCE_LIMIT);
+
     const username = derivePhoneUsername(phone);
 
     let userExists = true;

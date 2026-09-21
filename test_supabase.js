@@ -1,8 +1,13 @@
-// Test Supabase Translation Function
-// Run with: node test_supabase.js
+// Test Supabase Translation Function (legacy — the app now uses the AWS backend)
+// Run with: EXPO_PUBLIC_SUPABASE_URL=... EXPO_PUBLIC_SUPABASE_ANON_KEY=... node test_supabase.js
 
-const SUPABASE_URL = 'https://aantlckqmrrddvjykjwz.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFhbnRsY2txbXJyZGR2anlrand6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4MTE2OTcsImV4cCI6MjA4NTM4NzY5N30.h5LYafYEOg03Yj47WCZNqgUhgiWwrGe3Cr5Zhxa27h4';
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error('❌ Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY before running');
+  process.exit(1);
+}
 
 async function testTranslation() {
   console.log('🧪 Testing Supabase Translation Function...\n');
