@@ -22,6 +22,15 @@ import { logger } from '@/lib/logger';
 import { PLAN_INFO, PAID_PLAN_PRICE } from '@/lib/plans';
 import { canvasTheme as t } from '@/lib/canvasTheme';
 
+// Customer-facing (isUserView) voice picker: exactly 4 curated OpenAI voices —
+// 2 female/2 male, 1 Indian-script-tuned + 1 global each — pulled from the
+// existing 6-voice OPENAI_VOICES list rather than duplicating voice data.
+// Owners keep the full provider/voice picker below unchanged; this is
+// additive, shown only on the isUserView branch.
+const CURATED_VOICES = TTSService.OPENAI_VOICES.filter(v =>
+  ['nova', 'shimmer', 'echo', 'onyx'].includes(v.id)
+);
+
 export default function SettingsScreen() {
   // AuthGate (app/_layout.tsx) guarantees `user` is non-null by the time any
   // screen renders — sign-in/sign-up/OTP/password-reset UI lives there now,
@@ -178,7 +187,13 @@ export default function SettingsScreen() {
       ttsService.setVoiceGender(voiceGender);
       ttsService.setSelectedVoiceId(selectedVoiceId);
       await updateSettings({
-        ...(isUserView ? {} : { tts_provider: ttsProvider }),
+        // isUserView customers now pick from the 4-voice curated OpenAI
+        // picker above, not a provider list — pin their account to 'openai'
+        // so that choice is what actually plays, rather than silently
+        // leaving whatever provider was on the account before (which used
+        // to be the effect of omitting tts_provider here entirely). Owners
+        // keep full control via their own provider picker, unchanged.
+        tts_provider: isUserView ? 'openai' : ttsProvider,
         conversation_mode_default: conversationModeDefault,
         voice_gender: voiceGender,
         selected_voice_id: selectedVoiceId || undefined,
@@ -469,13 +484,25 @@ export default function SettingsScreen() {
             )}
 
             <Text style={styles.inputLabel}>Voice</Text>
-            {ttsProvider === 'openai' && (
+            {isUserView ? (
+              // Customer-facing simplified picker: exactly 4 curated OpenAI
+              // voices (2 male/2 female, 1 Indian-script-tuned + 1 global
+              // each) instead of exposing the provider/per-provider voice
+              // lists below (owner-only, unchanged). Selecting one pins this
+              // account to the OpenAI engine — the only provider change made
+              // on the isUserView path — so the choice actually takes effect;
+              // the owner-only provider/voice picker in the else-branch below
+              // (and everything it drives in ttsService.ts) is untouched.
               <View style={styles.radioGroup}>
-                {TTSService.OPENAI_VOICES.map(v => (
+                {CURATED_VOICES.map(v => (
                   <TouchableOpacity
                     key={v.id}
                     style={styles.radioOption}
-                    onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}>
+                    onPress={() => {
+                      setTtsProvider('openai');
+                      setSelectedVoiceId(v.id);
+                      setVoiceGender(v.gender === 'male' ? 'male' : 'female');
+                    }}>
                     <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
                       {selectedVoiceId === v.id && <View style={styles.radioDot} />}
                     </View>
@@ -486,76 +513,97 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
-            )}
-            {ttsProvider === 'elevenlabs' && (
-              <View style={styles.radioGroup}>
-                {TTSService.ELEVENLABS_VOICES.map(v => (
-                  <TouchableOpacity
-                    key={v.id}
-                    style={styles.radioOption}
-                    onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}>
-                    <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
-                      {selectedVoiceId === v.id && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>{v.label}</Text>
-                      <Text style={styles.voiceDesc}>{v.desc}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            {ttsProvider === 'device' && (
-              <View style={styles.radioGroup}>
-                <TouchableOpacity
-                  style={styles.radioOption}
-                  onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
-                  <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
-                    {voiceGender === 'female' && <View style={styles.radioDot} />}
+            ) : (
+              <>
+                {ttsProvider === 'openai' && (
+                  <View style={styles.radioGroup}>
+                    {TTSService.OPENAI_VOICES.map(v => (
+                      <TouchableOpacity
+                        key={v.id}
+                        style={styles.radioOption}
+                        onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}>
+                        <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
+                          {selectedVoiceId === v.id && <View style={styles.radioDot} />}
+                        </View>
+                        <View>
+                          <Text style={styles.radioLabel}>{v.label}</Text>
+                          <Text style={styles.voiceDesc}>{v.desc}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
                   </View>
-                  <View>
-                    <Text style={styles.radioLabel}>Female Voice</Text>
-                    <Text style={styles.voiceDesc}>Higher pitch · Device TTS · OpenAI Shimmer / ElevenLabs George</Text>
+                )}
+                {ttsProvider === 'elevenlabs' && (
+                  <View style={styles.radioGroup}>
+                    {TTSService.ELEVENLABS_VOICES.map(v => (
+                      <TouchableOpacity
+                        key={v.id}
+                        style={styles.radioOption}
+                        onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}>
+                        <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
+                          {selectedVoiceId === v.id && <View style={styles.radioDot} />}
+                        </View>
+                        <View>
+                          <Text style={styles.radioLabel}>{v.label}</Text>
+                          <Text style={styles.voiceDesc}>{v.desc}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
                   </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.radioOption}
-                  onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
-                  <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
-                    {voiceGender === 'male' && <View style={styles.radioDot} />}
+                )}
+                {ttsProvider === 'device' && (
+                  <View style={styles.radioGroup}>
+                    <TouchableOpacity
+                      style={styles.radioOption}
+                      onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
+                      <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
+                        {voiceGender === 'female' && <View style={styles.radioDot} />}
+                      </View>
+                      <View>
+                        <Text style={styles.radioLabel}>Female Voice</Text>
+                        <Text style={styles.voiceDesc}>Higher pitch · Device TTS · OpenAI Shimmer / ElevenLabs George</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.radioOption}
+                      onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
+                      <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
+                        {voiceGender === 'male' && <View style={styles.radioDot} />}
+                      </View>
+                      <View>
+                        <Text style={styles.radioLabel}>Male Voice</Text>
+                        <Text style={styles.voiceDesc}>Lower pitch · Device TTS · George (ElevenLabs) for Indian/Arabic</Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
-                  <View>
-                    <Text style={styles.radioLabel}>Male Voice</Text>
-                    <Text style={styles.voiceDesc}>Lower pitch · Device TTS · George (ElevenLabs) for Indian/Arabic</Text>
+                )}
+                {ttsProvider === 'azure' && (
+                  <View style={styles.radioGroup}>
+                    <TouchableOpacity
+                      style={styles.radioOption}
+                      onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
+                      <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
+                        {voiceGender === 'female' && <View style={styles.radioDot} />}
+                      </View>
+                      <View>
+                        <Text style={styles.radioLabel}>Female Voice</Text>
+                        <Text style={styles.voiceDesc}>Sobhana · Native Malayalam neural voice</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.radioOption}
+                      onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
+                      <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
+                        {voiceGender === 'male' && <View style={styles.radioDot} />}
+                      </View>
+                      <View>
+                        <Text style={styles.radioLabel}>Male Voice</Text>
+                        <Text style={styles.voiceDesc}>Midhun · Native Malayalam neural voice</Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
-              </View>
-            )}
-            {ttsProvider === 'azure' && (
-              <View style={styles.radioGroup}>
-                <TouchableOpacity
-                  style={styles.radioOption}
-                  onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
-                  <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
-                    {voiceGender === 'female' && <View style={styles.radioDot} />}
-                  </View>
-                  <View>
-                    <Text style={styles.radioLabel}>Female Voice</Text>
-                    <Text style={styles.voiceDesc}>Sobhana · Native Malayalam neural voice</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.radioOption}
-                  onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
-                  <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
-                    {voiceGender === 'male' && <View style={styles.radioDot} />}
-                  </View>
-                  <View>
-                    <Text style={styles.radioLabel}>Male Voice</Text>
-                    <Text style={styles.voiceDesc}>Midhun · Native Malayalam neural voice</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
+                )}
+              </>
             )}
 
             <View style={styles.switchRow}>
