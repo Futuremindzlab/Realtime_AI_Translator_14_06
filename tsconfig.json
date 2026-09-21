@@ -16,7 +16,6 @@
   ],
   "exclude": [
     "node_modules",
-    "supabase",
     "metrics_dashboards_2026_07_20"
   ]
 }
