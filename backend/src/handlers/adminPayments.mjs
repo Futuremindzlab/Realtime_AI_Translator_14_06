@@ -23,7 +23,14 @@ async function scanActiveUsers() {
   do {
     const result = await db.send(new ScanCommand({
       TableName: SETTINGS_TABLE,
-      ProjectionExpression: 'user_id, plan, razorpay_subscription_id, razorpay_subscription_status, updated_at',
+      // 'plan' is a DynamoDB reserved keyword — can't appear literally in a
+      // ProjectionExpression (fails with "Invalid ProjectionExpression:
+      // Attribute name is a reserved keyword; reserved keyword: plan").
+      // Alias it via ExpressionAttributeNames instead; the returned Items
+      // still come back keyed by the real attribute name 'plan', so nothing
+      // downstream (item.plan below) needs to change.
+      ProjectionExpression: 'user_id, #plan, razorpay_subscription_id, razorpay_subscription_status, updated_at',
+      ExpressionAttributeNames: { '#plan': 'plan' },
       ExclusiveStartKey: lastEvaluatedKey,
     }));
     items.push(...(result.Items || []));
