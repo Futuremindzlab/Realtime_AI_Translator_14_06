@@ -358,33 +358,37 @@ export class AudioService {
       // long "Listening…/Transcribing…" stall and inconsistent-input-capture
       // behavior seen in noisy environments.
       // Fix: sample metering readings for the whole pre-`minRecordingMs`
-      // guard window — background noise, since real speech essentially
-      // never starts and finishes before that window closes — to estimate
-      // the actual ambient floor, then require metering to clear that floor
-      // by SPEECH_MARGIN_DB before counting it as speech, and drop back to
-      // within SILENCE_MARGIN_DB of the floor before counting it as silence
-      // again (a small hysteresis gap between the two avoids flicker right
-      // at the boundary). Falls back to the fixed threshold if calibration
-      // collected no samples (e.g. metering unsupported).
+      // guard window to estimate the actual ambient floor, then require
+      // metering to clear that floor by SPEECH_MARGIN_DB before counting it
+      // as speech, and drop back to within SILENCE_MARGIN_DB of the floor
+      // before counting it as silence again (a small hysteresis gap between
+      // the two avoids flicker right at the boundary). Falls back to the
+      // fixed threshold if calibration collected no samples (e.g. metering
+      // unsupported).
       //
-      // Bug fix (regression report): an earlier version of this calibration
-      // only sampled the first ~700ms after the listener attaches, which is
-      // itself already ~300ms+ into the turn (post `startRecording()`
-      // stabilization delay). On repeat turns within one conversation,
-      // native mic/session startup latency was observed to grow enough that
-      // the first metering callback sometimes didn't arrive until after that
-      // narrow window closed — calibrationSamples stayed empty, calibration
-      // silently fell back to the fixed threshold, and the turn reproduced
-      // the exact original stall. Collecting through the full
-      // `minRecordingMs` window (1.5s by default, not ~0.4-0.7s) gives
-      // native startup jitter far more room and this should no longer
-      // starve calibration of samples turn after turn. The median-based
-      // floor estimate below still tolerates a few early-speech samples
-      // bleeding into a wider window.
+      // Bug fix (regression report, round 2 — still not enough): in
+      // conversation mode the next speaker very often starts talking almost
+      // immediately when their turn begins, so the calibration window is
+      // NOT reliably pure ambient noise — it can contain the start of the
+      // person's own speech. A median floor estimate assumes >50% of the
+      // window is silence; once the speaker's voice fills more than half of
+      // it, the median gets pulled up toward speech level, the derived
+      // speechThresholdDb clamps at MAX_EFFECTIVE_THRESHOLD_DB, and only
+      // unusually loud speech ever clears it — hasSpeech then rarely
+      // flips true, so the silence-after-speech branch never engages and
+      // the turn silently runs to the full fixedDurationMs cap. This is
+      // exactly the human-timing-dependent "inconsistency" still being
+      // reported: it depends on whether the speaker happened to pause
+      // before responding. Fix: use a low percentile (20th) instead of the
+      // median — natural gaps between words/syllables keep the lower part
+      // of the distribution close to true ambient floor even when speech
+      // fills most of the window, so it stays robust unless the speaker is
+      // talking near-continuously for the entire guard window.
       const SPEECH_MARGIN_DB = 9;
       const SILENCE_MARGIN_DB = 4;
       const MIN_EFFECTIVE_THRESHOLD_DB = -55;
       const MAX_EFFECTIVE_THRESHOLD_DB = -18;
+      const PEAK_DROP_MARGIN_DB = 10;
       const clampDb = (db: number) =>
         Math.max(MIN_EFFECTIVE_THRESHOLD_DB, Math.min(MAX_EFFECTIVE_THRESHOLD_DB, db));
 
@@ -392,6 +396,13 @@ export class AudioService {
       let noiseFloorDb: number | null = null;
       let speechThresholdDb = silenceThresholdDb;
       let silenceResumeThresholdDb = silenceThresholdDb;
+      // Highest metering seen since hasSpeech went true this turn. A big
+      // enough drop from the turn's OWN loudest moment is treated as
+      // silence independent of the absolute calibrated thresholds above —
+      // closes the residual gap where a quieter speaker's peak legitimately
+      // sits between silenceResumeThresholdDb and speechThresholdDb (a
+      // "gray zone" where neither absolute branch below would ever fire).
+      let peakSpeechDb: number | null = null;
 
       const finish = async () => {
         if (resolved) return;
@@ -481,13 +492,16 @@ export class AudioService {
             return;
           }
 
-          if (elapsed < minRecordingMs) return;
-
-          // Finalize calibration once, the first time we reach here.
-          if (noiseFloorDb === null) {
+          // Finalize calibration once, as soon as the guard window closes.
+          if (noiseFloorDb === null && elapsed >= minRecordingMs) {
             if (calibrationSamples.length > 0) {
               const sorted = [...calibrationSamples].sort((a, b) => a - b);
-              noiseFloorDb = sorted[Math.floor(sorted.length / 2)]; // median
+              // 20th percentile, not median: robust against the speaker's
+              // own voice filling a large part of the calibration window
+              // (see comment above calibrationSamples) — natural gaps
+              // between words keep the lower slice of the distribution
+              // close to true ambient floor even when speech dominates.
+              noiseFloorDb = sorted[Math.max(0, Math.floor(sorted.length * 0.2))];
               speechThresholdDb = clampDb(noiseFloorDb + SPEECH_MARGIN_DB);
               silenceResumeThresholdDb = clampDb(noiseFloorDb + SILENCE_MARGIN_DB);
               console.log(
@@ -504,15 +518,40 @@ export class AudioService {
             }
           }
 
+          // Bug fix: this used to be gated behind `if (elapsed <
+          // minRecordingMs) return;`, so ANY reply that both started and
+          // finished inside the calibration guard window (a short "yes" /
+          // "okay" / "thank you" — extremely common in a live back-and-forth)
+          // was never evaluated for speech at all. hasSpeech stayed false
+          // forever, the silence-after-speech branch below never had a
+          // chance to engage, and the turn silently ran to the full
+          // fixedDurationMs hard cap every time — while longer replies that
+          // spilled past the guard window worked fine. That asymmetry (short
+          // replies always hang, longer ones don't) is exactly the
+          // intermittent behavior still being reported. Fix: evaluate speech
+          // continuously from the same 1s native-startup guard used above;
+          // before calibration finalizes, fall back to the fixed
+          // silenceThresholdDb symmetrically (same as the "no calibration
+          // data" branch) as a provisional estimate. finish() itself still
+          // can't fire before minRecordingMs, below, so the caller-specified
+          // minimum recording length is still honored.
+          const effectiveSpeechThreshold = noiseFloorDb === null ? silenceThresholdDb : speechThresholdDb;
+          const effectiveSilenceResume = noiseFloorDb === null ? silenceThresholdDb : silenceResumeThresholdDb;
+
           const metering: number | undefined = status.metering;
           if (metering !== undefined) {
-            if (metering >= speechThresholdDb) {
+            if (metering >= effectiveSpeechThreshold) {
               hasSpeech = true;
               silenceStart = null;
-            } else if (hasSpeech && metering < silenceResumeThresholdDb) {
+              peakSpeechDb = peakSpeechDb === null ? metering : Math.max(peakSpeechDb, metering);
+            } else if (
+              hasSpeech &&
+              (metering < effectiveSilenceResume ||
+                (peakSpeechDb !== null && metering < peakSpeechDb - PEAK_DROP_MARGIN_DB))
+            ) {
               if (!silenceStart) {
                 silenceStart = Date.now();
-              } else if (Date.now() - silenceStart >= silenceDurationMs) {
+              } else if (elapsed >= minRecordingMs && Date.now() - silenceStart >= silenceDurationMs) {
                 console.log(`🔇 [AutoStop] ${silenceDurationMs / 1000}s silence after speech`);
                 finish();
               }
