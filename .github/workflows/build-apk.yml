@@ -67,9 +67,19 @@ jobs:
           npm install -g eas-cli
           eas build --platform android --profile preview --non-interactive --local --output=app-release.apk
 
+      - name: 🏷 Sanitize ref name for artifact
+        # Bug: the artifact name below used to interpolate github.ref_name
+        # directly. That's fine for pushes to `master`, but a manually
+        # triggered build (workflow_dispatch) off any branch following this
+        # repo's own `fix/...`/`feature/...` naming convention contains a
+        # `/`, which upload-artifact@v4 rejects outright ("Contains ...
+        # Forward slash /") — the APK itself built fine, only the upload
+        # step failed. Sanitize once here and reference the safe value below.
+        run: echo "SAFE_REF_NAME=$(echo '${{ github.ref_name }}' | tr '/' '-')" >> "$GITHUB_ENV"
+
       - name: 📂 Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Realtime-Translator-APK-${{ github.ref_name }}-${{ github.sha }}
+          name: Realtime-Translator-APK-${{ env.SAFE_REF_NAME }}-${{ github.sha }}
           path: app-release.apk
           retention-days: 7
