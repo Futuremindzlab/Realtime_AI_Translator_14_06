@@ -36,7 +36,7 @@ function SignInForm({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="input-field"
             required
           />
           <input
@@ -44,14 +44,14 @@ function SignInForm({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="input-field"
             required
           />
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-brand-600 text-white text-sm font-medium py-2 disabled:opacity-50"
+            className="btn-primary w-full"
           >
             {loading ? "Signing in…" : "Sign in"}
           </button>
@@ -154,7 +154,7 @@ export default function PaymentsPage() {
         </div>
         <button
           onClick={() => session && load(session)}
-          className="text-sm text-brand-600 border border-brand-600 rounded-lg px-3 py-1.5"
+          className="btn-ghost"
         >
           Refresh
         </button>

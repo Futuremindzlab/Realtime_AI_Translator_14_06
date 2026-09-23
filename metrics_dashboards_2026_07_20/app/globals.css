@@ -3,5 +3,37 @@
 @tailwind utilities;
 
 body {
-  @apply bg-slate-50 text-slate-900;
+  @apply text-slate-900;
+  background:
+    radial-gradient(1200px 480px at 8% -10%, theme("colors.brand.100"), transparent),
+    radial-gradient(900px 420px at 100% 0%, theme("colors.accent.400" / 12%), transparent),
+    theme("colors.slate.50");
+  background-attachment: fixed;
+}
+
+@layer components {
+  /* Shared button styles — referenced by every page's sign-in/refresh
+     actions so the whole app re-themes from one place instead of each
+     page's copy-pasted className string. */
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-brand-600 to-brand-500
+      px-4 py-2 text-sm font-medium text-white shadow-sm transition-all
+      hover:shadow-card-hover hover:brightness-105 active:brightness-95
+      disabled:opacity-50 disabled:hover:brightness-100 disabled:hover:shadow-sm;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center rounded-lg border border-brand-200 bg-white
+      px-3 py-1.5 text-sm font-medium text-brand-700 transition-colors
+      hover:border-brand-300 hover:bg-brand-50;
+  }
+
+  .card {
+    @apply rounded-2xl border border-slate-200/80 bg-white shadow-card transition-shadow hover:shadow-card-hover;
+  }
+
+  .input-field {
+    @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition-colors
+      focus:border-brand-400 focus:ring-2 focus:ring-brand-100;
+  }
 }

@@ -15,7 +15,10 @@ export function BarList({ items }: { items: BarListItem[] }) {
             <span className="text-slate-500">{item.value.toLocaleString()}</span>
           </div>
           <div className="h-2 rounded-full bg-slate-100">
-            <div className="h-2 rounded-full bg-brand-500" style={{ width: `${(item.value / max) * 100}%` }} />
+            <div
+              className="h-2 rounded-full bg-gradient-to-r from-brand-500 to-accent-400 transition-[width]"
+              style={{ width: `${(item.value / max) * 100}%` }}
+            />
           </div>
         </div>
       ))}

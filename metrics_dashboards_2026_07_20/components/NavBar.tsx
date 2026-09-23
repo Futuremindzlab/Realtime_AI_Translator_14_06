@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Sparkles } from "lucide-react";
 import { loadStoredSession, type Session } from "@/lib/session";
 
 // Each page manages its own sign-in gate independently (see app/*/page.tsx) —
@@ -26,11 +27,17 @@ export function NavBar() {
     };
   }, []);
 
-  const linkClass = "text-sm text-slate-600 hover:text-brand-600";
+  const linkClass =
+    "text-sm font-medium text-slate-600 transition-colors hover:text-brand-600";
 
   return (
-    <nav className="border-b border-slate-200 bg-white px-6 py-4 flex items-center gap-6">
-      <span className="font-semibold text-slate-900">Metrics Dashboards</span>
+    <nav className="sticky top-0 z-10 flex items-center gap-6 border-b border-slate-200/80 bg-white/80 px-6 py-4 backdrop-blur-md">
+      <a href="/" className="flex items-center gap-2">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600 to-accent-500 text-white shadow-sm">
+          <Sparkles className="h-4 w-4" />
+        </span>
+        <span className="font-semibold text-slate-900">Metrics Dashboards</span>
+      </a>
 
       {session?.role === "OWNER" && (
         <>
@@ -43,7 +50,7 @@ export function NavBar() {
 
       <a href="/my-history" className={linkClass}>My History</a>
 
-      <span className="ml-auto text-xs text-slate-400">
+      <span className="ml-auto rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">
         {session ? session.email : "Not signed in"}
       </span>
     </nav>
