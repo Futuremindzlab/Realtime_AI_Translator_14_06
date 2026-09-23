@@ -3,64 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { StatCard } from "@/components/StatCard";
 import { SectionCard } from "@/components/SectionCard";
-import { signIn, type Session } from "@/lib/cognitoAuth";
-import { loadStoredSession, storeSession } from "@/lib/session";
+import { SignInForm } from "@/components/SignInForm";
+import type { Session } from "@/lib/cognitoAuth";
+import { loadStoredSession } from "@/lib/session";
 import { fetchSubscriptionsOverview, type SubscriptionsOverviewResponse } from "@/lib/subscriptionsApi";
-
-function SignInForm({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      const session = await signIn(email, password);
-      storeSession(session);
-      onSignedIn(session);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="max-w-sm mx-auto mt-16">
-      <SectionCard title="Sign in" description="OWNER-role Cognito account required to view subscriptions data">
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="input-field"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="input-field"
-            required
-          />
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="btn-primary w-full"
-          >
-            {loading ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-      </SectionCard>
-    </div>
-  );
-}
 
 function UnavailableNote({ reason }: { reason: string }) {
   return <p className="text-sm text-slate-500 italic">Not available — {reason}</p>;
@@ -111,7 +57,12 @@ export default function SubscriptionsPage() {
   if (!checkedStorage) return null;
 
   if (!session) {
-    return <SignInForm onSignedIn={setSession} />;
+    return (
+      <SignInForm
+        description="OWNER-role Cognito account required to view subscriptions data"
+        onSignedIn={setSession}
+      />
+    );
   }
 
   if (session.role !== "OWNER") {

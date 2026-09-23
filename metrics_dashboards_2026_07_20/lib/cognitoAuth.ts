@@ -43,3 +43,29 @@ export function signIn(email: string, password: string): Promise<Session> {
     });
   });
 }
+
+// Step 1 of Cognito's standard forgot-password flow: triggers the pool to
+// email (or SMS, depending on pool config) a verification code to the
+// account. Cognito intentionally reports success here even for an unknown
+// email when "prevent user existence errors" is on for the app client —
+// that's expected, not a bug, and this UI treats it the same either way.
+export function requestPasswordReset(email: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const user = new CognitoUser({ Username: email, Pool: getPool() });
+    user.forgotPassword({
+      onSuccess: () => resolve(),
+      onFailure: (err) => reject(err),
+    });
+  });
+}
+
+// Step 2: the code from that email plus a new password.
+export function confirmPasswordReset(email: string, code: string, newPassword: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const user = new CognitoUser({ Username: email, Pool: getPool() });
+    user.confirmPassword(code, newPassword, {
+      onSuccess: () => resolve(),
+      onFailure: (err) => reject(err),
+    });
+  });
+}
