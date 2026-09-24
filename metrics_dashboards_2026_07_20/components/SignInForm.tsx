@@ -103,7 +103,7 @@ export function SignInForm({
             : `Enter the code sent to ${email} and choose a new password.`
         }
       >
-        {info && <p className="mb-3 text-sm text-emerald-600">{info}</p>}
+        {info && <p className="mb-3 text-sm text-emerald-600 dark:text-emerald-400">{info}</p>}
 
         {mode === "signin" && (
           <form onSubmit={handleSignIn} className="space-y-3">
@@ -123,14 +123,14 @@ export function SignInForm({
               className="input-field"
               required
             />
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
             <button type="submit" disabled={loading} className="btn-primary w-full">
               {loading ? "Signing in…" : "Sign in"}
             </button>
             <button
               type="button"
               onClick={() => switchMode("forgot-request")}
-              className="w-full text-center text-xs font-medium text-brand-600 hover:text-brand-700"
+              className="w-full text-center text-xs font-medium text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300"
             >
               Forgot password?
             </button>
@@ -147,14 +147,14 @@ export function SignInForm({
               className="input-field"
               required
             />
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
             <button type="submit" disabled={loading} className="btn-primary w-full">
               {loading ? "Sending…" : "Send verification code"}
             </button>
             <button
               type="button"
               onClick={() => switchMode("signin")}
-              className="w-full text-center text-xs font-medium text-slate-500 hover:text-slate-700"
+              className="w-full text-center text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
             >
               Back to sign in
             </button>
@@ -190,7 +190,7 @@ export function SignInForm({
               minLength={8}
               required
             />
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
             <button type="submit" disabled={loading} className="btn-primary w-full">
               {loading ? "Resetting…" : "Reset password"}
             </button>
@@ -198,14 +198,14 @@ export function SignInForm({
               <button
                 type="button"
                 onClick={() => switchMode("forgot-request")}
-                className="text-slate-500 hover:text-slate-700"
+                className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
               >
                 Resend code
               </button>
               <button
                 type="button"
                 onClick={() => switchMode("signin")}
-                className="text-slate-500 hover:text-slate-700"
+                className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
               >
                 Back to sign in
               </button>

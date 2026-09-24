@@ -59,7 +59,7 @@ export default function InfraSecurityPage() {
     return (
       <div className="max-w-sm mx-auto mt-16">
         <SectionCard title="Access restricted">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-slate-600 dark:text-slate-400">
             Signed in as {session.email}, but this dashboard requires the OWNER role.
           </p>
         </SectionCard>
@@ -73,8 +73,8 @@ export default function InfraSecurityPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Infra &amp; Security</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-50">Infra &amp; Security</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             {metrics ? `Generated ${new Date(metrics.generatedAt).toLocaleString()} — AWS usage/cost and route requests are live; API keys, SSL, and CVEs below are still mock` : "Loading…"}
           </p>
         </div>
@@ -86,8 +86,8 @@ export default function InfraSecurityPage() {
         </button>
       </div>
 
-      {loading && !metrics && <p className="text-sm text-slate-500">Loading…</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {loading && !metrics && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       {metrics && (
         <>
@@ -105,7 +105,7 @@ export default function InfraSecurityPage() {
           <SectionCard title="API keys & subscriptions" description="OpenAI, ElevenLabs, Azure, Razorpay — mock, not yet wired">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-slate-500 border-b border-slate-200">
+                <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                   <th className="py-2 font-medium">Provider</th>
                   <th className="py-2 font-medium">Label</th>
                   <th className="py-2 font-medium">Plan</th>
@@ -115,11 +115,11 @@ export default function InfraSecurityPage() {
               </thead>
               <tbody>
                 {apiKeys.map((k) => (
-                  <tr key={`${k.provider}-${k.label}`} className="border-b border-slate-100 last:border-0">
-                    <td className="py-2 text-slate-700">{k.provider}</td>
-                    <td className="py-2 text-slate-500">{k.label}</td>
-                    <td className="py-2 text-slate-500">{k.plan}</td>
-                    <td className="py-2 text-slate-500">{k.renewsOrChecked}</td>
+                  <tr key={`${k.provider}-${k.label}`} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                    <td className="py-2 text-slate-700 dark:text-slate-300">{k.provider}</td>
+                    <td className="py-2 text-slate-500 dark:text-slate-400">{k.label}</td>
+                    <td className="py-2 text-slate-500 dark:text-slate-400">{k.plan}</td>
+                    <td className="py-2 text-slate-500 dark:text-slate-400">{k.renewsOrChecked}</td>
                     <td className="py-2">
                       <StatusBadge status={keyStatus[k.status]} label={k.status} />
                     </td>
@@ -139,7 +139,7 @@ export default function InfraSecurityPage() {
           >
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-slate-500 border-b border-slate-200">
+                <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                   <th className="py-2 font-medium">Service</th>
                   <th className="py-2 font-medium">Usage (30d)</th>
                   <th className="py-2 font-medium">Monthly cost</th>
@@ -147,10 +147,10 @@ export default function InfraSecurityPage() {
               </thead>
               <tbody>
                 {metrics.awsResources.map((r) => (
-                  <tr key={r.service} className="border-b border-slate-100 last:border-0">
-                    <td className="py-2 text-slate-700">{r.service}</td>
-                    <td className="py-2 text-slate-500">{r.metric}</td>
-                    <td className="py-2 text-slate-500">${r.costUsd.toFixed(2)}</td>
+                  <tr key={r.service} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                    <td className="py-2 text-slate-700 dark:text-slate-300">{r.service}</td>
+                    <td className="py-2 text-slate-500 dark:text-slate-400">{r.metric}</td>
+                    <td className="py-2 text-slate-500 dark:text-slate-400">${r.costUsd.toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -163,8 +163,8 @@ export default function InfraSecurityPage() {
                 {sslCertificates.map((c) => (
                   <li key={c.domain} className="flex items-center justify-between text-sm">
                     <div>
-                      <p className="text-slate-700">{c.domain}</p>
-                      <p className="text-slate-500 text-xs">
+                      <p className="text-slate-700 dark:text-slate-300">{c.domain}</p>
+                      <p className="text-slate-500 dark:text-slate-400 text-xs">
                         {c.issuer} · expires in {c.expiresIn}
                       </p>
                     </div>
@@ -179,8 +179,8 @@ export default function InfraSecurityPage() {
                 {metrics.rateLimits.routes.map((r) => (
                   <div key={r.route}>
                     <div className="flex justify-between text-sm mb-1">
-                      <span className="text-slate-700 font-mono text-xs">{r.route}</span>
-                      <span className="text-slate-500">
+                      <span className="text-slate-700 dark:text-slate-300 font-mono text-xs">{r.route}</span>
+                      <span className="text-slate-500 dark:text-slate-400">
                         {r.requests30d.toLocaleString()} (30d) · peak {r.peakPerMinuteLast3h}/min
                       </span>
                     </div>
@@ -193,7 +193,7 @@ export default function InfraSecurityPage() {
           <SectionCard title="Vulnerability & CVE tracking" description="Mock — dependency patch status (needs CI-time scanning, not a runtime API)">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-slate-500 border-b border-slate-200">
+                <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                   <th className="py-2 font-medium">Package</th>
                   <th className="py-2 font-medium">Version</th>
                   <th className="py-2 font-medium">CVE</th>
@@ -203,14 +203,14 @@ export default function InfraSecurityPage() {
               </thead>
               <tbody>
                 {cveTracking.map((c) => (
-                  <tr key={c.cve} className="border-b border-slate-100 last:border-0">
-                    <td className="py-2 text-slate-700">{c.package}</td>
-                    <td className="py-2 text-slate-500 font-mono text-xs">{c.version}</td>
-                    <td className="py-2 text-slate-500 font-mono text-xs">{c.cve}</td>
+                  <tr key={c.cve} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                    <td className="py-2 text-slate-700 dark:text-slate-300">{c.package}</td>
+                    <td className="py-2 text-slate-500 dark:text-slate-400 font-mono text-xs">{c.version}</td>
+                    <td className="py-2 text-slate-500 dark:text-slate-400 font-mono text-xs">{c.cve}</td>
                     <td className="py-2">
                       <StatusBadge status={severityStatus[c.severity]} label={c.severity} />
                     </td>
-                    <td className="py-2 text-slate-500 capitalize">{c.status}</td>
+                    <td className="py-2 text-slate-500 dark:text-slate-400 capitalize">{c.status}</td>
                   </tr>
                 ))}
               </tbody>

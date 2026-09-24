@@ -1,9 +1,9 @@
 export type Status = "ok" | "warning" | "critical";
 
 const styles: Record<Status, string> = {
-  ok: "bg-emerald-100 text-emerald-700",
-  warning: "bg-amber-100 text-amber-700",
-  critical: "bg-red-100 text-red-700",
+  ok: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400",
+  warning: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400",
+  critical: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-400",
 };
 
 const dotStyles: Record<Status, string> = {

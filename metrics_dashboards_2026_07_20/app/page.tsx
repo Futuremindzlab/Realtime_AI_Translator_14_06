@@ -32,8 +32,8 @@ export default function Home() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-slate-900">Welcome back</h1>
-        <p className="mt-1 text-sm text-slate-500">Pick a dashboard to dive into.</p>
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">Welcome back</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Pick a dashboard to dive into.</p>
       </div>
 
       <div className="grid gap-6 sm:grid-cols-3">
@@ -44,11 +44,11 @@ export default function Home() {
             >
               <Icon className="h-5 w-5" />
             </span>
-            <h2 className="flex items-center gap-1 text-lg font-semibold text-slate-900">
+            <h2 className="flex items-center gap-1 text-lg font-semibold text-slate-900 dark:text-slate-50">
               {title}
-              <ArrowUpRight className="h-4 w-4 text-slate-300 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand-500" />
+              <ArrowUpRight className="h-4 w-4 text-slate-300 dark:text-slate-600 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand-500 dark:group-hover:text-brand-400" />
             </h2>
-            <p className="mt-1 text-sm text-slate-600">{description}</p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{description}</p>
           </Link>
         ))}
       </div>

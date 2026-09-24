@@ -3,11 +3,24 @@
 @tailwind utilities;
 
 body {
-  @apply text-slate-900;
+  @apply text-slate-900 dark:text-slate-100;
   background:
     radial-gradient(1200px 480px at 8% -10%, theme("colors.brand.100"), transparent),
     radial-gradient(900px 420px at 100% 0%, theme("colors.accent.400" / 12%), transparent),
     theme("colors.slate.50");
+  background-attachment: fixed;
+}
+
+/* Dark mode gets its own background stack rather than a plain @apply
+   dark:bg-* on body — the layered radial glows need different colors AND a
+   dark base, which a single utility class can't express. `.dark` is toggled
+   on <html> by the inline script in layout.tsx (before paint, to avoid a
+   flash of the light theme) and by ThemeToggle thereafter. */
+.dark body {
+  background:
+    radial-gradient(1200px 480px at 8% -10%, theme("colors.brand.800" / 35%), transparent),
+    radial-gradient(900px 420px at 100% 0%, theme("colors.accent.600" / 18%), transparent),
+    theme("colors.slate.950");
   background-attachment: fixed;
 }
 
@@ -18,22 +31,29 @@ body {
   .btn-primary {
     @apply inline-flex items-center justify-center rounded-lg bg-gradient-to-r from-brand-600 to-brand-500
       px-4 py-2 text-sm font-medium text-white shadow-sm transition-all
-      hover:shadow-card-hover hover:brightness-105 active:brightness-95
+      hover:shadow-card-hover dark:hover:shadow-card-dark-hover hover:brightness-105 active:brightness-95
       disabled:opacity-50 disabled:hover:brightness-100 disabled:hover:shadow-sm;
   }
 
   .btn-ghost {
-    @apply inline-flex items-center justify-center rounded-lg border border-brand-200 bg-white
-      px-3 py-1.5 text-sm font-medium text-brand-700 transition-colors
-      hover:border-brand-300 hover:bg-brand-50;
+    @apply inline-flex items-center justify-center rounded-lg border border-brand-200 dark:border-brand-800/60
+      bg-white dark:bg-slate-900
+      px-3 py-1.5 text-sm font-medium text-brand-700 dark:text-brand-300 transition-colors
+      hover:border-brand-300 hover:bg-brand-50 dark:hover:border-brand-700 dark:hover:bg-brand-800/40;
   }
 
   .card {
-    @apply rounded-2xl border border-slate-200/80 bg-white shadow-card transition-shadow hover:shadow-card-hover;
+    @apply rounded-2xl border border-slate-200/80 dark:border-slate-800
+      bg-white dark:bg-slate-900
+      shadow-card dark:shadow-card-dark
+      transition-shadow hover:shadow-card-hover dark:hover:shadow-card-dark-hover;
   }
 
   .input-field {
-    @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition-colors
-      focus:border-brand-400 focus:ring-2 focus:ring-brand-100;
+    @apply w-full rounded-lg border border-slate-300 dark:border-slate-700
+      bg-white dark:bg-slate-950
+      px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none transition-colors
+      placeholder:text-slate-400 dark:placeholder:text-slate-500
+      focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:focus:ring-brand-800/50;
   }
 }
