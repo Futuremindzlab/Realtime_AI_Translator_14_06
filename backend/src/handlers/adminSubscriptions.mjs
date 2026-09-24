@@ -38,6 +38,9 @@ export async function getSubscriptionsOverview(event) {
           byPlan: { plus: { activeCount: 0, mrr: 0 }, live: { activeCount: 0, mrr: 0 } },
           statusBreakdown: {},
           expiringWithinWeek: [],
+          expiringWithinMonthCount: 0,
+          newSubscriptionsLastWeekCount: 0,
+          newSubscriptionsLastMonthCount: 0,
           needsAttention: [],
         };
 
