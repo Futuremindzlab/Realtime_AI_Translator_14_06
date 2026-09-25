@@ -9,6 +9,7 @@ import { isNetworkError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 import { withTimeout, TimeoutError } from '@/lib/withTimeout';
 import { isLikelyWhisperHallucination } from '@/lib/whisperHallucinations';
+import { computeNextTurnLanguages, resolvePersonAAutoSourceLanguage } from '@/lib/conversationTurnLanguage';
 
 // expo-file-system is native-only — audio history persistence is skipped on
 // web, where recording/TTS URIs are blob: URLs FileSystem can't read anyway.
@@ -47,6 +48,14 @@ export class RealtimeTranslationService {
   private currentTtsProvider: TTSProvider = 'openai';
   private currentUserId: string | undefined;
   private isPersonATurn = true;
+  // Bug fix: pinned once per conversation (see startConversation) rather than
+  // re-checked live every turn — see whisperService.transcribeWithFallback's
+  // `useOnDevice` param doc for the full mechanism this closes off (the
+  // on-device Whisper model finishing its background download/init
+  // mid-conversation used to silently swap the transcription engine, and
+  // with it the effective accuracy/behavior, for the same person speaking
+  // the same language a few turns in).
+  private useOnDeviceWhisperThisConversation = false;
   private originalSourceLanguage = '';
   private originalTargetLanguage = '';
   private singleModeMaxDurationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -460,9 +469,13 @@ export class RealtimeTranslationService {
     this.currentUserId = userId;
     this.silenceTimeoutMs = silenceTimeoutMs > 0 ? silenceTimeoutMs : RealtimeTranslationService.DEFAULT_SILENCE_TIMEOUT_MS;
     this.consecutiveSilenceHandovers = 0;
+    // Pinned for the whole conversation — see the field's own comment and
+    // whisperService.transcribeWithFallback's `useOnDevice` param for why
+    // this must NOT be re-checked live on every turn.
+    this.useOnDeviceWhisperThisConversation = whisperService.isReady();
 
     console.log('🗣️ ═══════════════════════════════════');
-    console.log(`🗣️ CONVERSATION STARTED: ${sourceLanguage} ↔ ${targetLanguage} (silence timeout: ${this.silenceTimeoutMs}ms)`);
+    console.log(`🗣️ CONVERSATION STARTED: ${sourceLanguage} ↔ ${targetLanguage} (silence timeout: ${this.silenceTimeoutMs}ms, on-device Whisper: ${this.useOnDeviceWhisperThisConversation})`);
     console.log('🗣️ ═══════════════════════════════════');
 
     // Run the conversation loop (blocks until stopped)
@@ -497,14 +510,10 @@ export class RealtimeTranslationService {
 
   /** Flip speaker + swap source/target languages, then settle audio state before the next turn. */
   private async swapTurnToNextPerson(): Promise<void> {
-    this.isPersonATurn = !this.isPersonATurn;
-    if (this.isPersonATurn) {
-      this.currentSourceLanguage = this.originalSourceLanguage;
-      this.currentTargetLanguage = this.originalTargetLanguage;
-    } else {
-      this.currentSourceLanguage = this.originalTargetLanguage;
-      this.currentTargetLanguage = this.originalSourceLanguage;
-    }
+    const next = computeNextTurnLanguages(this.isPersonATurn, this.originalSourceLanguage, this.originalTargetLanguage);
+    this.isPersonATurn = next.isPersonATurn;
+    this.currentSourceLanguage = next.currentSourceLanguage;
+    this.currentTargetLanguage = next.currentTargetLanguage;
     console.log(`🔄 Next → Person ${this.isPersonATurn ? 'A' : 'B'}: ${this.currentSourceLanguage} → ${this.currentTargetLanguage}`);
 
     // Brief pause, then ensure audio resources are released before next recording
@@ -699,7 +708,7 @@ export class RealtimeTranslationService {
 
     const transcribeStartedAt = Date.now();
     const { text: sourceText, detectedLanguage: rawDetected } = await whisperService.transcribeWithFallback(
-      audioUri, this.currentSourceLanguage
+      audioUri, this.currentSourceLanguage, this.useOnDeviceWhisperThisConversation
     );
     this.logDuration('transcribe', transcribeStartedAt);
 
@@ -727,14 +736,13 @@ export class RealtimeTranslationService {
     // to 'auto' on Person B's turn, which breaks the translation prompt.
     // Safety: if detected language === target language, treat as misdetection (X→X is invalid).
     if (this.isPersonATurn && this.originalSourceLanguage === 'auto') {
-      let resolved = 'en';
+      const resolved = resolvePersonAAutoSourceLanguage(detectedLanguage, this.currentTargetLanguage);
       if (detectedLanguage && detectedLanguage !== this.currentTargetLanguage) {
-        resolved = detectedLanguage;
         console.log(`🔒 Locked Person A's language (detected): ${detectedLanguage} (${this.getLanguageNameFromCode(detectedLanguage)})`);
       } else if (detectedLanguage) {
         console.warn(`⚠️ Detected language (${detectedLanguage}) === target — likely misdetection, defaulting Person A to English`);
       } else {
-        console.warn(`⚠️ No language detected — defaulting Person A's source to English`);
+        console.warn('⚠️ No language detected — defaulting Person A\'s source to English');
       }
       this.originalSourceLanguage = resolved;
       this.currentSourceLanguage = resolved;

@@ -9,6 +9,36 @@ const MODEL_PATH = `${FileSystem.documentDirectory}ggml-tiny.bin`;
 // It will crash on web because TurboModuleRegistry is not available there
 type WhisperContext = Awaited<ReturnType<typeof import('whisper.rn')['initWhisper']>>;
 
+// Languages where the tiny on-device model performs poorly. Cloud Whisper is
+// significantly more accurate for these scripts.
+const CLOUD_ONLY_LANGS = new Set([
+  'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ur', 'ne', 'si',
+  'ar', 'fa', 'he',
+]);
+
+/**
+ * Pure decision logic for transcribeWithFallback, pulled out on its own so
+ * it's directly unit-testable without touching the dynamic imports
+ * (whisper.rn / openaiService) that make the rest of this file hard to
+ * exercise under Jest without --experimental-vm-modules.
+ *
+ * `useOnDevice`, when provided, always wins over the live `isReady` value —
+ * that override is the actual fix for conversation mode silently switching
+ * transcription engines mid-conversation (see transcribeWithFallback's own
+ * doc comment for the full mechanism).
+ */
+export function shouldAttemptOnDeviceTranscription(
+  language: string | undefined,
+  useOnDevice: boolean | undefined,
+  isReady: boolean,
+): boolean {
+  const isAutoDetect = !language || language === 'auto';
+  const isoCode = language?.split('-')[0]?.toLowerCase() ?? '';
+  const forceCloud = isAutoDetect || CLOUD_ONLY_LANGS.has(isoCode);
+  const onDeviceAvailable = useOnDevice ?? isReady;
+  return !forceCloud && onDeviceAvailable;
+}
+
 class WhisperService {
   private context: WhisperContext | null = null;
   private initPromise: Promise<boolean> | null = null;
@@ -114,19 +144,30 @@ class WhisperService {
   async transcribeWithFallback(
     audioUri: string,
     language?: string,
+    // Bug fix: conversation mode used to call this.isReady() fresh on every
+    // turn. initialize() downloads a ~39MB model and inits whisper.rn in the
+    // background (started when the translator screen mounts, independent of
+    // when a conversation actually starts) — on a cold cache this can easily
+    // still be in flight for the first few turns of a conversation, then
+    // flip ready mid-conversation. When that happened, every turn from that
+    // point on for a non-CLOUD_ONLY_LANGS language silently switched from
+    // the accurate cloud Whisper API to the much less accurate on-device
+    // "tiny" model for the SAME person speaking the SAME configured
+    // language — this is the actual mechanism behind reports of
+    // conversation mode "picking a different language" a few turns in, with
+    // nothing about the conversation itself changing. Callers that want a
+    // stable decision for an entire session (RealtimeTranslationService's
+    // conversation mode) capture isReady() once at conversation start and
+    // pass it here on every turn instead of leaving this to re-check the
+    // live value. Omitted (e.g. single-translation-mode, where each press
+    // is already an independent one-off with no "session" to stay
+    // consistent within), this still falls back to the live check.
+    useOnDevice?: boolean,
   ): Promise<{ text: string; detectedLanguage?: string }> {
     const isAutoDetect = !language || language === 'auto';
-
-    // Languages where the tiny on-device model performs poorly.
-    // Cloud Whisper is significantly more accurate for these scripts.
-    const CLOUD_ONLY_LANGS = new Set([
-      'ml', 'ta', 'te', 'kn', 'hi', 'mr', 'bn', 'gu', 'pa', 'ur', 'ne', 'si',
-      'ar', 'fa', 'he',
-    ]);
     const isoCode = language?.split('-')[0]?.toLowerCase() ?? '';
-    const forceCloud = isAutoDetect || CLOUD_ONLY_LANGS.has(isoCode);
 
-    if (!forceCloud && this.isReady()) {
+    if (shouldAttemptOnDeviceTranscription(language, useOnDevice, this.isReady())) {
       try {
         const result = await this.transcribe(audioUri, language);
         if (result.text.trim()) return result;
@@ -134,9 +175,7 @@ class WhisperService {
       } catch (err) {
         console.warn('[WhisperService] On-device transcription error, falling back:', err);
       }
-    }
-
-    if (forceCloud && !isAutoDetect) {
+    } else if (CLOUD_ONLY_LANGS.has(isoCode) && !isAutoDetect) {
       console.log(`[WhisperService] Routing ${isoCode} directly to cloud Whisper (better accuracy)`);
     } else if (isAutoDetect) {
       console.log('[WhisperService] Auto-detect mode — using cloud Whisper');
