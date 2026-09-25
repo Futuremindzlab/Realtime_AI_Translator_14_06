@@ -13,6 +13,10 @@ function UnavailableNote({ reason }: { reason: string }) {
   return <p className="text-sm text-slate-500 dark:text-slate-400 italic">Not available — {reason}</p>;
 }
 
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
 const ATTENTION_STYLE: Record<string, string> = {
   pending: "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400",
   halted: "bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400",
@@ -164,6 +168,7 @@ export default function SubscriptionsPage() {
                       <th className="py-2 pr-4 font-medium">User</th>
                       <th className="py-2 pr-4 font-medium">Plan</th>
                       <th className="py-2 pr-4 font-medium">Renews in</th>
+                      <th className="py-2 pr-4 font-medium">Expiry date</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -172,6 +177,7 @@ export default function SubscriptionsPage() {
                         <td className="py-2 pr-4 text-slate-700 dark:text-slate-300">{u.identifier}</td>
                         <td className="py-2 pr-4 text-slate-500 dark:text-slate-400 capitalize">{u.plan}</td>
                         <td className="py-2 pr-4 text-slate-500 dark:text-slate-400">{u.expiresInDays} day{u.expiresInDays === 1 ? "" : "s"}</td>
+                        <td className="py-2 pr-4 text-slate-500 dark:text-slate-400">{formatDate(u.expiresAt)}</td>
                       </tr>
                     ))}
                   </tbody>

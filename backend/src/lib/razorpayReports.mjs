@@ -120,7 +120,10 @@ const MONTH_SECONDS = 30 * DAY_SECONDS;
  *     cycle (current_end, falling back to charge_at for a subscription
  *     between cycles) ends within 7 days — renewals due soon, not just
  *     cancellations already in flight (see computeChurn for that narrower,
- *     cancel_requested-only view).
+ *     cancel_requested-only view). Each entry carries both expiresInDays
+ *     (relative, for sorting/urgency) and expiresAt (the ISO timestamp
+ *     itself, for display — a day count alone doesn't say which actual
+ *     date a renewal falls on).
  *   - expiringWithinMonthCount: same ACTIVE-subscription lookahead as
  *     expiringWithinWeek, just a 30-day window instead of 7 — inclusive of
  *     the week bucket (a subscription expiring in 3 days counts in both),
@@ -177,6 +180,7 @@ export function computeSubscriptionsOverview(subscriptions, identifierMap) {
             plan,
             subscriptionId: sub.id,
             expiresInDays,
+            expiresAt: new Date(endsAt * 1000).toISOString(),
           });
         }
         if (expiresInDays <= 30) expiringWithinMonthCount += 1;

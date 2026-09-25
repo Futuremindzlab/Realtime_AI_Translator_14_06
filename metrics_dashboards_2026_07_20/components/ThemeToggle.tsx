@@ -8,12 +8,14 @@ const STORAGE_KEY = "ops_dashboard_theme";
 // Kept in sync with the inline script in layout.tsx, which runs this same
 // resolution before first paint (to avoid a flash of the light theme) and
 // sets the class directly — this function is the "after hydration" path,
-// e.g. re-deriving state on mount and reacting to OS-theme changes.
+// e.g. re-deriving state on mount. Defaults to dark absent a stored choice
+// (this dashboard is dark-first by design, not just OS-preference-following)
+// — see layout.tsx's THEME_INIT_SCRIPT for the fuller reasoning.
 function resolveTheme(): "light" | "dark" {
-  if (typeof window === "undefined") return "light";
+  if (typeof window === "undefined") return "dark";
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored === "light" || stored === "dark") return stored;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return "dark";
 }
 
 export function ThemeToggle() {
@@ -41,9 +43,13 @@ export function ThemeToggle() {
       type="button"
       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
       aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors
+      title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+      // Given a visible border/background at rest (not just on hover) — the
+      // hover-only ghost version blended into the nav bar closely enough
+      // that it went unnoticed as an actual control.
+      className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors
         hover:bg-slate-100 hover:text-slate-700
-        dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+        dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
     >
       {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
     </button>
