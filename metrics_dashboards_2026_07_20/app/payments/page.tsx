@@ -2,67 +2,13 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { SectionCard } from "@/components/SectionCard";
-import { signIn, type Session } from "@/lib/cognitoAuth";
-import { loadStoredSession, storeSession } from "@/lib/session";
+import { SignInForm } from "@/components/SignInForm";
+import type { Session } from "@/lib/cognitoAuth";
+import { loadStoredSession } from "@/lib/session";
 import { fetchPaymentsOverview, type PaymentsOverviewResponse } from "@/lib/paymentsApi";
 
-function SignInForm({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      const session = await signIn(email, password);
-      storeSession(session);
-      onSignedIn(session);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="max-w-sm mx-auto mt-16">
-      <SectionCard title="Sign in" description="OWNER-role Cognito account required to view payments data">
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            required
-          />
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-brand-600 text-white text-sm font-medium py-2 disabled:opacity-50"
-          >
-            {loading ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-      </SectionCard>
-    </div>
-  );
-}
-
 function UnavailableNote({ reason }: { reason: string }) {
-  return <p className="text-sm text-slate-500 italic">Not available — {reason}</p>;
+  return <p className="text-sm text-slate-500 dark:text-slate-400 italic">Not available — {reason}</p>;
 }
 
 function formatDateTime(iso: string) {
@@ -76,20 +22,20 @@ function formatDateTime(iso: string) {
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  captured: "bg-emerald-100 text-emerald-700",
-  authorized: "bg-amber-100 text-amber-700",
-  failed: "bg-red-100 text-red-700",
-  refunded: "bg-slate-200 text-slate-700",
-  active: "bg-emerald-100 text-emerald-700",
-  cancel_requested: "bg-amber-100 text-amber-700",
-  cancelled: "bg-slate-200 text-slate-700",
-  halted: "bg-red-100 text-red-700",
-  pending: "bg-amber-100 text-amber-700",
+  captured: "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+  authorized: "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  failed: "bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400",
+  refunded: "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300",
+  active: "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+  cancel_requested: "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  cancelled: "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300",
+  halted: "bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400",
+  pending: "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400",
 };
 
 function StatusPill({ status }: { status: string | null }) {
-  if (!status) return <span className="text-slate-400">—</span>;
-  const style = STATUS_STYLE[status] || "bg-slate-100 text-slate-600";
+  if (!status) return <span className="text-slate-400 dark:text-slate-500">—</span>;
+  const style = STATUS_STYLE[status] || "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400";
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${style}`}>
       {status.replace(/_/g, " ")}
@@ -128,14 +74,19 @@ export default function PaymentsPage() {
   if (!checkedStorage) return null;
 
   if (!session) {
-    return <SignInForm onSignedIn={setSession} />;
+    return (
+      <SignInForm
+        description="OWNER-role Cognito account required to view payments data"
+        onSignedIn={setSession}
+      />
+    );
   }
 
   if (session.role !== "OWNER") {
     return (
       <div className="max-w-sm mx-auto mt-16">
         <SectionCard title="Access restricted">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-slate-600 dark:text-slate-400">
             Signed in as {session.email}, but this dashboard requires the OWNER role.
           </p>
         </SectionCard>
@@ -147,21 +98,21 @@ export default function PaymentsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Payments</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-50">Payments</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             {data && `Generated ${new Date(data.generatedAt).toLocaleString()}`}
           </p>
         </div>
         <button
           onClick={() => session && load(session)}
-          className="text-sm text-brand-600 border border-brand-600 rounded-lg px-3 py-1.5"
+          className="btn-ghost"
         >
           Refresh
         </button>
       </div>
 
-      {loading && !data && <p className="text-sm text-slate-500">Loading…</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {loading && !data && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       {data && (
         <>
@@ -174,7 +125,7 @@ export default function PaymentsPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-left text-slate-500 border-b border-slate-200">
+                    <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                       <th className="py-2 pr-4 font-medium">User</th>
                       <th className="py-2 pr-4 font-medium">Plan</th>
                       <th className="py-2 pr-4 font-medium">Subscription status</th>
@@ -183,20 +134,20 @@ export default function PaymentsPage() {
                   </thead>
                   <tbody>
                     {data.activeUsers.map((u) => (
-                      <tr key={u.userId} className="border-b border-slate-100 last:border-0">
-                        <td className="py-2 pr-4 text-slate-700">{u.identifier}</td>
-                        <td className="py-2 pr-4 text-slate-500 capitalize">{u.plan}</td>
+                      <tr key={u.userId} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                        <td className="py-2 pr-4 text-slate-700 dark:text-slate-300">{u.identifier}</td>
+                        <td className="py-2 pr-4 text-slate-500 dark:text-slate-400 capitalize">{u.plan}</td>
                         <td className="py-2 pr-4">
                           <StatusPill status={u.subscriptionStatus} />
                         </td>
-                        <td className="py-2 pr-4 text-slate-500">{formatDateTime(u.updatedAt)}</td>
+                        <td className="py-2 pr-4 text-slate-500 dark:text-slate-400">{formatDateTime(u.updatedAt)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <p className="text-sm text-slate-500">No users on a paid plan yet.</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">No users on a paid plan yet.</p>
             )}
           </SectionCard>
 
@@ -207,7 +158,7 @@ export default function PaymentsPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-slate-500 border-b border-slate-200">
+                      <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                         <th className="py-2 pr-4 font-medium">Payment ID</th>
                         <th className="py-2 pr-4 font-medium">Amount</th>
                         <th className="py-2 pr-4 font-medium">Status</th>
@@ -219,25 +170,25 @@ export default function PaymentsPage() {
                     </thead>
                     <tbody>
                       {data.orders.items.map((o) => (
-                        <tr key={o.id} className="border-b border-slate-100 last:border-0">
-                          <td className="py-2 pr-4 text-slate-700 font-mono text-xs">{o.id}</td>
-                          <td className="py-2 pr-4 text-slate-700">
+                        <tr key={o.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                          <td className="py-2 pr-4 text-slate-700 dark:text-slate-300 font-mono text-xs">{o.id}</td>
+                          <td className="py-2 pr-4 text-slate-700 dark:text-slate-300">
                             ₹{o.amount.toLocaleString()} {o.currency !== "INR" && o.currency}
                           </td>
                           <td className="py-2 pr-4">
                             <StatusPill status={o.status} />
                           </td>
-                          <td className="py-2 pr-4 text-slate-500">{o.method || "—"}</td>
-                          <td className="py-2 pr-4 text-slate-500 capitalize">{o.plan || "—"}</td>
-                          <td className="py-2 pr-4 text-slate-500">{o.email || o.contact || "—"}</td>
-                          <td className="py-2 pr-4 text-slate-500">{formatDateTime(o.createdAt)}</td>
+                          <td className="py-2 pr-4 text-slate-500 dark:text-slate-400">{o.method || "—"}</td>
+                          <td className="py-2 pr-4 text-slate-500 dark:text-slate-400 capitalize">{o.plan || "—"}</td>
+                          <td className="py-2 pr-4 text-slate-500 dark:text-slate-400">{o.email || o.contact || "—"}</td>
+                          <td className="py-2 pr-4 text-slate-500 dark:text-slate-400">{formatDateTime(o.createdAt)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">No orders yet.</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">No orders yet.</p>
               )
             ) : (
               <UnavailableNote reason={data.orders.reason || "no data source"} />

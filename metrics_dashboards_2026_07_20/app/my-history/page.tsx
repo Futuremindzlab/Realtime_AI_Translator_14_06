@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { SectionCard } from "@/components/SectionCard";
-import { signIn, type Session } from "@/lib/cognitoAuth";
-import { loadStoredSession, storeSession, clearStoredSession } from "@/lib/session";
+import { SignInForm } from "@/components/SignInForm";
+import type { Session } from "@/lib/cognitoAuth";
+import { loadStoredSession, clearStoredSession } from "@/lib/session";
 import {
   fetchMyTranslations,
   fetchMyBillingHistory,
@@ -18,63 +19,8 @@ import {
 // the Cognito sub in the token) — there is no client-side role check here
 // to bypass, since every account, OWNER or USER, only ever gets its own rows back.
 
-function SignInForm({ onSignedIn }: { onSignedIn: (s: Session) => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      const session = await signIn(email, password);
-      storeSession(session);
-      onSignedIn(session);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="max-w-sm mx-auto mt-16">
-      <SectionCard title="Sign in" description="Sign in with your OneLingo account to view your own history">
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            required
-          />
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-brand-600 text-white text-sm font-medium py-2 disabled:opacity-50"
-          >
-            {loading ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-      </SectionCard>
-    </div>
-  );
-}
-
 function UnavailableNote({ reason }: { reason: string }) {
-  return <p className="text-sm text-slate-500 italic">Not available — {reason}</p>;
+  return <p className="text-sm text-slate-500 dark:text-slate-400 italic">Not available — {reason}</p>;
 }
 
 function formatDateTime(iso: string) {
@@ -88,14 +34,14 @@ function formatDateTime(iso: string) {
 }
 
 const PAYMENT_STATUS_STYLE: Record<string, string> = {
-  captured: "bg-emerald-100 text-emerald-700",
-  authorized: "bg-amber-100 text-amber-700",
-  failed: "bg-red-100 text-red-700",
-  refunded: "bg-slate-200 text-slate-700",
+  captured: "bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+  authorized: "bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  failed: "bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400",
+  refunded: "bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300",
 };
 
 function StatusPill({ status }: { status: string }) {
-  const style = PAYMENT_STATUS_STYLE[status] || "bg-slate-100 text-slate-600";
+  const style = PAYMENT_STATUS_STYLE[status] || "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400";
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${style}`}>
       {status}
@@ -140,7 +86,12 @@ export default function MyHistoryPage() {
   if (!checkedStorage) return null;
 
   if (!session) {
-    return <SignInForm onSignedIn={setSession} />;
+    return (
+      <SignInForm
+        description="Sign in with your OneLingo account to view your own history"
+        onSignedIn={setSession}
+      />
+    );
   }
 
   const signOut = () => {
@@ -154,27 +105,27 @@ export default function MyHistoryPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">My history</h1>
-          <p className="text-sm text-slate-500">Signed in as {session.email}</p>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-50">My history</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Signed in as {session.email}</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={() => session && load(session)}
-            className="text-sm text-brand-600 border border-brand-600 rounded-lg px-3 py-1.5"
+            className="btn-ghost"
           >
             Refresh
           </button>
           <button
             onClick={signOut}
-            className="text-sm text-slate-600 border border-slate-300 rounded-lg px-3 py-1.5"
+            className="text-sm text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-1.5"
           >
             Sign out
           </button>
         </div>
       </div>
 
-      {loading && !translations && !billing && <p className="text-sm text-slate-500">Loading…</p>}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {loading && !translations && !billing && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       {translations && (
         <SectionCard
@@ -185,7 +136,7 @@ export default function MyHistoryPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-slate-500 border-b border-slate-200">
+                  <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                     <th className="py-2 pr-4 font-medium">When</th>
                     <th className="py-2 pr-4 font-medium">Languages</th>
                     <th className="py-2 pr-4 font-medium">Source</th>
@@ -195,21 +146,21 @@ export default function MyHistoryPage() {
                 </thead>
                 <tbody>
                   {translations.items.map((t) => (
-                    <tr key={t.id} className="border-b border-slate-100 last:border-0 align-top">
-                      <td className="py-2 pr-4 text-slate-500 whitespace-nowrap">{formatDateTime(t.created_at)}</td>
-                      <td className="py-2 pr-4 text-slate-500 whitespace-nowrap">
+                    <tr key={t.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0 align-top">
+                      <td className="py-2 pr-4 text-slate-500 dark:text-slate-400 whitespace-nowrap">{formatDateTime(t.created_at)}</td>
+                      <td className="py-2 pr-4 text-slate-500 dark:text-slate-400 whitespace-nowrap">
                         {t.source_language} → {t.target_language}
                       </td>
-                      <td className="py-2 pr-4 text-slate-700 max-w-xs truncate" title={t.source_text}>{t.source_text}</td>
-                      <td className="py-2 pr-4 text-slate-700 max-w-xs truncate" title={t.translated_text}>{t.translated_text}</td>
-                      <td className="py-2 pr-4 text-slate-500">{t.conversation_mode ? "Conversation" : "Single"}</td>
+                      <td className="py-2 pr-4 text-slate-700 dark:text-slate-300 max-w-xs truncate" title={t.source_text}>{t.source_text}</td>
+                      <td className="py-2 pr-4 text-slate-700 dark:text-slate-300 max-w-xs truncate" title={t.translated_text}>{t.translated_text}</td>
+                      <td className="py-2 pr-4 text-slate-500 dark:text-slate-400">{t.conversation_mode ? "Conversation" : "Single"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <p className="text-sm text-slate-500">No translations yet.</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">No translations yet.</p>
           )}
         </SectionCard>
       )}
@@ -221,7 +172,7 @@ export default function MyHistoryPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-left text-slate-500 border-b border-slate-200">
+                    <tr className="text-left text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                       <th className="py-2 pr-4 font-medium">Date</th>
                       <th className="py-2 pr-4 font-medium">Plan</th>
                       <th className="py-2 pr-4 font-medium">Amount</th>
@@ -231,13 +182,13 @@ export default function MyHistoryPage() {
                   </thead>
                   <tbody>
                     {billing.items.map((p) => (
-                      <tr key={p.id} className="border-b border-slate-100 last:border-0">
-                        <td className="py-2 pr-4 text-slate-500">{formatDateTime(p.createdAt)}</td>
-                        <td className="py-2 pr-4 text-slate-500 capitalize">{p.plan || "—"}</td>
-                        <td className="py-2 pr-4 text-slate-700">
+                      <tr key={p.id} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                        <td className="py-2 pr-4 text-slate-500 dark:text-slate-400">{formatDateTime(p.createdAt)}</td>
+                        <td className="py-2 pr-4 text-slate-500 dark:text-slate-400 capitalize">{p.plan || "—"}</td>
+                        <td className="py-2 pr-4 text-slate-700 dark:text-slate-300">
                           ₹{p.amount.toLocaleString()} {p.currency !== "INR" && p.currency}
                         </td>
-                        <td className="py-2 pr-4 text-slate-500">{p.method || "—"}</td>
+                        <td className="py-2 pr-4 text-slate-500 dark:text-slate-400">{p.method || "—"}</td>
                         <td className="py-2 pr-4">
                           <StatusPill status={p.status} />
                         </td>
@@ -247,7 +198,7 @@ export default function MyHistoryPage() {
                 </table>
               </div>
             ) : (
-              <p className="text-sm text-slate-500">No payments yet.</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">No payments yet.</p>
             )
           ) : (
             <UnavailableNote reason={billing.reason || "no data source"} />

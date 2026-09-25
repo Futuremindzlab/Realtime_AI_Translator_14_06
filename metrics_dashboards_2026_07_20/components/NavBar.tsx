@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Sparkles } from "lucide-react";
 import { loadStoredSession, type Session } from "@/lib/session";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 // Each page manages its own sign-in gate independently (see app/*/page.tsx) —
 // this only decides which links to *show*, not who can load a page; the
@@ -26,11 +28,17 @@ export function NavBar() {
     };
   }, []);
 
-  const linkClass = "text-sm text-slate-600 hover:text-brand-600";
+  const linkClass =
+    "text-sm font-medium text-slate-600 dark:text-slate-300 transition-colors hover:text-brand-600 dark:hover:text-brand-400";
 
   return (
-    <nav className="border-b border-slate-200 bg-white px-6 py-4 flex items-center gap-6">
-      <span className="font-semibold text-slate-900">Metrics Dashboards</span>
+    <nav className="sticky top-0 z-10 flex items-center gap-6 border-b border-slate-200/80 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 px-6 py-4 backdrop-blur-md">
+      <a href="/" className="flex items-center gap-2">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600 to-accent-500 text-white shadow-sm">
+          <Sparkles className="h-4 w-4" />
+        </span>
+        <span className="font-semibold text-slate-900 dark:text-slate-50">Metrics Dashboards</span>
+      </a>
 
       {session?.role === "OWNER" && (
         <>
@@ -43,9 +51,12 @@ export function NavBar() {
 
       <a href="/my-history" className={linkClass}>My History</a>
 
-      <span className="ml-auto text-xs text-slate-400">
-        {session ? session.email : "Not signed in"}
-      </span>
+      <div className="ml-auto flex items-center gap-3">
+        <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-3 py-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+          {session ? session.email : "Not signed in"}
+        </span>
+        <ThemeToggle />
+      </div>
     </nav>
   );
 }

@@ -28,6 +28,9 @@ export interface SubscriptionsOverviewResponse {
   byPlan: { plus: PlanBreakdown; live: PlanBreakdown };
   statusBreakdown: Record<string, number>;
   expiringWithinWeek: ExpiringSubscription[];
+  expiringWithinMonthCount: number;
+  newSubscriptionsLastWeekCount: number;
+  newSubscriptionsLastMonthCount: number;
   needsAttention: AttentionSubscription[];
 }
 

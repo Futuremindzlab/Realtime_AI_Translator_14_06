@@ -1,33 +1,57 @@
 import Link from "next/link";
-import { Users, ShieldCheck, CreditCard } from "lucide-react";
+import { Users, ShieldCheck, CreditCard, ArrowUpRight } from "lucide-react";
+
+const TILES = [
+  {
+    href: "/user_analytics",
+    icon: Users,
+    title: "User Analytics",
+    description: "Members, regions, retention, churn risk",
+    from: "from-brand-500",
+    to: "to-brand-700",
+  },
+  {
+    href: "/payments",
+    icon: CreditCard,
+    title: "Payments",
+    description: "Active paying users, recent orders (live from Razorpay)",
+    from: "from-accent-500",
+    to: "to-brand-600",
+  },
+  {
+    href: "/infra_security",
+    icon: ShieldCheck,
+    title: "Infra & Security",
+    description: "Keys, AWS cost, SSL, rate limits, CVEs",
+    from: "from-brand-600",
+    to: "to-accent-600",
+  },
+];
 
 export default function Home() {
   return (
-    <div className="grid gap-6 sm:grid-cols-3">
-      <Link
-        href="/user_analytics"
-        className="rounded-xl border border-slate-200 bg-white p-6 hover:shadow-md transition-shadow"
-      >
-        <Users className="h-8 w-8 text-brand-600 mb-3" />
-        <h2 className="text-lg font-semibold">User Analytics</h2>
-        <p className="text-sm text-slate-600 mt-1">Members, regions, retention, churn risk</p>
-      </Link>
-      <Link
-        href="/payments"
-        className="rounded-xl border border-slate-200 bg-white p-6 hover:shadow-md transition-shadow"
-      >
-        <CreditCard className="h-8 w-8 text-brand-600 mb-3" />
-        <h2 className="text-lg font-semibold">Payments</h2>
-        <p className="text-sm text-slate-600 mt-1">Active paying users, recent orders (live from Razorpay)</p>
-      </Link>
-      <Link
-        href="/infra_security"
-        className="rounded-xl border border-slate-200 bg-white p-6 hover:shadow-md transition-shadow"
-      >
-        <ShieldCheck className="h-8 w-8 text-brand-600 mb-3" />
-        <h2 className="text-lg font-semibold">Infra &amp; Security</h2>
-        <p className="text-sm text-slate-600 mt-1">Keys, AWS cost, SSL, rate limits, CVEs</p>
-      </Link>
+    <div>
+      <div className="mb-8">
+        <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-50">Welcome back</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Pick a dashboard to dive into.</p>
+      </div>
+
+      <div className="grid gap-6 sm:grid-cols-3">
+        {TILES.map(({ href, icon: Icon, title, description, from, to }) => (
+          <Link key={href} href={href} className="card group relative overflow-hidden p-6">
+            <span
+              className={`mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br ${from} ${to} text-white shadow-sm`}
+            >
+              <Icon className="h-5 w-5" />
+            </span>
+            <h2 className="flex items-center gap-1 text-lg font-semibold text-slate-900 dark:text-slate-50">
+              {title}
+              <ArrowUpRight className="h-4 w-4 text-slate-300 dark:text-slate-600 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-brand-500 dark:group-hover:text-brand-400" />
+            </h2>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{description}</p>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }

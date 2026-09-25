@@ -8,8 +8,8 @@ const { computeSubscriptionsOverview } = await import('../src/lib/razorpayReport
 
 const DAY = 24 * 60 * 60;
 
-function sub({ id, status, plan, userId, current_end }) {
-  return { id, status, notes: { user_id: userId, plan }, current_end };
+function sub({ id, status, plan, userId, current_end, created_at }) {
+  return { id, status, notes: { user_id: userId, plan }, current_end, created_at };
 }
 
 describe('computeSubscriptionsOverview', () => {
@@ -69,5 +69,35 @@ describe('computeSubscriptionsOverview', () => {
     assert.equal(result.expiringWithinWeek.length, 0);
     assert.equal(result.needsAttention.length, 0);
     assert.deepEqual(result.statusBreakdown, { created: 1, cancelled: 1 });
+  });
+
+  test('counts active subscriptions expiring within 30 days, inclusive of the 7-day bucket', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const subscriptions = [
+      sub({ id: 'sub_soon', status: 'active', plan: 'plus', userId: 'u1', current_end: now + 3 * DAY }),
+      sub({ id: 'sub_month', status: 'active', plan: 'plus', userId: 'u2', current_end: now + 20 * DAY }),
+      sub({ id: 'sub_far', status: 'active', plan: 'plus', userId: 'u3', current_end: now + 60 * DAY }),
+    ];
+    const result = computeSubscriptionsOverview(subscriptions, new Map());
+
+    // sub_soon and sub_month both fall within 30 days; sub_far doesn't.
+    assert.equal(result.expiringWithinMonthCount, 2);
+    // The 7-day bucket is unaffected and still only counts sub_soon.
+    assert.equal(result.expiringWithinWeek.length, 1);
+  });
+
+  test('counts new subscriptions created in the last week/month regardless of current status', () => {
+    const now = Math.floor(Date.now() / 1000);
+    const subscriptions = [
+      sub({ id: 'sub_new', status: 'active', plan: 'plus', userId: 'u1', created_at: now - 2 * DAY }),
+      // Cancelled since, but still counts as an acquisition in that window.
+      sub({ id: 'sub_new_cancelled', status: 'cancelled', plan: 'live', userId: 'u2', created_at: now - 5 * DAY }),
+      sub({ id: 'sub_mid_month', status: 'active', plan: 'plus', userId: 'u3', created_at: now - 20 * DAY }),
+      sub({ id: 'sub_old', status: 'active', plan: 'plus', userId: 'u4', created_at: now - 90 * DAY }),
+    ];
+    const result = computeSubscriptionsOverview(subscriptions, new Map());
+
+    assert.equal(result.newSubscriptionsLastWeekCount, 2);
+    assert.equal(result.newSubscriptionsLastMonthCount, 3);
   });
 });
