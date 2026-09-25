@@ -30,8 +30,9 @@ describe('computeSubscriptionsOverview', () => {
 
   test('flags an active subscription renewing within 7 days, regardless of cancellation status', () => {
     const now = Math.floor(Date.now() / 1000);
+    const currentEnd = now + 3 * DAY;
     const subscriptions = [
-      sub({ id: 'sub_soon', status: 'active', plan: 'plus', userId: 'u1', current_end: now + 3 * DAY }),
+      sub({ id: 'sub_soon', status: 'active', plan: 'plus', userId: 'u1', current_end: currentEnd }),
       sub({ id: 'sub_later', status: 'active', plan: 'plus', userId: 'u2', current_end: now + 20 * DAY }),
     ];
     const result = computeSubscriptionsOverview(subscriptions, new Map());
@@ -39,6 +40,8 @@ describe('computeSubscriptionsOverview', () => {
     assert.equal(result.expiringWithinWeek.length, 1);
     assert.equal(result.expiringWithinWeek[0].subscriptionId, 'sub_soon');
     assert.ok(result.expiringWithinWeek[0].expiresInDays <= 7);
+    // The actual calendar date, not just a relative day count.
+    assert.equal(result.expiringWithinWeek[0].expiresAt, new Date(currentEnd * 1000).toISOString());
   });
 
   test('surfaces pending/halted subscriptions as needing attention, and a human identifier when known', () => {

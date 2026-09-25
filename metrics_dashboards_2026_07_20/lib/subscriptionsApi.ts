@@ -11,6 +11,7 @@ export interface ExpiringSubscription {
   plan: string;
   subscriptionId: string;
   expiresInDays: number;
+  expiresAt: string;
 }
 
 export interface AttentionSubscription {

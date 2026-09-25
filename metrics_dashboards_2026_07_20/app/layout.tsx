@@ -15,11 +15,17 @@ export const metadata: Metadata = {
 // Must run synchronously and inline (not a useEffect, which only fires
 // after React has already painted the light-theme markup once) — a
 // deliberately tiny, self-contained script kept out of the client bundle.
+//
+// Defaults to dark when nothing is stored yet, rather than deferring to the
+// OS's prefers-color-scheme — this dashboard was explicitly asked to be a
+// dark-first UI, and most machines default to a light OS theme, which was
+// silently overriding that intent for anyone who hadn't manually toggled it
+// yet. An explicit choice (either way) in localStorage always wins.
 const THEME_INIT_SCRIPT = `
 (function () {
   try {
     var stored = localStorage.getItem("ops_dashboard_theme");
-    var dark = stored ? stored === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    var dark = stored ? stored === "dark" : true;
     if (dark) document.documentElement.classList.add("dark");
   } catch (e) {}
 })();
