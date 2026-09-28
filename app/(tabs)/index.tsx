@@ -509,6 +509,7 @@ export default function HomeScreen() {
           <View style={styles.paywallSheet}>
             <ScrollView contentContainerStyle={styles.paywallScrollContent} showsVerticalScrollIndicator={false}>
               <PaywallView
+                userId={user?.id ?? ''}
                 title={paywallReason === 'trial_expired' ? 'Your free trial has ended' : "You've used your free trial"}
                 subtitle={
                   paywallReason === 'trial_expired'

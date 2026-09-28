@@ -12,6 +12,11 @@ const PLAN_PERKS: Record<'plus' | 'live', string[]> = {
 };
 
 interface Props {
+  /** The signed-in user's id (Cognito `sub`) — threaded through to
+   *  subscribeToPlan(), which needs it as StoreKit's appAccountToken on iOS
+   *  (see services/appleIapService.ts). Android's Razorpay flow doesn't use
+   *  it directly but takes the same param either way. */
+  userId: string;
   /** Called after a successful subscribe (so the caller can refresh settings
    *  and dismiss this view) — NOT called for "continue with the free trial". */
   onSubscribed: () => void | Promise<void>;
@@ -28,14 +33,14 @@ interface Props {
  *  final step and the modal shown when a trial limit is hit mid-use
  *  (app/(tabs)/index.tsx) — kept as one component so both stay visually and
  *  behaviorally identical instead of two hand-maintained copies. */
-export function PaywallView({ onSubscribed, title, subtitle, onContinueWithTrial }: Props) {
+export function PaywallView({ userId, onSubscribed, title, subtitle, onContinueWithTrial }: Props) {
   const [subscribingPlan, setSubscribingPlan] = useState<'plus' | 'live' | null>(null);
 
   const handleSubscribe = async (plan: 'plus' | 'live') => {
     if (subscribingPlan) return;
     setSubscribingPlan(plan);
     try {
-      await subscribeToPlan(plan);
+      await subscribeToPlan(plan, userId);
       await onSubscribed();
     } catch (error) {
       if (error instanceof CheckoutCancelledError) return;
