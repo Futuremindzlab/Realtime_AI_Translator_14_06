@@ -52,12 +52,17 @@
  * Auth (unauthenticated — no token exists yet)
  *   POST   /v1/auth/phone/request-otp                 requestPhoneOtp
  *
- * Billing / Razorpay recurring subscriptions
+ * Billing / Razorpay recurring subscriptions (Android)
  *   POST   /v1/billing/razorpay/create-subscription    createSubscription
  *   POST   /v1/billing/razorpay/verify                 verifySubscriptionPayment
  *   POST   /v1/billing/razorpay/cancel                 cancelSubscription
  *   POST   /v1/billing/razorpay/webhook                 handleWebhook (unauthenticated — Razorpay calls this directly)
  *   GET    /v1/billing/history                          getMyBillingHistory (caller's own payments only)
+ *
+ * Billing / Apple In-App Purchase (iOS) — see APPLE_IAP_INTEGRATION.md.
+ * No cancel route — Apple offers no server API for it; see billing.mjs.
+ *   POST   /v1/billing/apple/verify                     verifyApplePurchase
+ *   POST   /v1/billing/apple/notifications               handleAppleNotification (unauthenticated — Apple calls this directly)
  */
 
 import {
@@ -93,6 +98,8 @@ import {
   cancelSubscription,
   getMyBillingHistory,
   handleWebhook as handleRazorpayWebhook,
+  verifyApplePurchase,
+  handleAppleNotification,
 } from './handlers/billing.mjs';
 
 import { getUserAnalytics } from './handlers/adminAnalytics.mjs';
@@ -154,11 +161,21 @@ export const handler = async (event) => {
     return handleRazorpayWebhook(event);
   }
 
+  // ── Apple App Store Server Notifications (unauthenticated — Apple's
+  // servers call this directly), same explicit-override pattern as the
+  // Razorpay webhook above — see template.yaml and billing.mjs. ──
+  if (method === 'POST' && path === '/v1/billing/apple/notifications') {
+    return handleAppleNotification(event);
+  }
+
   // ── Billing / Razorpay (authenticated) ─────────────────
   if (method === 'POST' && path === '/v1/billing/razorpay/create-subscription') return createSubscription(event);
   if (method === 'POST' && path === '/v1/billing/razorpay/verify')              return verifySubscriptionPayment(event);
   if (method === 'POST' && path === '/v1/billing/razorpay/cancel')              return cancelSubscription(event);
   if (method === 'GET'  && path === '/v1/billing/history')                      return getMyBillingHistory(event);
+
+  // ── Billing / Apple IAP (authenticated) ─────────────────
+  if (method === 'POST' && path === '/v1/billing/apple/verify') return verifyApplePurchase(event);
 
   // ── AI provider proxy ───────────────────────────────────
   if (method === 'POST' && path === '/v1/proxy/openai/chat')           return proxyOpenAIChat(event);
