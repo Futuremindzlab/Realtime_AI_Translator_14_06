@@ -100,9 +100,22 @@ class TranslationProvider {
     };
     const scriptHint = SCRIPT_EXAMPLES[targetLanguage] ? ` ${SCRIPT_EXAMPLES[targetLanguage]}.` : '';
 
+    // The input is a speech-to-text transcript of live conversation, not
+    // written text — it can carry stutters, false starts, and filler or
+    // accidentally-repeated words as transcription artifacts (mishearing a
+    // pause, or the speaker genuinely restarting a sentence). Left
+    // unaddressed, a literal translator reproduces those artifacts verbatim,
+    // which reads as the app itself repeating/garbling words. Explicitly
+    // asking for one clean, fluent rendering of the speaker's intent (not a
+    // literal token-for-token pass) fixes that without changing meaning.
     const systemPrompt =
-      `You are a professional translator. Translate the user's text from ${srcName} to ${tgtName}. ` +
-      `Return ONLY the ${tgtName} translation written entirely in the correct native script — ` +
+      `You are a professional interpreter translating a live spoken conversation from ${srcName} to ${tgtName}. ` +
+      `The input is a speech-to-text transcript, so it may contain filler words, false starts, or a word/phrase ` +
+      `accidentally repeated by the transcription — these are artifacts of transcribing speech, not something ` +
+      `the speaker meant to emphasize. Produce ONE clean, fluent, natural ${tgtName} translation of what the ` +
+      `speaker meant to say: do not carry stutters or duplicated words over from the transcript, and do not ` +
+      `repeat any word or phrase in your own output. ` +
+      `Return ONLY that translation, written entirely in the correct native script — ` +
       `no explanation, no transliteration, no romanization, no Latin characters, no quotation marks.` +
       scriptHint;
 

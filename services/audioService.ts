@@ -22,6 +22,28 @@ export class AudioService {
   // right now instead of waiting for the silence/fixed-duration timers.
   private pendingAutoStopFinish: (() => void) | null = null;
 
+  // Bug fix: conversation mode occasionally stopped advancing after a few
+  // turns ("not continuous" — the app never returns to Listening for the
+  // next person). Root cause: RealtimeTranslationService wraps the whole
+  // recording step in withTimeout() because Audio.Recording.createAsync()
+  // is a known-hangable native bridge call (see withTimeout.ts and
+  // startRecordingWithAutoStop's own comments on this). withTimeout can
+  // only race a deadline against the promise — it can't actually cancel the
+  // underlying native call. When createAsync() genuinely was slow (native
+  // mic/session startup latency has been observed to grow turn over turn —
+  // see the calibration-window comment below), the timed-out call kept
+  // running in the background, and when it *finally* resolved it
+  // unconditionally overwrote `this.recording` — even though the caller had
+  // already given up, backed off, and started a brand-new turn's recording
+  // by then. That clobbered the new turn's live recording with a stale,
+  // already-abandoned one, corrupting every stopRecording()/forceCleanup()
+  // call for the rest of the conversation — worsening with each additional
+  // abandoned turn, which is exactly why this showed up specifically a few
+  // turns in rather than on turn 1. recordingToken fences this: only the
+  // most recent startRecording() call (the one nothing has superseded yet)
+  // is allowed to touch shared recording state.
+  private recordingToken = 0;
+
   async requestPermissions(): Promise<boolean> {
     try {
       const { status } = await Audio.requestPermissionsAsync();
@@ -31,7 +53,8 @@ export class AudioService {
     }
   }
 
-  async startRecording(): Promise<void> {
+  async startRecording(): Promise<Audio.Recording | null> {
+    const myToken = ++this.recordingToken;
     try {
       // If we're in playback mode, clean up first
       if (this.audioMode === 'playback') {
@@ -104,12 +127,27 @@ export class AudioService {
 
       console.log('🎤 Creating recording object...');
       const { recording } = await Audio.Recording.createAsync(recordingOptions);
+
+      if (myToken !== this.recordingToken) {
+        // A newer startRecording() call has already started (and may have
+        // finished) while this native call was still resolving — this call
+        // was abandoned upstream (see recordingToken's doc comment). Tear
+        // down the orphaned recorder instead of clobbering whatever the
+        // newer, still-active turn already owns.
+        console.warn('🎤 Discarding orphaned recording — superseded by a newer turn');
+        try { await recording.stopAndUnloadAsync(); } catch (e) {}
+        return null;
+      }
+
       this.recording = recording;
       console.log('✅ Recording started successfully (WAV, 16 kHz, mono)');
+      return recording;
     } catch (error) {
       console.error('❌ Start Recording Error:', error);
-      this.recording = null;
-      this.audioMode = 'idle';
+      if (myToken === this.recordingToken) {
+        this.recording = null;
+        this.audioMode = 'idle';
+      }
       throw error;
     }
   }
@@ -316,14 +354,13 @@ export class AudioService {
   ): Promise<string | null> {
     console.log(`🎤 [AutoStop] Starting recording (max ${fixedDurationMs / 1000}s, silence ${silenceDurationMs / 1000}s)`);
 
-    await this.startRecording();
-    if (!this.recording) {
+    const recording = await this.startRecording();
+    if (!recording) {
       console.error('🎤 [AutoStop] Recording failed to start');
-      logger.error('AutoStop: startRecording() left this.recording null', undefined, { platform: Platform.OS });
+      logger.error('AutoStop: startRecording() returned null (failed, or superseded by a newer turn)', undefined, { platform: Platform.OS });
       return null;
     }
 
-    const recording = this.recording;
     const recordingStart = Date.now();
 
     // Wait briefly for recording to stabilize before attaching listeners
