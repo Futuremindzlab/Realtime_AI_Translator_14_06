@@ -4,6 +4,12 @@ import { getUserId } from '../auth.mjs';
 import { sendSuccess, sendError, handleError } from '../response.mjs';
 import { razorpay, planIdFor, verifySubscriptionPaymentSignature, verifyWebhookSignature } from '../lib/razorpay.mjs';
 import { fetchAllPayments } from '../lib/razorpayReports.mjs';
+import {
+  planForProductId,
+  verifyAndDecodeTransaction,
+  verifyAndDecodeNotification,
+  VerificationException,
+} from '../lib/appleIap.mjs';
 
 const PAID_PLANS = ['plus', 'live'];
 
@@ -293,6 +299,250 @@ export async function handleWebhook(event) {
     // Razorpay retries on non-2xx, but a malformed/unexpected payload
     // shouldn't retry forever — log it and acknowledge rather than 500-loop.
     console.error('❌ Razorpay webhook handler error:', err);
+    return sendSuccess({ received: true, error: 'handler_error' });
+  }
+}
+
+// ═════════════════════════════════════════════════════════
+// Apple In-App Purchase (App Store subscriptions) — the iOS counterpart to
+// the Razorpay flow above (used on Android). See APPLE_IAP_INTEGRATION.md.
+//
+// One real design difference from Razorpay worth calling out: there is no
+// server-side "create subscription" step here — the client purchases
+// directly against Apple's StoreKit (react-native-iap's requestPurchase()),
+// so there's no equivalent of Razorpay's subscription.notes to stash
+// user_id/plan in ahead of time. Apple's own mechanism for the same job is
+// appAccountToken: the client sets it (to the caller's Cognito user id, a
+// UUID — the exact shape StoreKit requires) on the purchase request, Apple
+// embeds it into the signed transaction, and it comes back out on every
+// verify/webhook decode below. Trusting decoded.appAccountToken (never a
+// client-supplied claim) is this integration's equivalent of Razorpay's
+// "trust subscription.notes.user_id, not the client" pattern.
+//
+// The other real difference: Apple does not offer any server API to cancel
+// a user's subscription — by Apple's own design, that can only happen
+// through the user's own Apple ID (Settings app, or App Store ▸ profile ▸
+// Subscriptions). There is deliberately no /v1/billing/apple/cancel route
+// here; the client-side equivalent is react-native-iap's
+// showManageSubscriptionsIOS(), which opens Apple's own management sheet.
+// ═════════════════════════════════════════════════════════
+
+/** Same job as applySubscriptionState above, kept as a separate function
+ *  (not a generalized/shared one) so nothing about the already-working
+ *  Razorpay write path changes — this only touches the parallel
+ *  apple_original_transaction_id / apple_subscription_status fields. */
+async function applyAppleSubscriptionState(userId, { plan, originalTransactionId, status }) {
+  const result = await db.send(new UpdateCommand({
+    TableName: SETTINGS_TABLE,
+    Key: { user_id: userId },
+    UpdateExpression: 'SET #plan = :p, apple_original_transaction_id = :t, apple_subscription_status = :st, updated_at = :u',
+    ExpressionAttributeNames: { '#plan': 'plan' },
+    ExpressionAttributeValues: {
+      ':p': plan,
+      ':t': originalTransactionId,
+      ':st': status,
+      ':u': new Date().toISOString(),
+    },
+    ReturnValues: 'ALL_NEW',
+  }));
+  return result.Attributes;
+}
+
+/** Pulls the fields this integration actually needs off a decoded Apple
+ *  transaction payload (shared by verify and webhook below), and validates
+ *  the ones that matter for trust: a productId that actually maps to one of
+ *  our plans, and a bundleId that matches this deployment (defense in depth
+ *  — verifyAndDecodeTransaction's verifier is already constructed for one
+ *  specific bundle ID and is expected to reject a mismatch on its own, but
+ *  checking it again here costs nothing and this is exactly the kind of
+ *  check worth not relying on a single layer for). */
+function extractSubscriptionFields(decoded) {
+  if (decoded.bundleId && decoded.bundleId !== process.env.APPLE_BUNDLE_ID) {
+    return { error: `Transaction bundleId '${decoded.bundleId}' does not match this deployment` };
+  }
+  const plan = planForProductId(decoded.productId);
+  if (!plan) {
+    return { error: `productId '${decoded.productId}' does not map to a known plan — see APPLE_IAP_INTEGRATION.md` };
+  }
+  if (!decoded.appAccountToken) {
+    return { error: 'Transaction has no appAccountToken — cannot determine which user this purchase belongs to' };
+  }
+  return {
+    plan,
+    userId: decoded.appAccountToken,
+    originalTransactionId: decoded.originalTransactionId,
+  };
+}
+
+// ─────────────────────────────────────────────────────────
+// POST /v1/billing/apple/verify
+// Body: { signedTransactionInfo }  — the JWS react-native-iap's
+// getTransactionJwsIOS() returns right after a purchase completes.
+//
+// Fast, in-app confirmation, same role as verifySubscriptionPayment above —
+// the App Store Server Notification webhook below is the durable source of
+// truth for renewals/expiry/refunds, which this call is never involved in.
+// ─────────────────────────────────────────────────────────
+export async function verifyApplePurchase(event) {
+  try {
+    const userId = getUserId(event);
+    const body = JSON.parse(event.body || '{}');
+    const { signedTransactionInfo } = body;
+
+    if (!signedTransactionInfo) {
+      return sendError(400, 'signedTransactionInfo is required');
+    }
+
+    let decoded;
+    try {
+      decoded = await verifyAndDecodeTransaction(signedTransactionInfo);
+    } catch (err) {
+      if (err instanceof VerificationException) {
+        return sendError(400, 'Invalid transaction signature');
+      }
+      throw err;
+    }
+
+    const fields = extractSubscriptionFields(decoded);
+    if (fields.error) return sendError(400, fields.error);
+
+    // Never trust the caller's own JWT alone for *which* purchase this is —
+    // confirm the token embedded in the (already signature-verified)
+    // transaction actually belongs to the authenticated caller, same
+    // ownership check Razorpay's verify does against subscription.notes.user_id.
+    if (fields.userId !== userId) {
+      return sendError(403, 'This transaction does not belong to the authenticated user');
+    }
+
+    const updated = await applyAppleSubscriptionState(userId, {
+      plan: fields.plan,
+      originalTransactionId: fields.originalTransactionId,
+      status: 'active',
+    });
+    return sendSuccess(updated);
+  } catch (err) {
+    return handleError(err);
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// POST /v1/billing/apple/notifications  (UNAUTHENTICATED — see template.yaml;
+// Apple's servers call this directly, there's no Cognito token to check)
+//
+// App Store Server Notifications V2 — the durable source of truth for
+// renewals (DID_RENEW, fired every cycle with zero app involvement), grace
+// periods / failed renewals, refunds, and revocations, none of which the
+// client is ever present for. Body: { signedPayload } — see
+// https://developer.apple.com/documentation/appstoreservernotifications.
+// ─────────────────────────────────────────────────────────
+export async function handleAppleNotification(event) {
+  try {
+    const body = JSON.parse(event.body || '{}');
+    const { signedPayload } = body;
+    if (!signedPayload) return sendSuccess({ received: true });
+
+    let notification;
+    try {
+      notification = await verifyAndDecodeNotification(signedPayload);
+    } catch (err) {
+      if (err instanceof VerificationException) {
+        console.error('❌ Apple notification signature/chain verification failed — rejecting');
+        return sendError(400, 'Invalid notification signature');
+      }
+      throw err;
+    }
+
+    const signedTransactionInfo = notification.data?.signedTransactionInfo;
+    if (!signedTransactionInfo) {
+      // Not every notification type carries transaction data (e.g. TEST,
+      // CONSUMPTION_REQUEST for a one-time IAP this app doesn't sell) —
+      // acknowledge with 200 so Apple doesn't retry something we can't act on.
+      console.log(`ℹ️ Apple notification '${notification.notificationType}' had no transaction data — ignoring`);
+      return sendSuccess({ received: true });
+    }
+
+    // The outer notification envelope is its own signed JWS; the transaction
+    // it describes is a SEPARATE, nested signed JWS inside it — both need
+    // independent signature verification, which is why this decodes it via
+    // the same verifyAndDecodeTransaction verify path verifyApplePurchase uses,
+    // rather than trusting the inner payload just because the outer one checked out.
+    let decoded;
+    try {
+      decoded = await verifyAndDecodeTransaction(signedTransactionInfo);
+    } catch (err) {
+      if (err instanceof VerificationException) {
+        console.error('❌ Apple notification\'s nested transaction failed verification — rejecting');
+        return sendError(400, 'Invalid transaction signature');
+      }
+      throw err;
+    }
+
+    const fields = extractSubscriptionFields(decoded);
+    if (fields.error) {
+      console.log(`ℹ️ Apple notification '${notification.notificationType}' — ${fields.error}, ignoring`);
+      return sendSuccess({ received: true });
+    }
+
+    const notificationType = notification.notificationType;
+    const subtype = notification.subtype;
+    console.log(`📩 Apple notification: ${notificationType}${subtype ? `/${subtype}` : ''} for user ${fields.userId}`);
+
+    switch (notificationType) {
+      case 'SUBSCRIBED':
+      case 'DID_RENEW':
+        // Active-and-in-good-standing — (re)apply the paid plan. Covers first
+        // purchase, resubscribing, and every successful renewal charge.
+        await applyAppleSubscriptionState(fields.userId, {
+          plan: fields.plan,
+          originalTransactionId: fields.originalTransactionId,
+          status: 'active',
+        });
+        break;
+
+      case 'DID_FAIL_TO_RENEW':
+        // GRACE_PERIOD: Apple is still retrying and the user keeps access
+        // during the grace window — record status without downgrading.
+        // Anything else here (no successful retry, no grace period offered)
+        // isn't access-ending on its own either; GRACE_PERIOD_EXPIRED below
+        // is what actually ends access once retries are exhausted.
+        await db.send(new UpdateCommand({
+          TableName: SETTINGS_TABLE,
+          Key: { user_id: fields.userId },
+          UpdateExpression: 'SET apple_subscription_status = :st, updated_at = :u',
+          ExpressionAttributeValues: { ':st': subtype === 'GRACE_PERIOD' ? 'grace_period' : 'billing_retry', ':u': new Date().toISOString() },
+        }));
+        break;
+
+      case 'EXPIRED':
+      case 'GRACE_PERIOD_EXPIRED':
+      case 'REFUND':
+      case 'REVOKE':
+        // Access-ending states — downgrade to the free tier. entitlement.mjs's
+        // getUserPlan() defaults anything not in PLANS to 'basic' anyway, but
+        // writing it explicitly keeps settings.tsx's UI (reads `plan` directly)
+        // in sync too — same reasoning as the Razorpay webhook above.
+        await applyAppleSubscriptionState(fields.userId, {
+          plan: 'basic',
+          originalTransactionId: fields.originalTransactionId,
+          status: notificationType.toLowerCase(),
+        });
+        break;
+
+      case 'DID_CHANGE_RENEWAL_STATUS':
+        // Just an auto-renew toggle (subtype AUTO_RENEW_ENABLED/DISABLED) —
+        // the user keeps access through the already-paid period either way;
+        // EXPIRED above is what actually ends it if they don't turn it back on.
+        break;
+
+      default:
+        console.log(`ℹ️ Unhandled Apple notification type: ${notificationType}`);
+    }
+
+    return sendSuccess({ received: true });
+  } catch (err) {
+    // Same reasoning as the Razorpay webhook handler: Apple retries on
+    // non-2xx, but a malformed/unexpected payload shouldn't retry forever.
+    console.error('❌ Apple notification handler error:', err);
     return sendSuccess({ received: true, error: 'handler_error' });
   }
 }

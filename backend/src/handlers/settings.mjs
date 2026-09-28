@@ -90,6 +90,8 @@ export async function putSettings(event) {
     const plan = existing.Item?.plan || 'basic';
     const razorpaySubscriptionId     = existing.Item?.razorpay_subscription_id;
     const razorpaySubscriptionStatus = existing.Item?.razorpay_subscription_status;
+    const appleOriginalTransactionId = existing.Item?.apple_original_transaction_id;
+    const appleSubscriptionStatus    = existing.Item?.apple_subscription_status;
     // Onboarding state and trial-usage counters are written by their own
     // dedicated endpoints (PATCH /v1/settings for onboarding_completed/
     // use_case; POST /v1/usage/trial/consume for the trial_* counters), never
@@ -117,6 +119,8 @@ export async function putSettings(event) {
       use_case:                 useCase,
       ...(razorpaySubscriptionId     ? { razorpay_subscription_id: razorpaySubscriptionId }         : {}),
       ...(razorpaySubscriptionStatus ? { razorpay_subscription_status: razorpaySubscriptionStatus }  : {}),
+      ...(appleOriginalTransactionId ? { apple_original_transaction_id: appleOriginalTransactionId } : {}),
+      ...(appleSubscriptionStatus    ? { apple_subscription_status: appleSubscriptionStatus }         : {}),
       ...(trialStartDate         !== undefined ? { trial_start_date: trialStartDate }                 : {}),
       ...(trialTranslationsUsed  !== undefined ? { trial_translations_used: trialTranslationsUsed }   : {}),
       ...(trialConversationsUsed !== undefined ? { trial_conversations_used: trialConversationsUsed } : {}),
@@ -263,6 +267,8 @@ export async function resetSettings(event) {
     const plan = existing.Item?.plan || 'basic';
     const razorpaySubscriptionId     = existing.Item?.razorpay_subscription_id;
     const razorpaySubscriptionStatus = existing.Item?.razorpay_subscription_status;
+    const appleOriginalTransactionId = existing.Item?.apple_original_transaction_id;
+    const appleSubscriptionStatus    = existing.Item?.apple_subscription_status;
     const onboardingCompleted = backfillOnboardingCompleted(existing.Item);
     const useCase             = existing.Item?.use_case ?? null;
     const trialStartDate         = existing.Item?.trial_start_date;
@@ -282,6 +288,8 @@ export async function resetSettings(event) {
       use_case:                 useCase,
       ...(razorpaySubscriptionId     ? { razorpay_subscription_id: razorpaySubscriptionId }         : {}),
       ...(razorpaySubscriptionStatus ? { razorpay_subscription_status: razorpaySubscriptionStatus }  : {}),
+      ...(appleOriginalTransactionId ? { apple_original_transaction_id: appleOriginalTransactionId } : {}),
+      ...(appleSubscriptionStatus    ? { apple_subscription_status: appleSubscriptionStatus }         : {}),
       ...(trialStartDate         !== undefined ? { trial_start_date: trialStartDate }                 : {}),
       ...(trialTranslationsUsed  !== undefined ? { trial_translations_used: trialTranslationsUsed }   : {}),
       ...(trialConversationsUsed !== undefined ? { trial_conversations_used: trialConversationsUsed } : {}),
