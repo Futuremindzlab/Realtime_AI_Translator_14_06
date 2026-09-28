@@ -407,8 +407,10 @@ export class RealtimeTranslationService {
         }
       }
 
-      // Save to history
-      await this.saveToHistory(
+      // Save to history — fire-and-forget (see the same change in
+      // processConversationTurn for the full reasoning); nothing here needs
+      // to wait on it, and 'complete' below doesn't depend on it either.
+      this.saveToHistory(
         this.currentSourceLanguage,
         this.currentTargetLanguage,
         actualText,
@@ -416,7 +418,7 @@ export class RealtimeTranslationService {
         false,
         audioUri,
         ttsUri,
-      );
+      ).catch(() => {});
 
       // Done
       this.logDuration('total_turn', pipelineStartedAt);
@@ -829,8 +831,14 @@ export class RealtimeTranslationService {
       }
     }
 
-    // Save to history
-    await this.saveToHistory(
+    // Save to history — fire-and-forget. This turn is already fully done as
+    // far as the conversation is concerned (translated audio has already
+    // played); a DynamoDB write plus base64-encoding two audio files has no
+    // reason to hold up the next person's turn from starting. saveToHistory
+    // already catches and logs its own errors internally and never rejects
+    // — .catch() here is just defensive symmetry with the same fire-and-forget
+    // pattern this.translate() already uses for cacheTranslation() above.
+    this.saveToHistory(
       this.currentSourceLanguage,
       this.currentTargetLanguage,
       actualText,
@@ -838,7 +846,7 @@ export class RealtimeTranslationService {
       true,
       audioUri,
       ttsUri,
-    );
+    ).catch(() => {});
 
     this.logDuration('total_turn', pipelineStartedAt);
 
