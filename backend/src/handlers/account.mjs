@@ -55,6 +55,11 @@ export async function deleteAccount(event) {
         console.error(`⚠️ Failed to cancel Razorpay subscription ${subscriptionId} during account deletion (continuing):`, err);
       }
     }
+    // No Apple equivalent here — Apple provides no server API to cancel a
+    // user's App Store subscription (see billing.mjs's Apple IAP section);
+    // that can only be done through the user's own Apple ID. Deleting the
+    // account here does not stop Apple from renewing it; the user needs to
+    // separately cancel via Settings ▸ [their name] ▸ Subscriptions.
 
     const clearResult = await clearAllTranslations(event);
     if (clearResult.statusCode >= 400) {

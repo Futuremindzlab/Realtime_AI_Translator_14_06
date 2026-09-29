@@ -17,6 +17,7 @@
     "@aws-sdk/client-sns": "^3.991.0",
     "@aws-sdk/lib-dynamodb": "^3.991.0",
     "@aws-sdk/s3-request-presigner": "^3.991.0",
+    "@apple/app-store-server-library": "^3.0.0",
     "razorpay": "^2.9.6"
   }
 }

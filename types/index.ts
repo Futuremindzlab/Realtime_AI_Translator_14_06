@@ -45,6 +45,17 @@ export interface UserSettings {
    *  'cancel_requested' | 'cancelled' | 'halted' | 'completed' | 'paused', etc.
    *  See backend/src/handlers/billing.mjs for the authoritative state machine. */
   razorpay_subscription_status?: string;
+  /** Apple App Store subscription's originalTransactionId backing `plan` on
+   *  iOS — the same role razorpay_subscription_id plays on Android, set by
+   *  the backend (verifyApplePurchase/handleAppleNotification), never by the
+   *  client. There is no client-callable cancel for this one — Apple offers
+   *  no server API for it (see billing.mjs's Apple IAP section); cancelling
+   *  happens through the user's own Apple ID. */
+  apple_original_transaction_id?: string;
+  /** Mirrors the Apple subscription's status: 'active' | 'grace_period' |
+   *  'billing_retry' | 'expired' | 'grace_period_expired' | 'refund' | 'revoke'.
+   *  See backend/src/handlers/billing.mjs for the authoritative state machine. */
+  apple_subscription_status?: string;
   /** True once the user has completed the onboarding flow (use-case picker +
    *  privacy consent + trial/paywall intro) — AuthGate shows OnboardingFlow
    *  instead of the app until this is true. Defaults to false server-side. */

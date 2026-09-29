@@ -98,6 +98,31 @@ Parameters:
     Default: ""
     Description: Razorpay Plan ID for the 'live' tier (₹200/month) — created once via scripts/setup-razorpay-plans.mjs, immutable afterward.
 
+  # ── Apple In-App Purchase (iOS subscriptions) — see APPLE_IAP_INTEGRATION.md.
+  # No key/secret here the way Razorpay has one: transaction/notification
+  # authenticity is verified via Apple's signed JWS + their public root
+  # certificate (fetched at runtime — see lib/appleIap.mjs), not a shared
+  # secret. Leave AppleBundleId blank to disable the Apple billing routes.
+  AppleBundleId:
+    Type: String
+    Default: ""
+    Description: This app's iOS bundle identifier, exactly as registered in your Apple Developer account / App Store Connect (must match app.config.js's ios.bundleIdentifier). Leave blank to disable Apple billing routes.
+
+  AppleAppAppleId:
+    Type: String
+    Default: ""
+    Description: The app's numeric App Store Connect App Apple ID. Only exists once the App Store Connect app record has been created — until then, leave blank; Apple IAP still works for Sandbox/TestFlight verification without it, just not for Production purchases (see lib/appleIap.mjs).
+
+  AppleProductIdPlus:
+    Type: String
+    Default: ""
+    Description: App Store Connect subscription product ID for the 'plus' tier, created once in App Store Connect (Subscriptions ▸ your subscription group).
+
+  AppleProductIdLive:
+    Type: String
+    Default: ""
+    Description: App Store Connect subscription product ID for the 'live' tier, created once in App Store Connect (Subscriptions ▸ your subscription group).
+
   # ── Cost monitoring — see the EstimatedChargesAlarm resource below for the
   # two manual, one-time account-level prerequisites CloudFormation cannot
   # set for you (billing alerts must be enabled, and this stack must deploy
@@ -180,6 +205,10 @@ Resources:
           HttpMethod:   POST
           ThrottlingBurstLimit: 20
           ThrottlingRateLimit:  10
+        - ResourcePath: /v1/billing/apple/notifications
+          HttpMethod:   POST
+          ThrottlingBurstLimit: 20
+          ThrottlingRateLimit:  10
 
   # ── Lambda Function ─────────────────────────────────────
   TranslatorFunction:
@@ -210,6 +239,10 @@ Resources:
           RAZORPAY_WEBHOOK_SECRET: !Ref RazorpayWebhookSecret
           RAZORPAY_PLAN_ID_PLUS:   !Ref RazorpayPlanIdPlus
           RAZORPAY_PLAN_ID_LIVE:   !Ref RazorpayPlanIdLive
+          APPLE_BUNDLE_ID:         !Ref AppleBundleId
+          APPLE_APP_APPLE_ID:      !Ref AppleAppAppleId
+          APPLE_PRODUCT_ID_PLUS:   !Ref AppleProductIdPlus
+          APPLE_PRODUCT_ID_LIVE:   !Ref AppleProductIdLive
           USAGE_TABLE:             !Ref UsageTable
       Events:
         # Catch-all proxy — routes every path+method to the single handler
@@ -264,6 +297,27 @@ Resources:
           Properties:
             RestApiId: !Ref TranslatorApi
             Path:      /v1/billing/razorpay/webhook
+            Method:    OPTIONS
+            Auth:
+              Authorizer: NONE
+        # Unauthenticated Apple App Store Server Notifications — Apple's
+        # servers call this directly (no Cognito token exists for a
+        # server-to-server webhook), same pattern as the Razorpay webhook
+        # above. The handler verifies the signed JWS itself (see billing.mjs
+        # / lib/appleIap.mjs) — nothing here trusts the payload unchecked.
+        AppleNotifications:
+          Type:       Api
+          Properties:
+            RestApiId: !Ref TranslatorApi
+            Path:      /v1/billing/apple/notifications
+            Method:    POST
+            Auth:
+              Authorizer: NONE
+        AppleNotificationsOptions:
+          Type:       Api
+          Properties:
+            RestApiId: !Ref TranslatorApi
+            Path:      /v1/billing/apple/notifications
             Method:    OPTIONS
             Auth:
               Authorizer: NONE
