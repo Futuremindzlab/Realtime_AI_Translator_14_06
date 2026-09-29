@@ -85,7 +85,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       );
     }
     if (!settings.onboarding_completed) {
-      return <OnboardingFlow updateSettings={updateSettings} refreshSettings={refreshSettings} />;
+      return <OnboardingFlow userId={user.id} updateSettings={updateSettings} refreshSettings={refreshSettings} />;
     }
     return <>{children}</>;
   }

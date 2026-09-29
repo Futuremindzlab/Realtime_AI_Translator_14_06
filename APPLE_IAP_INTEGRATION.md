@@ -98,6 +98,24 @@ GitHub Actions secrets + `--parameter-overrides` entries in
 `.github/workflows/deploy-backend.yml` if you want this deployed automatically — not
 wired in by this change, same as Razorpay's equivalent secrets.)
 
+**Client:** `services/appleIapService.ts` reads the same two product IDs from
+`EXPO_PUBLIC_APPLE_PRODUCT_ID_PLUS` / `EXPO_PUBLIC_APPLE_PRODUCT_ID_LIVE` (public
+identifiers, not secrets — same `EXPO_PUBLIC_*` inlining `EXPO_PUBLIC_API_BASE_URL`
+already relies on). Add both to `.env` locally and as GitHub Actions secrets for
+`build-apk.yml`'s eventual iOS counterpart.
+
+`react-native-iap` is a native module — after `npm install` at the repo root, this
+app needs a native rebuild before the Upgrade button works on iOS:
+
+```bash
+npx expo prebuild
+npx expo run:ios   # or an EAS build
+```
+
+It will **not** work inside plain Expo Go. **`ios.bundleIdentifier` must also be set
+in `app.config.js`** (see step 2 above) before any of this can run at all — it isn't
+set yet.
+
 ## Testing
 
 Sign into a Sandbox Tester Apple ID on a real device or the Simulator, then purchase
@@ -120,7 +138,16 @@ exercise the webhook without waiting for a real renewal.
 | `backend/package.json` | `@apple/app-store-server-library` dependency |
 | `backend/__tests__/appleIap.test.mjs` | New — product-ID↔plan mapping tests (see the file's own note on what isn't covered and why) |
 | `types/index.ts` | `UserSettings.apple_original_transaction_id` / `_status` |
+| `services/appleIapService.ts` | New — the `react-native-iap` wrapper: `subscribeToApplePlan`, `finishApplePurchase`, `openAppleManageSubscriptions` |
+| `services/billingService.ts` | `subscribeToPlan(plan, userId)` now branches by `Platform.OS` — iOS routes to `appleIapService`, Android keeps the existing Razorpay flow unchanged; re-exports `openAppleManageSubscriptions` |
+| `services/dynamoService.ts` | `verifyApplePurchase()` — calls `POST /v1/billing/apple/verify` |
+| `components/onboarding/PaywallView.tsx` / `OnboardingFlow.tsx` | Take a new `userId` prop, threaded through to `subscribeToPlan` |
+| `components/AuthGate.tsx`, `app/(tabs)/index.tsx`, `app/(tabs)/settings.tsx` | Pass `userId`; Settings' cancel button branches to `openAppleManageSubscriptions()` on iOS instead of the Razorpay cancel flow |
+| `package.json` | `react-native-iap` dependency |
+| `app.config.js` | `react-native-iap` config plugin, `kotlinVersion: '2.2.0'` (the plugin's Android requirement) added to the existing `expo-build-properties` entry |
 
-**Not yet done — client side and iOS build pipeline are separate, larger pieces**:
-adding `react-native-iap`, wiring the Settings screen's Upgrade flow for iOS, and a
-new EAS iOS build profile/workflow. Tracked as the next step.
+**Not yet done — tracked as the next step**: a new EAS iOS build profile +
+`build-ios.yml` workflow (this repo currently only builds Android APKs), and setting
+`ios.bundleIdentifier` (needs your bundle ID decision — see App Store Connect setup
+above). The payment gateway integration itself (backend + client) is complete as of
+this doc.

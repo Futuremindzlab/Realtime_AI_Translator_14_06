@@ -17,6 +17,8 @@ const USE_CASES: { id: string; label: string; icon: typeof Plane }[] = [
 ];
 
 interface Props {
+  /** The signed-in user's id (Cognito `sub`) — passed through to PaywallView. */
+  userId: string;
   /** Persists the onboarding choice server-side (PATCH /v1/settings under
    *  the hood — see contexts/AuthContext.tsx's updateSettings). Setting
    *  onboarding_completed:true is what makes AuthGate render the app instead
@@ -43,7 +45,7 @@ type Step = typeof STEPS[number];
  * or a real subscription marks onboarding_completed and hands control back
  * to AuthGate's `children`.
  */
-export function OnboardingFlow({ updateSettings, refreshSettings }: Props) {
+export function OnboardingFlow({ userId, updateSettings, refreshSettings }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
   const [useCase, setUseCase] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
@@ -148,6 +150,7 @@ export function OnboardingFlow({ updateSettings, refreshSettings }: Props) {
             </View>
           ) : (
             <PaywallView
+              userId={userId}
               title="Try OneLingo free for 7 days"
               subtitle="10 single translations and 5 conversations, no card required. Subscribe any time for unlimited days."
               onSubscribed={async () => { await refreshSettings(); await finishOnboarding(); }}

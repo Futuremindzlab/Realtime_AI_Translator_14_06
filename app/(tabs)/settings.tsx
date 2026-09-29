@@ -16,7 +16,7 @@ import { LogOut, Save, Mic, Trash2, Bug, Zap } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { audioService } from '@/services/audioService';
 import { ttsService, TTSService } from '@/services/ttsService';
-import { subscribeToPlan, cancelSubscription as cancelRazorpaySubscription, CheckoutCancelledError } from '@/services/billingService';
+import { subscribeToPlan, cancelSubscription as cancelRazorpaySubscription, openAppleManageSubscriptions, CheckoutCancelledError } from '@/services/billingService';
 import { SubscriptionPlan } from '@/types';
 import { logger } from '@/lib/logger';
 import { PLAN_INFO, PAID_PLAN_PRICE } from '@/lib/plans';
@@ -87,12 +87,14 @@ export default function SettingsScreen() {
     }
   };
 
-  // Real purchase flow — see services/billingService.ts.
+  // Real purchase flow — see services/billingService.ts. Routes to Apple
+  // In-App Purchase on iOS, Razorpay Checkout on Android — same call site
+  // either way.
   const handleSubscribe = async (plan: 'plus' | 'live') => {
-    if (subscribingPlan || plan === currentPlan) return;
+    if (subscribingPlan || plan === currentPlan || !user) return;
     setSubscribingPlan(plan);
     try {
-      await subscribeToPlan(plan);
+      await subscribeToPlan(plan, user.id);
       await refreshSettings();
       Alert.alert('Subscribed!', `You're now on the ${PLAN_INFO[plan].label} plan.`);
     } catch (error) {
@@ -108,6 +110,31 @@ export default function SettingsScreen() {
   };
 
   const handleCancelSubscription = () => {
+    // iOS: Apple provides no server API to cancel a subscription — the only
+    // real "cancel" action is opening Apple's own subscription-management
+    // sheet (see APPLE_IAP_INTEGRATION.md). Our own confirm dialog below
+    // (with its own "you'll keep access until..." promise and a definite
+    // action our app takes) doesn't fit that flow — Apple's sheet asks its
+    // own confirmation if the user actually chooses to cancel there, and
+    // whatever they decide reaches this app later via webhook, not
+    // synchronously, so there's nothing for us to await beyond the sheet
+    // itself closing before refreshing.
+    if (Platform.OS === 'ios') {
+      (async () => {
+        setCancellingSubscription(true);
+        try {
+          await openAppleManageSubscriptions();
+          await refreshSettings();
+        } catch (error) {
+          console.error('Open manage subscriptions error:', error);
+          Alert.alert('Error', 'Could not open subscription management. Please try again.');
+        } finally {
+          setCancellingSubscription(false);
+        }
+      })();
+      return;
+    }
+
     Alert.alert(
       'Cancel subscription?',
       `You'll keep ${PLAN_INFO[currentPlan].label} access until the end of your current billing cycle, then move to Basic.`,

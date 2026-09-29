@@ -18,9 +18,11 @@
  * never go through this file again after the first successful checkout.
  */
 
+import { Platform } from 'react-native';
 import RazorpayCheckout, { CheckoutOptions } from 'react-native-razorpay';
 import { dynamoService } from '@/services/dynamoService';
 import { UserSettings } from '@/types';
+import { subscribeToApplePlan, finishApplePurchase, ApplePurchaseCancelledError } from '@/services/appleIapService';
 
 export class CheckoutCancelledError extends Error {
   constructor(message = 'Payment was cancelled') {
@@ -85,11 +87,41 @@ interface SubscriptionCheckoutSuccess {
 /**
  * Runs the full subscribe flow for one plan and returns the updated settings
  * on success. Throws CheckoutCancelledError if the user backs out of
- * Checkout (expected/benign — callers should not show an error alert for
- * this case), or a plain Error for anything else (network/server failure,
- * signature mismatch, etc.).
+ * Checkout/the purchase sheet (expected/benign — callers should not show an
+ * error alert for this case), or a plain Error for anything else
+ * (network/server failure, signature mismatch, etc.).
+ *
+ * `userId` is only actually used on iOS (StoreKit's appAccountToken — see
+ * appleIapService.ts); Android's Razorpay flow already gets the caller's
+ * identity from the authenticated backend call instead, but it's required
+ * here regardless so callers can't forget to pass it and silently break
+ * only on iOS.
  */
-export async function subscribeToPlan(plan: 'plus' | 'live'): Promise<UserSettings> {
+export async function subscribeToPlan(plan: 'plus' | 'live', userId: string): Promise<UserSettings> {
+  if (Platform.OS === 'ios') {
+    return subscribeToPlanIOS(plan, userId);
+  }
+  return subscribeToPlanAndroid(plan);
+}
+
+/** Apple In-App Purchase flow — see appleIapService.ts. Finishes the
+ *  StoreKit transaction only after the backend has confirmed it (see
+ *  finishApplePurchase's own doc comment for why that order matters). */
+async function subscribeToPlanIOS(plan: 'plus' | 'live', userId: string): Promise<UserSettings> {
+  try {
+    const { signedTransactionInfo, purchase } = await subscribeToApplePlan(plan, userId);
+    const settings = await dynamoService.verifyApplePurchase(signedTransactionInfo);
+    await finishApplePurchase(purchase);
+    return settings;
+  } catch (err) {
+    if (err instanceof ApplePurchaseCancelledError) {
+      throw new CheckoutCancelledError(err.message);
+    }
+    throw err;
+  }
+}
+
+async function subscribeToPlanAndroid(plan: 'plus' | 'live'): Promise<UserSettings> {
   // Guards the same class of bug the "Initialization issue between previous
   // transaction and current transaction" native error reports: Checkout.open()
   // called a second time before the first has finished. The Settings screen
@@ -162,7 +194,13 @@ export async function subscribeToPlan(plan: 'plus' | 'live'): Promise<UserSettin
 }
 
 /** Cancels the caller's active subscription (effective at cycle end — see
- *  dynamoService.cancelRazorpaySubscription's doc comment). */
+ *  dynamoService.cancelRazorpaySubscription's doc comment). Android
+ *  (Razorpay) only — see openAppleManageSubscriptions (re-exported below)
+ *  for iOS, which is a meaningfully different flow (opens Apple's own
+ *  subscription-management sheet instead of a synchronous cancel call) and
+ *  deliberately isn't hidden behind this same function name. */
 export async function cancelSubscription(): Promise<UserSettings> {
   return dynamoService.cancelRazorpaySubscription();
 }
+
+export { openAppleManageSubscriptions } from '@/services/appleIapService';

@@ -191,6 +191,25 @@ class DynamoService {
     return this.request('/v1/billing/razorpay/cancel', { method: 'POST' });
   }
 
+  // ── BILLING / APPLE IN-APP PURCHASE ──────────────────────────────────────────
+  // iOS counterpart to the Razorpay section above — see
+  // services/appleIapService.ts for the react-native-iap wrapper that
+  // produces the signedTransactionInfo this call verifies, and
+  // APPLE_IAP_INTEGRATION.md for why there's no cancel call here (Apple
+  // offers no server API for it).
+
+  /** Verifies a just-completed StoreKit purchase and applies the plan
+   *  server-side. Same "fast in-app confirmation only" role as
+   *  verifyRazorpayPayment above — the App Store Server Notifications
+   *  webhook (handled entirely server-side) is the durable source of truth
+   *  for renewals/expiry/refunds, which this call is never involved in. */
+  async verifyApplePurchase(signedTransactionInfo: string): Promise<UserSettings> {
+    return this.request('/v1/billing/apple/verify', {
+      method: 'POST',
+      body:   JSON.stringify({ signedTransactionInfo }),
+    });
+  }
+
   // ── TRIAL USAGE (7-day free trial — see backend/src/lib/trialLimits.mjs) ──
 
   /** Read-only trial status (used/remaining/days left) for the "N/10

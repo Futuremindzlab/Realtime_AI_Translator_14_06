@@ -104,11 +104,20 @@ module.exports = {
             // All endpoints (API Gateway, Cognito, OpenAI/ElevenLabs/Azure) are HTTPS —
             // cleartext (HTTP) traffic is never needed and should stay disabled.
             usesCleartextTraffic: false,
+            // Required by react-native-iap v14 (its Android side is built
+            // against this Kotlin version) — see APPLE_IAP_INTEGRATION.md.
+            kotlinVersion: '2.2.0',
           },
         },
       ],
       'expo-audio',
       'expo-asset',
+      // Apple In-App Purchase / Google Play Billing — see APPLE_IAP_INTEGRATION.md.
+      // Only actually used on iOS in this app (Android keeps Razorpay via
+      // react-native-razorpay below, which needs no config plugin), but the
+      // library itself is cross-platform and needs this plugin registered
+      // regardless of which platform ends up calling it at runtime.
+      'react-native-iap',
     ],
     experiments: {
       typedRoutes: true,
