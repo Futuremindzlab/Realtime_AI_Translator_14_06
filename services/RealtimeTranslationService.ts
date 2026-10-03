@@ -510,8 +510,14 @@ export class RealtimeTranslationService {
     audioService.interruptAutoStop();
   }
 
-  /** Flip speaker + swap source/target languages, then settle audio state before the next turn. */
-  private async swapTurnToNextPerson(): Promise<void> {
+  /**
+   * Flip speaker + swap source/target languages, then settle audio state before the next turn.
+   * `noticeMessage`, when given (e.g. a silence handover), is surfaced on the same
+   * 'waiting' update this emits — a caller that set it on an earlier, separate
+   * updateProgress() call just had it silently overwritten here a tick later,
+   * before React ever got a chance to render it.
+   */
+  private async swapTurnToNextPerson(noticeMessage?: string): Promise<void> {
     const next = computeNextTurnLanguages(this.isPersonATurn, this.originalSourceLanguage, this.originalTargetLanguage);
     this.isPersonATurn = next.isPersonATurn;
     this.currentSourceLanguage = next.currentSourceLanguage;
@@ -519,7 +525,7 @@ export class RealtimeTranslationService {
     console.log(`🔄 Next → Person ${this.isPersonATurn ? 'A' : 'B'}: ${this.currentSourceLanguage} → ${this.currentTargetLanguage}`);
 
     // Brief pause, then ensure audio resources are released before next recording
-    this.updateProgress({ stage: 'waiting', isRealtime: true });
+    this.updateProgress({ stage: 'waiting', isRealtime: true, ...(noticeMessage ? { error: noticeMessage } : {}) });
     await new Promise(r => setTimeout(r, 1000));
     await audioService.forceCleanup();
     await new Promise(r => setTimeout(r, 200));
@@ -608,13 +614,13 @@ export class RealtimeTranslationService {
         // the shared MAX_ERRORS budget. Capped so an empty room doesn't ping-pong forever.
         if (reason === 'No speech detected') {
           this.consecutiveSilenceHandovers++;
-          console.log(`⏭️ Silence timeout for Person ${person} — handing control to Person ${this.isPersonATurn ? 'B' : 'A'}`);
+          const nextPerson = this.isPersonATurn ? 'B' : 'A';
+          console.log(`⏭️ Silence timeout for Person ${person} — handing control to Person ${nextPerson}`);
           if (this.consecutiveSilenceHandovers >= RealtimeTranslationService.MAX_CONSECUTIVE_SILENCE_HANDOVERS) {
             this.updateProgress({ stage: 'error', error: 'No one is speaking. Please restart.', isRealtime: true });
             break;
           }
-          this.updateProgress({ stage: 'waiting', error: `No input from Person ${person} — passing to Person ${this.isPersonATurn ? 'B' : 'A'}`, isRealtime: true });
-          await this.swapTurnToNextPerson();
+          await this.swapTurnToNextPerson(`No input from Person ${person} — passing to Person ${nextPerson}`);
           continue;
         }
 
