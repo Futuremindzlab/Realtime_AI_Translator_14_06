@@ -32,6 +32,12 @@ export function SplitFaceToFace({ progress, isActive, disabled, onTogglePress, g
   const stage = progress?.stage;
   const isRecording = stage === 'recording';
   const isPlaying = stage === 'playing' || stage === 'generating_speech';
+  // A silence handover ('waiting' + error) or a hard failure ('error') carries a
+  // message the user needs to see — otherwise control silently passes to the other
+  // person (or the conversation silently stops) with nothing on screen to explain why,
+  // which reads as the app being broken.
+  const notice = progress?.error && (stage === 'waiting' || stage === 'error') ? progress.error : null;
+  const noticeColor = stage === 'error' ? t.danger : t.warning;
 
   const speakerColor = speaker === 'A' ? t.personA : t.personB;
   const listenerColor = listener === 'A' ? t.personA : t.personB;
@@ -69,6 +75,10 @@ export function SplitFaceToFace({ progress, isActive, disabled, onTogglePress, g
         </View>
         {progress?.sourceText ? (
           <Text style={styles.big} numberOfLines={5}>{progress.sourceText}</Text>
+        ) : notice ? (
+          <Text style={[styles.mutedBig, { color: noticeColor, fontWeight: '700' as any }]} numberOfLines={3}>
+            {notice}
+          </Text>
         ) : (
           <Text style={styles.mutedBig}>
             {isRecording ? 'Listening…' : (stage && STAGE_LABEL[stage]) || 'Ready when you are'}
