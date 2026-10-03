@@ -43,6 +43,20 @@ export class RealtimeTranslationService {
   private onProgressCallback: ((progress: TranslationProgress) => void) | null = null;
   private isActive = false;
   private autoContinueEnabled = false;
+  // Bug fix: a tap on the toggle button lands as handleStopConversation() then,
+  // moments later (the stopped conversation's canvas disappears, the user taps
+  // the idle mic button that replaces it), handleStartConversation() again —
+  // ordinary, deliberate taps seconds apart, not a double-tap glitch. The old
+  // conversationLoop() from the first call can still be mid-`await` (e.g.
+  // waiting out the in-flight recording's own timeout) when the second call's
+  // startConversation() flips isActive/autoContinueEnabled back to true — at
+  // that point the OLD loop's own `if (!this.isActive...) break` check no
+  // longer sees a stop, so both loops run concurrently against the same
+  // mutable instance state. Each call to startConversation() or
+  // stopConversation() bumps this; conversationLoop() captures the generation
+  // it was started with and bails the instant it no longer matches, so a stale
+  // loop can never act on state a newer call already owns.
+  private loopGeneration = 0;
   private currentSourceLanguage = '';
   private currentTargetLanguage = '';
   private currentTtsProvider: TTSProvider = 'openai';
@@ -460,6 +474,7 @@ export class RealtimeTranslationService {
     // over to Person B. Defaults to DEFAULT_SILENCE_TIMEOUT_MS (10s) if omitted.
     silenceTimeoutMs: number = RealtimeTranslationService.DEFAULT_SILENCE_TIMEOUT_MS,
   ): Promise<void> {
+    const myGeneration = ++this.loopGeneration;
     this.isActive = true;
     this.autoContinueEnabled = true;
     this.isPersonATurn = true;
@@ -481,11 +496,17 @@ export class RealtimeTranslationService {
     console.log('🗣️ ═══════════════════════════════════');
 
     // Run the conversation loop (blocks until stopped)
-    await this.conversationLoop();
+    await this.conversationLoop(myGeneration);
   }
 
   stopConversation(): void {
     console.log('🛑 CONVERSATION STOPPED');
+    // Invalidate any loop generation currently running (see the field's own
+    // comment) — without this, a loop already in flight when this call races
+    // a fresh startConversation() would see isActive/autoContinueEnabled
+    // flipped back to true by that newer call and keep going as if never
+    // stopped, now fighting the new loop over the same mutable instance state.
+    this.loopGeneration++;
     // Diagnostic: this name says "by user" but it's also called from
     // AppState's background handler (index.tsx) — the stack trace here
     // distinguishes an actual user tap from a spurious background-triggered
@@ -531,11 +552,11 @@ export class RealtimeTranslationService {
     await new Promise(r => setTimeout(r, 200));
   }
 
-  private async conversationLoop(): Promise<void> {
+  private async conversationLoop(myGeneration: number): Promise<void> {
     let consecutiveErrors = 0;
     const MAX_ERRORS = 3;
 
-    while (this.isActive && this.autoContinueEnabled) {
+    while (this.isActive && this.autoContinueEnabled && this.loopGeneration === myGeneration) {
       const person = this.isPersonATurn ? 'A' : 'B';
 
       try {
@@ -566,7 +587,7 @@ export class RealtimeTranslationService {
         console.log(`🎤 Recording: ${audioUri ? 'OK' : 'null'}`);
         logger.info('Turn recording finished', { person, platform: Platform.OS, hasAudio: !!audioUri });
 
-        if (!this.isActive || !this.autoContinueEnabled) break;
+        if (!this.isActive || !this.autoContinueEnabled || this.loopGeneration !== myGeneration) break;
 
         if (!audioUri) {
           consecutiveErrors++;
@@ -598,7 +619,7 @@ export class RealtimeTranslationService {
         );
         logger.info('Turn processed', { person, success, reason, platform: Platform.OS });
 
-        if (!this.isActive || !this.autoContinueEnabled) break;
+        if (!this.isActive || !this.autoContinueEnabled || this.loopGeneration !== myGeneration) break;
 
         if (success) {
           consecutiveErrors = 0;
@@ -697,9 +718,15 @@ export class RealtimeTranslationService {
     }
 
     console.log('🗣️ Conversation loop ended');
-    this.isActive = false;
-    this.autoContinueEnabled = false;
-    await audioService.forceCleanup().catch(() => {});
+    // Only this generation's own state to clean up — a newer generation
+    // (a fresh startConversation() that started while this stale loop was
+    // still unwinding) already owns isActive/autoContinueEnabled/the audio
+    // session now, and must not be stomped on by this one exiting late.
+    if (this.loopGeneration === myGeneration) {
+      this.isActive = false;
+      this.autoContinueEnabled = false;
+      await audioService.forceCleanup().catch(() => {});
+    }
   }
 
   /**
@@ -952,6 +979,7 @@ export class RealtimeTranslationService {
   async forceReset(): Promise<void> {
     console.log('Force resetting translation service...');
     this.clearSingleModeMaxDurationTimer();
+    this.loopGeneration++; // invalidate any conversationLoop() still in flight — see its own comment
     this.isActive = false;
     this.autoContinueEnabled = false;
     this.isPersonATurn = true;
@@ -961,6 +989,7 @@ export class RealtimeTranslationService {
 
   async cleanup(): Promise<void> {
     this.clearSingleModeMaxDurationTimer();
+    this.loopGeneration++; // invalidate any conversationLoop() still in flight — see its own comment
     this.isActive = false;
     this.autoContinueEnabled = false;
     await audioService.cleanup();
