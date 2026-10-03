@@ -280,24 +280,38 @@ export default function SettingsScreen() {
   // a conversation turn ran, what error was thrown, network vs. non-network)
   // instead of guessing from a secondhand description of the symptom.
   //
-  // Opens the device's mail app pre-addressed to support, subject + diagnostic
-  // log already filled in, so a user reporting a problem doesn't have to type
-  // the address themselves or explain what went wrong from memory. mailto:
-  // URLs have no universal length ceiling, but some mail clients truncate or
-  // reject very long ones — cap the log body defensively rather than find out
-  // in the field. Falls back to the plain OS share sheet if no mail app can
-  // handle mailto: at all (e.g. a device with no email account configured).
+  // Two user-selectable paths, not one auto-fallback — see the two handlers
+  // below for why that distinction matters now.
   const SUPPORT_EMAIL = 'Admin@futuremindzlab.com';
   const MAILTO_BODY_MAX_CHARS = 1500;
 
-  const handleShareDiagnostics = async () => {
+  const buildDiagnosticsBody = () => {
     const buildSha = process.env.EXPO_PUBLIC_BUILD_SHA ? process.env.EXPO_PUBLIC_BUILD_SHA.substring(0, 7) : 'dev';
     const header = `OneLingo diagnostics\nBuild: ${buildSha}  Platform: ${Platform.OS} ${Platform.Version}\nGenerated: ${new Date().toISOString()}\n${'-'.repeat(40)}\n`;
     const log = logger.formatRecentEntries();
-    const body = header + log;
+    return { body: header + log, buildSha };
+  };
 
+  // Opens the device's mail app pre-addressed to support, subject + diagnostic
+  // log already filled in, so a user reporting a problem doesn't have to type
+  // the address themselves. mailto: URLs have no universal length ceiling, but
+  // some mail clients truncate or reject very long ones — cap the log body
+  // defensively rather than find out in the field.
+  //
+  // Bug fix: this used to keep the FRONT of the log (body.slice(0, N)) and
+  // drop the rest — i.e. it kept the OLDEST entries and silently discarded
+  // the most recent ones, which are exactly the entries that show what just
+  // went wrong. A user hitting a live bug and sharing diagnostics right after
+  // (as the Settings screen's own description tells them to) got a log that
+  // cut off before reaching the actual failure. Keeping the tail instead
+  // means the header always survives (it's short and fixed-size) and any
+  // truncation drops older history, never the most recent entries.
+  const handleEmailDiagnostics = async () => {
+    const { body, buildSha } = buildDiagnosticsBody();
+    const TRUNCATION_NOTE = '…(earlier entries truncated — use "Share / save full log" for the complete history)\n';
+    const maxLogChars = MAILTO_BODY_MAX_CHARS - TRUNCATION_NOTE.length;
     const mailBody = body.length > MAILTO_BODY_MAX_CHARS
-      ? `${body.slice(0, MAILTO_BODY_MAX_CHARS)}\n…(truncated — full log available via Share if needed)`
+      ? TRUNCATION_NOTE + body.slice(-maxLogChars)
       : body;
     const subject = `OneLingo support — diagnostics (${buildSha})`;
     const mailtoUrl = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(mailBody)}`;
@@ -309,14 +323,37 @@ export default function SettingsScreen() {
         return;
       }
     } catch {
-      // fall through to the generic share sheet below
+      // fall through to the full share sheet below
     }
+    await handleFullShareDiagnostics();
+  };
 
+  // Bug fix: previously only reachable automatically when mailto: wasn't
+  // available at all — with a mail app configured (the common case), there
+  // was no way for the user to actually get the complete, untruncated log;
+  // the Settings description's own promise ("share this log right after")
+  // was undeliverable on any device with email set up. Now a real, always-
+  // available second option: the OS share sheet (copy/Drive/WhatsApp/etc.)
+  // with the full log body, no length cap.
+  const handleFullShareDiagnostics = async () => {
+    const { body } = buildDiagnosticsBody();
     try {
-      await Share.share({ message: `To: ${SUPPORT_EMAIL}\nSubject: ${subject}\n\n${body}` });
+      await Share.share({ message: `To: ${SUPPORT_EMAIL}\n\n${body}` });
     } catch {
       Alert.alert('Error', 'Failed to share diagnostics');
     }
+  };
+
+  const handleShareDiagnostics = () => {
+    Alert.alert(
+      'Share Diagnostics',
+      'Email support with the most recent log entries, or share/save the complete log via any app.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Email support', onPress: handleEmailDiagnostics },
+        { text: 'Share / save full log', onPress: handleFullShareDiagnostics },
+      ]
+    );
   };
 
   const handleRemoveCustomVoice = async () => {
