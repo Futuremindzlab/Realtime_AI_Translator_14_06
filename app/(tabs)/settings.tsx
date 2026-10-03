@@ -287,7 +287,15 @@ export default function SettingsScreen() {
 
   const buildDiagnosticsBody = () => {
     const buildSha = process.env.EXPO_PUBLIC_BUILD_SHA ? process.env.EXPO_PUBLIC_BUILD_SHA.substring(0, 7) : 'dev';
-    const header = `OneLingo diagnostics\nBuild: ${buildSha}  Platform: ${Platform.OS} ${Platform.Version}\nGenerated: ${new Date().toISOString()}\n${'-'.repeat(40)}\n`;
+    // Entry count + most-recent timestamp, separate from "Generated" (when this
+    // export was built): a report of "diagnostics look stale" is ambiguous
+    // without this — it could mean the buffer genuinely isn't being written to,
+    // or that nothing's been logged since the last cold start (e.g. checking
+    // Settings without reproducing first). A stale "Most recent entry" next to
+    // a current "Generated" time tells them apart at a glance.
+    const entries = logger.getRecentEntries();
+    const lastEntryAt = entries.length > 0 ? entries[entries.length - 1].ts : 'none yet';
+    const header = `OneLingo diagnostics\nBuild: ${buildSha}  Platform: ${Platform.OS} ${Platform.Version}\nGenerated: ${new Date().toISOString()}\nEntries captured: ${entries.length}  Most recent entry: ${lastEntryAt}\n${'-'.repeat(40)}\n`;
     const log = logger.formatRecentEntries();
     return { body: header + log, buildSha };
   };
