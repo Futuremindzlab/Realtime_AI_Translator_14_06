@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import { proxyPost } from '@/lib/apiProxy';
 import { NetworkError, isNetworkError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
+import { extractErrorMessage } from '@/lib/proxyErrors';
 
 // Script-specific seed prompts: bias Whisper toward the correct Unicode block
 // so it does not transliterate or fall back to a similar language.
@@ -102,8 +103,13 @@ export class OpenAIService {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const err: any = new Error(errorData.error || `Whisper API error: ${response.status}`);
+        const detailedMessage = extractErrorMessage(errorData);
+        const err: any = new Error(detailedMessage || `Whisper API error: ${response.status}`);
         err.status = response.status;
+        // Distinguishes "we have a real, specific message to show" from the
+        // generic placeholder just above — see the 429 branch below, which
+        // needs that distinction rather than string-matching the message.
+        err.hasDetailedMessage = Boolean(detailedMessage);
         throw err;
       }
 
@@ -131,7 +137,21 @@ export class OpenAIService {
       } else if (error.status === 401 || error.message?.includes('API key')) {
         throw new Error('Transcription service is temporarily unavailable. Please try again shortly.');
       } else if (error.status === 429 || error.message?.includes('quota') || error.message?.includes('rate limit')) {
-        throw new Error('Transcription quota exceeded or rate limited. Please try again later.');
+        // Bug fix: this used to unconditionally replace whatever message we
+        // actually got with a generic "quota exceeded or rate limited" —
+        // which reads like an OpenAI account/billing problem. Most of the
+        // time a 429 here is actually OUR OWN daily usage cap for the
+        // caller's plan (see backend/src/lib/usageLimits.mjs's
+        // enforceDailyAiCallLimit), whose message already says exactly
+        // what's wrong ("Daily AI usage limit reached for the 'basic' plan
+        // (20 requests/day). Try again tomorrow, or upgrade your plan.") and
+        // was being thrown away here. Only fall back to the generic message
+        // when we genuinely have nothing specific to show.
+        throw new Error(
+          error.hasDetailedMessage
+            ? error.message
+            : 'Transcription quota exceeded or rate limited. Please try again later.'
+        );
       } else if (error.status === 400) {
         throw new Error(`Bad request to transcription service: ${error.message}`);
       } else {
