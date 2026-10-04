@@ -192,31 +192,50 @@ export class AudioService {
 
   async forceCleanup(): Promise<void> {
     console.log('🧹 Force cleaning up audio objects...');
+    // Bug fix: forceCleanup() is called fire-and-forget from
+    // RealtimeTranslationService.stopConversation() (`audioService.forceCleanup()
+    // .catch(() => {})`, never awaited), so it can still be mid-teardown when
+    // the user starts a brand-new conversation. recordingToken already fences
+    // this exact class of race inside startRecording() itself (see its own doc
+    // comment), but forceCleanup() previously ignored it — a stale cleanup
+    // call could null out `this.recording`/`this.sound` or reset `audioMode`
+    // out from under a newer recording a fresh startRecording() had already
+    // taken ownership of. Capturing the token here and gating the mutations on
+    // it closes that gap for every caller, not just this one.
+    const myToken = this.recordingToken;
 
     // Clean up recording
-    if (this.recording) {
+    const recordingToClean = this.recording;
+    if (recordingToClean) {
       try {
-        await this.recording.stopAndUnloadAsync();
+        await recordingToClean.stopAndUnloadAsync();
         console.log('✅ Recording cleaned up');
       } catch (e) {
         console.warn('Warning cleaning recording:', e);
       }
-      this.recording = null;
+      if (this.recordingToken === myToken) {
+        this.recording = null;
+      }
     }
 
     // Clean up sound
-    if (this.sound) {
+    const soundToClean = this.sound;
+    if (soundToClean) {
       try {
-        await this.sound.stopAsync();
-        await this.sound.unloadAsync();
+        await soundToClean.stopAsync();
+        await soundToClean.unloadAsync();
         console.log('✅ Sound cleaned up');
       } catch (e) {
         console.warn('Warning cleaning sound:', e);
       }
-      this.sound = null;
+      if (this.recordingToken === myToken) {
+        this.sound = null;
+      }
     }
 
-    this.audioMode = 'idle';
+    if (this.recordingToken === myToken) {
+      this.audioMode = 'idle';
+    }
 
     // Increased delay to ensure cleanup completes on all devices
     await new Promise(resolve => setTimeout(resolve, 200));
