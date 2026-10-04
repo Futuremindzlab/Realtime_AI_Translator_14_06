@@ -20,7 +20,7 @@ export class AudioService {
   // Feature: immediate-stop control. Holds the pending auto-stop recording's
   // finalizer while one is in flight, so interruptAutoStop() can end the turn
   // right now instead of waiting for the silence/fixed-duration timers.
-  private pendingAutoStopFinish: (() => void) | null = null;
+  private pendingAutoStopFinish: (() => Promise<void>) | null = null;
 
   // Bug fix: conversation mode occasionally stopped advancing after a few
   // turns ("not continuous" — the app never returns to Listening for the
@@ -192,6 +192,29 @@ export class AudioService {
 
   async forceCleanup(): Promise<void> {
     console.log('🧹 Force cleaning up audio objects...');
+
+    // Bug fix: tapping "Stop" during conversation mode calls stopConversation()
+    // -> forceCleanup() while a turn may be mid-recording inside
+    // startRecordingWithAutoStop(). Calling recordingToClean.stopAndUnloadAsync()
+    // below (as this method already did) genuinely stops the native recorder,
+    // but it does NOT fire that call's own setOnRecordingStatusUpdate listener —
+    // that only runs on the native module's periodic status events, not on an
+    // external stopAndUnloadAsync() call. So startRecordingWithAutoStop()'s
+    // returned promise (which conversationLoop is awaiting) was left unresolved
+    // until its own fixedDurationMs fallback timer eventually fired — i.e. a
+    // manual Stop could silently take up to the full silence timeout (10s by
+    // default, or whatever was configured) before the conversation actually
+    // stopped, even though the mic had already gone silent. interruptAutoStop()
+    // already solves exactly this by calling the turn's own finalizer directly
+    // instead of waiting on a native callback — do the same here so every
+    // forceCleanup() call ends an in-flight turn immediately, not just the
+    // explicit "interrupt" button.
+    if (this.pendingAutoStopFinish) {
+      const finish = this.pendingAutoStopFinish;
+      this.pendingAutoStopFinish = null;
+      try { await finish(); } catch (e) {}
+    }
+
     // Bug fix: forceCleanup() is called fire-and-forget from
     // RealtimeTranslationService.stopConversation() (`audioService.forceCleanup()
     // .catch(() => {})`, never awaited), so it can still be mid-teardown when

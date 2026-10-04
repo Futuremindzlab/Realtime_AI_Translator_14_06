@@ -89,8 +89,13 @@ module.exports = {
         'android.permission.MODIFY_AUDIO_SETTINGS',
       ],
       adaptiveIcon: {
-        foregroundImage: './assets/images/icon.png',
-        backgroundColor: '#0024E6',
+        // Glyph-only, transparent-background image padded inside Android's
+        // adaptive-icon safe zone — using the full icon.png here (as before)
+        // let Android's circular/rounded masks clip the mark. backgroundColor
+        // now matches the app's own dark background (lib/canvasTheme.ts)
+        // instead of an unrelated blue.
+        foregroundImage: './assets/images/adaptive-icon-foreground.png',
+        backgroundColor: '#0B0E14',
       },
     },
     web: {
