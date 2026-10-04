@@ -1,4 +1,4 @@
-import { isLikelyWhisperHallucination } from '@/lib/whisperHallucinations';
+import { isLikelyWhisperHallucination, classifyWhisperHallucination } from '@/lib/whisperHallucinations';
 
 describe('isLikelyWhisperHallucination — non-speech caption denylist (existing behavior)', () => {
   it('flags known caption-style hallucinations', () => {
@@ -59,5 +59,45 @@ describe('isLikelyWhisperHallucination — repetition-loop detection (new)', () 
 
   it('does not flag short input below the loop-detection window', () => {
     expect(isLikelyWhisperHallucination('day day')).toBe(false);
+  });
+});
+
+describe('classifyWhisperHallucination — names which rule fired (new)', () => {
+  // Added after a real transcript (detectedLanguage populated, real length)
+  // was still discarded as "No speech detected" with nothing in the log
+  // saying which rule caught it or whether one did at all — isLikelyWhisperHallucination's
+  // boolean collapses that distinction away.
+  it('reports "exact" for a denylisted phrase', () => {
+    expect(classifyWhisperHallucination('Thanks for watching')).toBe('exact');
+  });
+
+  it('reports "keyword" for a short keyword-built phrase', () => {
+    expect(classifyWhisperHallucination('faint engine sound')).toBe('keyword');
+  });
+
+  it('reports "repeating-loop" for a stuck-decoder repeat', () => {
+    expect(classifyWhisperHallucination(Array(4).fill('thank you').join(' '))).toBe('repeating-loop');
+  });
+
+  it('reports null for real, varied speech', () => {
+    expect(classifyWhisperHallucination('Can you tell me where the nearest station is?')).toBe(null);
+  });
+
+  it('reports null for empty input (handled separately via the length check upstream)', () => {
+    expect(classifyWhisperHallucination('')).toBe(null);
+  });
+
+  it('agrees with isLikelyWhisperHallucination on every case above', () => {
+    const cases = [
+      'Thanks for watching',
+      'faint engine sound',
+      Array(4).fill('thank you').join(' '),
+      'Can you tell me where the nearest station is?',
+      '',
+      'the engine sound was too loud to hear him properly',
+    ];
+    for (const text of cases) {
+      expect(classifyWhisperHallucination(text) !== null).toBe(isLikelyWhisperHallucination(text));
+    }
   });
 });
