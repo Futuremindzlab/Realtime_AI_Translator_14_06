@@ -8,7 +8,7 @@ import { resolveLanguage, isCorrectScript, detectScriptLanguage } from '@/lib/co
 import { isNetworkError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 import { withTimeout, TimeoutError } from '@/lib/withTimeout';
-import { isLikelyWhisperHallucination } from '@/lib/whisperHallucinations';
+import { classifyWhisperHallucination } from '@/lib/whisperHallucinations';
 import { computeNextTurnLanguages, resolvePersonAAutoSourceLanguage } from '@/lib/conversationTurnLanguage';
 
 // expo-file-system is native-only — audio history persistence is skipped on
@@ -341,7 +341,15 @@ export class RealtimeTranslationService {
       // description on ambient noise/silence (see whisperHallucinations.ts
       // for the full explanation). Treated identically to no speech at all,
       // since that's what actually happened.
-      if (!actualText || actualText.length < 3 || isLikelyWhisperHallucination(actualText)) {
+      if (!actualText || actualText.length < 3) {
+        logger.info('Single-mode turn rejected as no speech', { cause: 'too-short', rawLength: actualText.length, platform: Platform.OS });
+        this.updateProgress({ stage: 'error', error: 'No speech detected — please speak clearly and try again' });
+        this.isActive = false;
+        return;
+      }
+      const singleModeHallucinationMatch = classifyWhisperHallucination(actualText);
+      if (singleModeHallucinationMatch) {
+        logger.info('Single-mode turn rejected as likely Whisper hallucination', { cause: singleModeHallucinationMatch, textLength: actualText.length, platform: Platform.OS });
         this.updateProgress({ stage: 'error', error: 'No speech detected — please speak clearly and try again' });
         this.isActive = false;
         return;
@@ -761,8 +769,22 @@ export class RealtimeTranslationService {
     // that's exactly when the mic is open with nobody talking yet (see
     // lib/whisperHallucinations.ts). Same handling as true silence: the
     // caller hands control to the other person instead of retrying.
-    if (!actualText || actualText.length < 3 || isLikelyWhisperHallucination(actualText)) {
-      console.log(`⚠️ No valid speech (or Whisper hallucination: "${actualText}"), will retry`);
+    if (!actualText || actualText.length < 3) {
+      logger.info('Turn rejected as no speech', { cause: 'too-short', rawLength: actualText.length, platform: Platform.OS });
+      console.log(`⚠️ No valid speech (empty/too short), will retry`);
+      return { success: false, reason: 'No speech detected' };
+    }
+    // Bug fix: a real transcript (detectedLanguage populated above, 39 chars —
+    // not silence) was still discarded here, but the log only ever recorded
+    // textLength, never WHICH rule fired or whether it fired at all — a false
+    // positive here was indistinguishable after the fact from genuine
+    // silence. Logging the specific rule (not the transcript itself, which
+    // may contain what the person actually said) makes that provable on the
+    // next reproduction instead of guessed at.
+    const hallucinationMatch = classifyWhisperHallucination(actualText);
+    if (hallucinationMatch) {
+      logger.info('Turn rejected as likely Whisper hallucination', { cause: hallucinationMatch, textLength: actualText.length, platform: Platform.OS });
+      console.log(`⚠️ Whisper hallucination (${hallucinationMatch}): "${actualText}"`);
       return { success: false, reason: 'No speech detected' };
     }
 
