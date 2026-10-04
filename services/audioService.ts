@@ -77,10 +77,20 @@ export class AudioService {
       }
 
       console.log('🎤 Setting audio mode for recording...');
+      // Bug fix: staysActiveInBackground was false, so any brief loss of
+      // foreground (screen lock, a notification, switching apps for a few
+      // seconds) froze the in-flight recording/TTS-playback promise entirely —
+      // confirmed from a diagnostics log where TTS finished generating, the app
+      // backgrounded for ~22s, and "Turn processed" only fired the instant it
+      // came back to foreground. From the user's side that reads as the app
+      // randomly jumping/changing state on return. true lets a turn already in
+      // flight actually keep running (needs ios.infoPlist.UIBackgroundModes:
+      // ['audio'] in app.config.js for iOS; Android needs no extra config for
+      // this specific case).
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
+        staysActiveInBackground: true,
         shouldDuckAndroid: true,
         playThroughEarpieceAndroid: false,
       });
@@ -265,10 +275,12 @@ export class AudioService {
       }
 
       // 3. CRITICAL: Switch audio mode from recording to playback
+      // staysActiveInBackground: true — see the matching comment on the
+      // recording-mode call above; same fix applies to TTS playback.
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,     // Must be false for playback!
         playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
+        staysActiveInBackground: true,
         shouldDuckAndroid: false,
         playThroughEarpieceAndroid: false, // Use speaker
       });

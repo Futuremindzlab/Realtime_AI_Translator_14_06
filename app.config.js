@@ -67,6 +67,11 @@ module.exports = {
           'This app needs access to the microphone to record audio for translation.',
         NSSpeechRecognitionUsageDescription:
           'This app needs access to speech recognition to transcribe your audio.',
+        // Required for Audio.setAudioModeAsync's staysActiveInBackground: true
+        // (see services/audioService.ts) to actually take effect on iOS — without
+        // this, iOS suspends recording/playback the moment the app backgrounds,
+        // same as if the flag were never set.
+        UIBackgroundModes: ['audio'],
       },
     },
     android: {
