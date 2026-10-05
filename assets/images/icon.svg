@@ -1,20 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- OneLingo mark: an O+L monogram — a true ring (O) with an L bridging
-       its counter, sharing the ring's own inner wall as part of the L's
-       strokes rather than two shapes simply stacked. Vibrant multi-stop
-       gradient background + solid white glyph, same formula as Instagram's
-       icon, in OneLingo's own palette (pink -> magenta -> violet -> sky,
-       the violet/sky pair already used for Person A/B — see
-       lib/canvasTheme.ts). -->
+  <!-- OneLingo mark: an oval O with a small lowercase l floating inside its
+       counter as an accent — not a second structural letterform bridging
+       the ring, which (circular O + full-height block L) read as an
+       official seal/driving-license badge. Vivid multi-stop gradient
+       background + solid white glyph, same formula as Instagram's icon. -->
   <defs>
     <linearGradient id="vivid" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%"   stop-color="#FF6B9D"/>
-      <stop offset="32%"  stop-color="#C147E9"/>
-      <stop offset="64%"  stop-color="#7C3AED"/>
-      <stop offset="100%" stop-color="#38BDF8"/>
+      <stop offset="0%"   stop-color="#FF3D81"/>
+      <stop offset="32%"  stop-color="#D926E8"/>
+      <stop offset="64%"  stop-color="#8B2FF0"/>
+      <stop offset="100%" stop-color="#22C3FF"/>
     </linearGradient>
-    <radialGradient id="glow" cx="26%" cy="18%" r="85%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.30"/>
+    <radialGradient id="glow" cx="26%" cy="16%" r="88%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.34"/>
       <stop offset="55%" stop-color="#ffffff" stop-opacity="0"/>
     </radialGradient>
   </defs>
@@ -24,15 +22,15 @@
   <rect width="1024" height="1024" fill="url(#vivid)"/>
   <rect width="1024" height="1024" fill="url(#glow)"/>
 
-  <!-- O: true ring (outer circle minus inner counter, evenodd) -->
+  <!-- O: oval ring (ellipse minus a smaller concentric ellipse, evenodd) -->
   <path
     fill="#ffffff"
     fill-rule="evenodd"
     d="
-      M 512 212 A 300 300 0 1 1 511.9 212 Z
-      M 512 342 A 170 170 0 1 1 511.9 342 Z
+      M 512 262 A 330 250 0 1 1 511.9 262 Z
+      M 512 352 A 240 160 0 1 1 511.9 352 Z
     "
   />
-  <!-- L: bridges the O's counter, touching the ring's inner wall top and right -->
-  <polygon fill="#ffffff" points="422,355 492,355 492,542 665,542 665,612 422,612" />
+  <!-- l: small accent mark floating inside the counter -->
+  <rect x="534" y="416" width="44" height="196" rx="22" fill="#ffffff"/>
 </svg>

@@ -610,8 +610,8 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   welcomeLogo: {
-    width: 156,
-    height: 156,
+    width: 190,
+    height: 152,
     marginBottom: 28,
   },
   welcomeTitle: {
