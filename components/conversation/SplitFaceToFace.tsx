@@ -109,6 +109,8 @@ export function SplitFaceToFace({ progress, isActive, disabled, onTogglePress, g
           onPress={onTogglePress}
           disabled={disabled}
           activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={isActive ? 'Stop conversation' : 'Start conversation'}
         >
           {isActive
             ? <Square color="#fff" size={24} fill="#fff" />

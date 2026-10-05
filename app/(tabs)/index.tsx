@@ -339,7 +339,12 @@ export default function HomeScreen() {
             <Text style={styles.title}>OneLingo</Text>
             <Text style={styles.subtitle}>Real-time voice translation</Text>
           </View>
-          <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/settings')}>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => router.push('/settings')}
+            accessibilityRole="button"
+            accessibilityLabel="Open settings"
+          >
             <SettingsIcon color={t.text} size={18} />
           </TouchableOpacity>
         </View>
@@ -424,6 +429,12 @@ export default function HomeScreen() {
               onPress={handleToggleRecording}
               disabled={isButtonDisabled}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isActive
+                  ? (conversationMode ? 'Stop conversation' : 'Stop recording')
+                  : (conversationMode ? 'Start conversation' : 'Start recording')
+              }
             >
               {isActive
                 ? <Square color="white" size={34} fill="white" />
