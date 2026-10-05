@@ -112,6 +112,21 @@ Parameters:
     Default: 25
     Description: Placeholder threshold (USD) for the estimated-charges billing alarm — tune based on your actual expected spend once you have real usage data.
 
+  # ── Daily AI-proxy call caps for paying tiers — see lib/usageLimits.mjs.
+  # Deliberately generous safety-net defaults for the growth phase (bound
+  # only pathological cases — a leaked token, a retry-loop bug — not normal
+  # usage). Tighten via --parameter-overrides once ai_usage has enough real
+  # per-user data to size a business-driven limit instead of a guess.
+  PlusDailyCallLimit:
+    Type: Number
+    Default: 200
+    Description: Daily AI-proxy call safety-net cap for 'plus' subscribers (~65 full translations/day at ~3 calls each).
+
+  LiveDailyCallLimit:
+    Type: Number
+    Default: 400
+    Description: Daily AI-proxy call safety-net cap for 'live' subscribers (~130 full translations/day at ~3 calls each).
+
 # ──────────────────────────────────────────────────────────
 # Globals — applied to every Lambda function
 # ──────────────────────────────────────────────────────────
@@ -211,6 +226,8 @@ Resources:
           RAZORPAY_PLAN_ID_PLUS:   !Ref RazorpayPlanIdPlus
           RAZORPAY_PLAN_ID_LIVE:   !Ref RazorpayPlanIdLive
           USAGE_TABLE:             !Ref UsageTable
+          PLUS_DAILY_CALL_LIMIT:   !Ref PlusDailyCallLimit
+          LIVE_DAILY_CALL_LIMIT:   !Ref LiveDailyCallLimit
       Events:
         # Catch-all proxy — routes every path+method to the single handler
         ProxyRoot:

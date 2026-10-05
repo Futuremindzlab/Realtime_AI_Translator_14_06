@@ -6,36 +6,44 @@ export const USAGE_TABLE = process.env.USAGE_TABLE || 'ai_usage';
 
 /**
  * Daily AI-proxy call caps per plan — bound worst-case cost exposure (a
- * leaked token, a runaway conversation-mode retry loop, or just a heavy
- * user) on the metered OpenAI/ElevenLabs/Azure routes in aiProxy.mjs.
+ * leaked token, a runaway conversation-mode retry loop) on the metered
+ * OpenAI/ElevenLabs/Azure routes in aiProxy.mjs.
  *
- * `plus`/`live` are sized off TheOneLingo_Cost_Pricing_Calculator.xlsx
- * (shared alongside this change), targeting a 50% gross margin on a
- * subscriber's AI cost EVEN IN THE WORST CASE (gpt-4o + ElevenLabs v3 —
- * i.e. every call this user makes hits the priciest model/TTS combination
- * the app can route to, which real usage will rarely do every single call).
- * At ₹200/₹360 current pricing (backend/src/lib/razorpay.mjs) and the
- * calculator's usage assumptions (~8s audio, ~150+60 tokens, ~80 TTS
- * characters per transaction — 3 AI calls each: transcribe+translate+TTS):
- *   plus: ₹100/mo cost budget → ~11 calls/day (was 150 — a real cut, see below)
- *   live: ₹180/mo cost budget → ~19 calls/day (was 500)
- * This is a steep reduction from the previous placeholder values, and is a
- * genuine product trade-off, not just a bug fix: it caps a paid subscriber
- * to roughly 3-6 translations/day before hitting the daily limit. Before
- * shipping this to production, decide (with the spreadsheet's "Target gross
- * margin" and per-transaction usage assumptions as the levers) whether that
- * trade-off is right for the product, or whether it's the ₹200/₹360 pricing
- * that should move instead — both are one cell each in the calculator.
+ * Deliberate product decision (growth phase): `plus`/`live` are sized as a
+ * generous SAFETY NET, not a cost-margin budget. The previous version of
+ * this file sized them off TheOneLingo_Cost_Pricing_Calculator.xlsx to hit
+ * a 50% gross margin even in the worst case, which worked out to ~11-19
+ * calls/day — roughly 3-6 translations before a paying subscriber got
+ * locked out. That's the wrong trade-off while the priority is acquiring
+ * and retaining users: it was effectively invisible-rate-limiting the
+ * people actually paying. These defaults (plus: 200, live: 400 calls/day —
+ * ≈65/≈130 full translations) are sized so no real usage pattern, including
+ * someone in back-to-back conversations for hours, ever reaches them; they
+ * only stop a genuinely pathological case (stolen token, infinite retry
+ * bug) from burning unbounded spend.
  *
- * `basic` (free tier) is deliberately left unchanged (20/day) here: it has
- * $0 revenue to size a margin against, so "how much free usage to give away"
- * is a growth/acquisition-cost decision, not a cost-recovery one — flagging
- * rather than guessing. At today's worst-case per-call cost, 20 calls/day
- * (≈6-7 free transactions/day) is a real, uncapped-by-revenue cost per free
- * user (~₹188/month in the calculator's worst case) — worth a deliberate
- * decision, not a default.
+ * Both are overridable via PLUS_DAILY_CALL_LIMIT / LIVE_DAILY_CALL_LIMIT
+ * (see template.yaml's PlusDailyCallLimit/LiveDailyCallLimit parameters) —
+ * once there's enough real ai_usage data to know actual per-user usage
+ * (p50/p95/p99), tighten these with `sam deploy --parameter-overrides`,
+ * no code change needed. ai_usage now records Plus/Live calls too (the
+ * enforcement below no longer skips them), so that data is being collected
+ * starting now rather than only once tightening becomes relevant.
+ *
+ * `basic` (free tier) is unchanged (20/day): it sits underneath the
+ * separate trial system (trialLimits.mjs — 7 days, 10 translations/5
+ * conversations) as a secondary safety net, not the primary free-tier gate.
  */
-export const DAILY_AI_CALL_LIMITS = { basic: 20, plus: 11, live: 19 };
+function envInt(name, fallback) {
+  const parsed = parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export const DAILY_AI_CALL_LIMITS = {
+  basic: 20,
+  plus: envInt('PLUS_DAILY_CALL_LIMIT', 200),
+  live: envInt('LIVE_DAILY_CALL_LIMIT', 400),
+};
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD, UTC
@@ -55,13 +63,6 @@ function todayKey() {
  */
 export async function enforceDailyAiCallLimit(userId) {
   const plan = await getUserPlan(userId);
-
-  // TEMPORARY: plus/live caps disabled — the ~11/~19 calls/day sized in the
-  // comment above are stale relative to current ₹100/₹200 pricing and cut
-  // off paying subscribers after a handful of translations. Re-enable by
-  // removing this early return once the caps are re-sized (see the comment
-  // on DAILY_AI_CALL_LIMITS above for the pricing calculator to re-run).
-  if (plan === 'plus' || plan === 'live') return;
 
   const limit = DAILY_AI_CALL_LIMITS[plan] ?? DAILY_AI_CALL_LIMITS.basic;
 
