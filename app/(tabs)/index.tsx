@@ -16,7 +16,7 @@ import { useRouter } from 'expo-router';
 import { Mic, Square, Users, User, Settings as SettingsIcon, Clock, Volume2 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { LanguagePairControl } from '@/components/conversation/LanguagePairControl';
-import { SplitFaceToFace } from '@/components/conversation/SplitFaceToFace';
+import { ConversationTurn } from '@/components/conversation/ConversationTurn';
 import { PaywallView } from '@/components/onboarding/PaywallView';
 import {
   realtimeTranslationService,
@@ -405,8 +405,8 @@ export default function HomeScreen() {
         {conversationMode && !isConversationRunning && (
           <View style={[styles.section, styles.hintBox]}>
             <Text style={styles.hintText}>
-              Tap the mic to start. Each person gets 10s to speak — the phone lies flat between you
-              and the other side reads their translation right-side up.
+              Tap the mic to start. Each person gets 10s to speak, then control passes
+              to the other person automatically.
             </Text>
           </View>
         )}
@@ -414,7 +414,7 @@ export default function HomeScreen() {
         {/* ── Primary control: face-to-face canvas while a conversation is live, otherwise the idle/solo mic ── */}
         {showCanvas ? (
           <View style={styles.section}>
-            <SplitFaceToFace
+            <ConversationTurn
               progress={progress}
               isActive={isActive}
               disabled={isButtonDisabled}
