@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking } from 'react-native';
 import {
   Plane, Briefcase, GraduationCap, Users, MoreHorizontal,
   ChevronLeft, ShieldCheck, Mic, Database, Ban,
@@ -141,6 +141,13 @@ export function OnboardingFlow({ updateSettings, refreshSettings }: Props) {
               </Text>
             </View>
 
+            <TouchableOpacity
+              onPress={() => Linking.openURL('https://theonelingo.com/legal/policies.html#privacy')}
+              accessibilityRole="button"
+              accessibilityLabel="Read the full privacy policy">
+              <Text style={styles.privacyLink}>Read the full privacy policy →</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.primaryButton} onPress={goNext}>
               <Text style={styles.primaryButtonText}>Agree & Continue</Text>
             </TouchableOpacity>
@@ -257,6 +264,14 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     color: t.textMuted,
     lineHeight: 20,
+  },
+  privacyLink: {
+    fontSize: 13.5,
+    color: t.personB,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 4,
   },
   primaryButton: {
     backgroundColor: t.personB,

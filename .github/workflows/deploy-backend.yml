@@ -1,11 +1,19 @@
 name: Deploy Backend (Lambda + API Gateway)
 
 on:
-  push:
+  # Gated on the Tests workflow finishing successfully on master, rather than
+  # on push directly — pushing straight to master used to kick off this
+  # deploy and the "Tests" workflow's own re-run on master in parallel, with
+  # nothing stopping a red backend test from still deploying to prod. The
+  # PR's required `test.yml` check (pull_request trigger) already blocked
+  # the merge itself from happening on red CI, but this closes the matching
+  # gap on master's *own* re-run of those tests post-merge — e.g. a test
+  # that's order- or environment-dependent and only fails outside the PR's
+  # context, or a direct push bypassing PR review entirely.
+  workflow_run:
+    workflows: ['Tests']
+    types: [completed]
     branches: [master]
-    paths:
-      - 'backend/**'
-      - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
     inputs:
       stage:
@@ -23,12 +31,46 @@ jobs:
   deploy-backend:
     name: SAM Build & Deploy
     runs-on: ubuntu-latest
+    # workflow_dispatch always runs (manual, deliberate). workflow_run only
+    # deploys when ALL of: the Tests run it's reacting to actually passed (a
+    # failure or cancellation must NOT deploy); it was Tests' push-triggered
+    # run, not a pull_request run — workflow_run's `branches` filter above
+    # matches on a PR's *base* branch, not its head, so without this check
+    # every PR opened against master would also match `branches: [master]`
+    # and attempt a prod deploy on green PR CI, before anything merges; and
+    # it actually ran on master (belt-and-suspenders with the filter above).
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'master')
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # workflow_run checks out master's default ref unless told
+          # otherwise — pin to the exact commit the Tests run covered, so a
+          # fast-forwarding master between that run and this one can't
+          # deploy code the tests never actually ran against.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # Need the previous commit too, to diff for the path filter below
+          # (workflow_run carries no `paths` filter of its own, unlike the
+          # old push trigger — only a push event supports that).
+          fetch-depth: 2
+
+      - name: Check whether backend/** changed
+        if: github.event_name == 'workflow_run'
+        id: changes
+        run: |
+          if git diff --quiet HEAD~1 HEAD -- backend/ .github/workflows/deploy-backend.yml; then
+            echo "backend_changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend_changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Configure AWS credentials
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend_changed != 'false'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -36,19 +78,23 @@ jobs:
           aws-region: ${{ secrets.EXPO_PUBLIC_AWS_REGION }}
 
       - name: Set up SAM CLI
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend_changed != 'false'
         uses: aws-actions/setup-sam@v2
         with:
           use-installer: true
 
       - name: Install Lambda dependencies
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend_changed != 'false'
         working-directory: backend
         run: npm install --omit=dev
 
       - name: SAM Build
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend_changed != 'false'
         working-directory: backend
         run: sam build --use-container
 
       - name: SAM Deploy
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend_changed != 'false'
         working-directory: backend
         env:
           USER_POOL_ID:            ${{ secrets.EXPO_PUBLIC_AWS_USER_POOL_ID }}
@@ -102,6 +148,7 @@ jobs:
             --parameter-overrides "${PARAMS[@]}"
 
       - name: Print API base URL
+        if: github.event_name == 'workflow_dispatch' || steps.changes.outputs.backend_changed != 'false'
         run: |
           echo "✅ Backend deployed!"
           aws cloudformation describe-stacks \

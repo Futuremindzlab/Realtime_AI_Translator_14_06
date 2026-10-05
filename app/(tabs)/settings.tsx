@@ -12,7 +12,7 @@ import {
   Linking,
   Platform,
 } from 'react-native';
-import { LogOut, Save, Mic, Trash2, Bug, Zap } from 'lucide-react-native';
+import { LogOut, Save, Mic, Trash2, Bug, Zap, FileText } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { audioService } from '@/services/audioService';
 import { ttsService, TTSService } from '@/services/ttsService';
@@ -752,6 +752,26 @@ export default function SettingsScreen() {
                 </Text>
               </TouchableOpacity>
             )}
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Legal</Text>
+            <TouchableOpacity
+              style={[styles.secondaryButton, { borderColor: t.cardBorderStrong }]}
+              onPress={() => Linking.openURL('https://theonelingo.com/legal/policies.html#privacy')}
+              accessibilityRole="button"
+              accessibilityLabel="Open Privacy Policy">
+              <FileText size={18} color={t.textMuted} />
+              <Text style={[styles.secondaryButtonText, { color: t.textMuted }]}>Privacy Policy</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.secondaryButton, { borderColor: t.cardBorderStrong, marginTop: 10 }]}
+              onPress={() => Linking.openURL('https://theonelingo.com/legal/policies.html#terms')}
+              accessibilityRole="button"
+              accessibilityLabel="Open Terms of Service">
+              <FileText size={18} color={t.textMuted} />
+              <Text style={[styles.secondaryButtonText, { color: t.textMuted }]}>Terms of Service</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.card}>

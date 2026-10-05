@@ -1,5 +1,12 @@
 # Legal pages — draft
 
+The actual page now lives at `website/legal/policies.html`, not here — moved
+so Netlify's existing `theonelingo` site (see `netlify.toml`, `base =
+"website"`) picks it up and serves it automatically at
+`https://theonelingo.com/legal/policies.html` on the next deploy, same as
+every other page under `website/`. This file stays only as the design notes
+below.
+
 `policies.html` is a single self-contained page covering the Privacy Policy, Terms of Service, and Refund/Cancellation Policy for The OneLingo (formerly referred to internally as Realtime AI Translator). Everything in it is grounded in what the app actually does (see the code it's based on — the retention sweep, `settings.mjs`'s `plan`/`razorpay_subscription_*` fields, `billing.mjs`'s cancel-at-cycle-end behavior, the third-party processors actually wired up).
 
 **Filled in so far** (from business details provided 2026-09-13):
