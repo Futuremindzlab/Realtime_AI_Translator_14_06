@@ -44,6 +44,15 @@ export class AudioService {
   // is allowed to touch shared recording state.
   private recordingToken = 0;
 
+  // Same race, playback side: forceCleanup() is called fire-and-forget
+  // (never awaited) when the user taps Stop mid-playback. Without a fence,
+  // a forceCleanup() that nulls this.sound/sets audioMode='idle' to
+  // genuinely stop audio could be immediately clobbered by the still-running
+  // playAudioInternal() call resuming right after and reassigning
+  // this.sound/audioMode='playback' — the user taps Stop, but playback
+  // keeps going. Mirrors recordingToken's fencing of startRecording().
+  private playbackToken = 0;
+
   async requestPermissions(): Promise<boolean> {
     try {
       const { status } = await Audio.requestPermissionsAsync();
@@ -193,6 +202,11 @@ export class AudioService {
   async forceCleanup(): Promise<void> {
     console.log('🧹 Force cleaning up audio objects...');
 
+    // Invalidate any in-flight playAudioInternal() call so it can't
+    // resurrect this.sound/this.audioMode after this cleanup intentionally
+    // clears them — see playbackToken's own doc comment above.
+    this.playbackToken++;
+
     // Bug fix: tapping "Stop" during conversation mode calls stopConversation()
     // -> forceCleanup() while a turn may be mid-recording inside
     // startRecordingWithAutoStop(). Calling recordingToClean.stopAndUnloadAsync()
@@ -289,6 +303,7 @@ export class AudioService {
   }
 
   private async playAudioInternal(audioUrl: string): Promise<void> {
+    const myToken = ++this.playbackToken;
     try {
       console.log('🔊 Setting up audio playback...');
 
@@ -310,6 +325,12 @@ export class AudioService {
         console.log(`🔊 Audio file validated: ${((fileInfo as any).size / 1024).toFixed(1)} KB`);
       }
 
+      // Superseded (a newer playAudio() call, or a forceCleanup() from the
+      // user tapping Stop) while awaiting validation/cleanup above — bail
+      // out before touching shared state a later call, or an explicit
+      // Stop, already owns.
+      if (this.playbackToken !== myToken) return;
+
       // 2. Unload any existing sound
       if (this.sound) {
         try { await this.sound.unloadAsync(); } catch (e) {}
@@ -327,6 +348,7 @@ export class AudioService {
         playThroughEarpieceAndroid: false, // Use speaker
       });
 
+      if (this.playbackToken !== myToken) return;
       this.audioMode = 'playback';
       console.log('🔊 Audio mode set for playback');
 
@@ -335,12 +357,21 @@ export class AudioService {
         await new Promise(r => setTimeout(r, 150));
       }
 
+      if (this.playbackToken !== myToken) return;
+
       // 4. Load AND play in one step (recommended by Expo docs)
       console.log(`🔊 Loading: ${audioUrl}`);
       const { sound, status } = await Audio.Sound.createAsync(
         { uri: audioUrl },
         { shouldPlay: true, volume: 1.0, progressUpdateIntervalMillis: 500 }
       );
+
+      if (this.playbackToken !== myToken) {
+        // Superseded while loading — don't adopt it as the shared sound,
+        // unload the orphan instead of leaking a still-playing Sound object.
+        try { await sound.unloadAsync(); } catch (e) {}
+        return;
+      }
       this.sound = sound;
 
       if (status.isLoaded) {
@@ -364,9 +395,9 @@ export class AudioService {
               console.log('✅ Audio playback finished');
               try {
                 await sound.unloadAsync();
-                this.sound = null;
+                if (this.playbackToken === myToken) this.sound = null;
               } catch (e) {}
-              this.audioMode = 'idle';
+              if (this.playbackToken === myToken) this.audioMode = 'idle';
               resolve();
             }
           }
@@ -382,8 +413,8 @@ export class AudioService {
             resolved = true;
             console.warn(`⚠️ Audio timeout after ${timeoutMs}ms, continuing...`);
             try { sound.unloadAsync(); } catch (e) {}
-            this.sound = null;
-            this.audioMode = 'idle';
+            if (this.playbackToken === myToken) this.sound = null;
+            if (this.playbackToken === myToken) this.audioMode = 'idle';
             resolve();
           }
         }, timeoutMs);
@@ -391,7 +422,7 @@ export class AudioService {
 
     } catch (error) {
       console.error('❌ Playback Error:', error);
-      this.audioMode = 'idle';
+      if (this.playbackToken === myToken) this.audioMode = 'idle';
       throw error; // Rethrow so retry logic in playAudio() can catch it
     }
   }
