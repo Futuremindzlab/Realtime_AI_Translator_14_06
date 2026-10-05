@@ -1,36 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- OneLingo mark: an oval O with a small lowercase l floating inside its
-       counter as an accent — not a second structural letterform bridging
-       the ring, which (circular O + full-height block L) read as an
-       official seal/driving-license badge. Vivid multi-stop gradient
-       background + solid white glyph, same formula as Instagram's icon. -->
+  <!-- OneLingo mark: an O+L monogram — an oval O ring with a capital L
+       joined to it at the top and right, on a clean white background,
+       filled with a warm orange-red gradient. -->
   <defs>
-    <linearGradient id="vivid" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%"   stop-color="#FF3D81"/>
-      <stop offset="32%"  stop-color="#D926E8"/>
-      <stop offset="64%"  stop-color="#8B2FF0"/>
-      <stop offset="100%" stop-color="#22C3FF"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="26%" cy="16%" r="88%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.34"/>
-      <stop offset="55%" stop-color="#ffffff" stop-opacity="0"/>
+    <radialGradient id="glyph" gradientUnits="userSpaceOnUse" cx="512" cy="470" r="420">
+      <stop offset="0%"   stop-color="#FF7A3D"/>
+      <stop offset="100%" stop-color="#FF4D4D"/>
     </radialGradient>
   </defs>
 
-  <!-- Full-bleed square — iOS/Android/web each apply their own corner mask,
-       so this must NOT pre-round its own corners. -->
-  <rect width="1024" height="1024" fill="url(#vivid)"/>
-  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <!-- Full-bleed white square — iOS/Android/web each apply their own
+       corner mask, so this must NOT pre-round its own corners. -->
+  <rect width="1024" height="1024" fill="#FFFFFF"/>
 
   <!-- O: oval ring (ellipse minus a smaller concentric ellipse, evenodd) -->
-  <path
-    fill="#ffffff"
-    fill-rule="evenodd"
-    d="
-      M 512 262 A 330 250 0 1 1 511.9 262 Z
-      M 512 352 A 240 160 0 1 1 511.9 352 Z
-    "
-  />
-  <!-- l: small accent mark floating inside the counter -->
-  <rect x="534" y="416" width="44" height="196" rx="22" fill="#ffffff"/>
+  <path fill="url(#glyph)" fill-rule="evenodd" d="
+    M 512 262 A 330 250 0 1 1 511.9 262 Z
+    M 512 352 A 240 160 0 1 1 511.9 352 Z
+  "/>
+  <!-- Capital L: top and right joined to the ring, kept compact so it
+       reads as a letter rather than a bar spanning the whole counter. -->
+  <path d="M 512 352 L 512 522 L 738 522"
+        fill="none" stroke="url(#glyph)" stroke-width="46"
+        stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
