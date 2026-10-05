@@ -1,26 +1,31 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <!-- OneLingo mark: an O+L monogram — an oval O ring with a capital L
-       joined to it at the top and right, on a clean white background,
-       filled with a warm orange-red gradient. -->
+       joined to it at the top and right, white on a warm orange-red
+       gradient. -->
   <defs>
-    <radialGradient id="glyph" gradientUnits="userSpaceOnUse" cx="512" cy="470" r="420">
+    <radialGradient id="bg" cx="50%" cy="46%" r="75%">
       <stop offset="0%"   stop-color="#FF7A3D"/>
       <stop offset="100%" stop-color="#FF4D4D"/>
     </radialGradient>
+    <radialGradient id="glow" cx="30%" cy="20%" r="80%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="55%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
   </defs>
 
-  <!-- Full-bleed white square — iOS/Android/web each apply their own
-       corner mask, so this must NOT pre-round its own corners. -->
-  <rect width="1024" height="1024" fill="#FFFFFF"/>
+  <!-- Full-bleed square — iOS/Android/web each apply their own corner
+       mask, so this must NOT pre-round its own corners. -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
 
   <!-- O: oval ring (ellipse minus a smaller concentric ellipse, evenodd) -->
-  <path fill="url(#glyph)" fill-rule="evenodd" d="
+  <path fill="#ffffff" fill-rule="evenodd" d="
     M 512 262 A 330 250 0 1 1 511.9 262 Z
     M 512 352 A 240 160 0 1 1 511.9 352 Z
   "/>
   <!-- Capital L: top and right joined to the ring, kept compact so it
        reads as a letter rather than a bar spanning the whole counter. -->
   <path d="M 512 352 L 512 522 L 738 522"
-        fill="none" stroke="url(#glyph)" stroke-width="46"
+        fill="none" stroke="#ffffff" stroke-width="46"
         stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

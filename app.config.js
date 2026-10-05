@@ -92,9 +92,10 @@ module.exports = {
         // Glyph-only, transparent-background image padded inside Android's
         // adaptive-icon safe zone — using the full icon.png here (as before)
         // let Android's circular/rounded masks clip the mark. backgroundColor
-        // matches icon.png's own white background.
+        // is a solid mid-point of icon.png's own radial gradient (Android's
+        // adaptive-icon background can't itself be a gradient).
         foregroundImage: './assets/images/adaptive-icon-foreground.png',
-        backgroundColor: '#FFFFFF',
+        backgroundColor: '#FF6244',
       },
     },
     web: {
