@@ -1,31 +1,38 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- OneLingo mark: two opposing bars with arrowheads — the same
-       translate/swap glyph already used for the language-pair swap
-       control in the app, scaled up as the brand mark. Colors match
-       lib/canvasTheme.ts's Person A / Person B bridge gradient. -->
+  <!-- OneLingo mark: an O+L monogram — a true ring (O) with an L bridging
+       its counter, sharing the ring's own inner wall as part of the L's
+       strokes rather than two shapes simply stacked. Vibrant multi-stop
+       gradient background + solid white glyph, same formula as Instagram's
+       icon, in OneLingo's own palette (pink -> magenta -> violet -> sky,
+       the violet/sky pair already used for Person A/B — see
+       lib/canvasTheme.ts). -->
   <defs>
-    <linearGradient id="bridge" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#8B3FE8"/>
-      <stop offset="50%" stop-color="#7C3AED"/>
+    <linearGradient id="vivid" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#FF6B9D"/>
+      <stop offset="32%"  stop-color="#C147E9"/>
+      <stop offset="64%"  stop-color="#7C3AED"/>
       <stop offset="100%" stop-color="#38BDF8"/>
     </linearGradient>
-    <radialGradient id="glow" cx="28%" cy="20%" r="80%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.26"/>
+    <radialGradient id="glow" cx="26%" cy="18%" r="85%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.30"/>
       <stop offset="55%" stop-color="#ffffff" stop-opacity="0"/>
     </radialGradient>
   </defs>
 
   <!-- Full-bleed square — iOS/Android/web each apply their own corner mask,
        so this must NOT pre-round its own corners. -->
-  <rect width="1024" height="1024" fill="url(#bridge)"/>
+  <rect width="1024" height="1024" fill="url(#vivid)"/>
   <rect width="1024" height="1024" fill="url(#glow)"/>
 
-  <g>
-    <rect x="300" y="404" width="430" height="72" rx="36" fill="#ffffff"/>
-    <polygon points="700,364 700,516 826,440" fill="#ffffff"/>
-  </g>
-  <g>
-    <rect x="294" y="548" width="430" height="72" rx="36" fill="#ffffff"/>
-    <polygon points="324,508 324,660 198,584" fill="#ffffff"/>
-  </g>
+  <!-- O: true ring (outer circle minus inner counter, evenodd) -->
+  <path
+    fill="#ffffff"
+    fill-rule="evenodd"
+    d="
+      M 512 212 A 300 300 0 1 1 511.9 212 Z
+      M 512 342 A 170 170 0 1 1 511.9 342 Z
+    "
+  />
+  <!-- L: bridges the O's counter, touching the ring's inner wall top and right -->
+  <polygon fill="#ffffff" points="422,355 492,355 492,542 665,542 665,612 422,612" />
 </svg>
