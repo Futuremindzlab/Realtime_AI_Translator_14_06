@@ -129,7 +129,12 @@ export default function PhrasesScreen() {
             <Text style={styles.title}>Phrases</Text>
             <Text style={styles.subtitle}>Speak instantly — no mic needed</Text>
           </View>
-          <TouchableOpacity style={styles.iconButton} onPress={openAddModal}>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={openAddModal}
+            accessibilityRole="button"
+            accessibilityLabel="Add a new phrase"
+          >
             <Plus color={t.text} size={19} />
           </TouchableOpacity>
         </View>
@@ -183,6 +188,8 @@ export default function PhrasesScreen() {
                 style={styles.playIcon}
                 onPress={() => handlePlay(phrase)}
                 disabled={playingId === phrase.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Play "${phrase.sourceText}" aloud`}
               >
                 {playingId === phrase.id
                   ? <ActivityIndicator size="small" color={t.personB} />
@@ -195,7 +202,12 @@ export default function PhrasesScreen() {
                   {getLangName(phrase.sourceLang)} → {getLangName(phrase.targetLang)}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.deleteIcon} onPress={() => handleDelete(phrase)}>
+              <TouchableOpacity
+                style={styles.deleteIcon}
+                onPress={() => handleDelete(phrase)}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete phrase "${phrase.sourceText}"`}
+              >
                 <Trash2 size={15} color={t.textFaint} />
               </TouchableOpacity>
             </View>
@@ -210,7 +222,11 @@ export default function PhrasesScreen() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add phrase</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
+              <TouchableOpacity
+                onPress={() => setModalVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close add phrase dialog"
+              >
                 <X size={20} color={t.textMuted} />
               </TouchableOpacity>
             </View>

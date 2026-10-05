@@ -213,7 +213,12 @@ export default function StatsScreen() {
           <Text style={styles.title}>Dashboard</Text>
           <Text style={styles.subtitle}>Your translation analytics</Text>
         </View>
-        <TouchableOpacity onPress={handleRefresh} style={styles.refreshBtn}>
+        <TouchableOpacity
+          onPress={handleRefresh}
+          style={styles.refreshBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Refresh dashboard"
+        >
           <RefreshCw size={20} color={t.personB} />
         </TouchableOpacity>
       </View>
