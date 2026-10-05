@@ -68,7 +68,13 @@ export function OnboardingFlow({ updateSettings, refreshSettings }: Props) {
     <View style={styles.container}>
       <View style={styles.header}>
         {stepIndex > 0 ? (
-          <TouchableOpacity style={styles.backButton} onPress={goBack} hitSlop={10}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={goBack}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <ChevronLeft size={22} color={t.text} />
           </TouchableOpacity>
         ) : (

@@ -279,7 +279,9 @@ export default function HistoryScreen() {
                   </View>
                   <TouchableOpacity
                     onPress={() => handleDeleteItem(item.id)}
-                    style={styles.deleteButton}>
+                    style={styles.deleteButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete this translation">
                     <Trash2 size={18} color={t.danger} />
                   </TouchableOpacity>
                 </View>
@@ -347,12 +349,18 @@ export default function HistoryScreen() {
             style={styles.modalBackdrop}
             activeOpacity={1}
             onPress={() => setLangPickerItem(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Close language picker"
           />
           <View style={styles.modalSheet}>
             <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Replay Language</Text>
-              <TouchableOpacity onPress={() => setLangPickerItem(null)} style={styles.modalCloseBtn}>
+              <TouchableOpacity
+                onPress={() => setLangPickerItem(null)}
+                style={styles.modalCloseBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Close language picker">
                 <X size={20} color={t.textMuted} />
               </TouchableOpacity>
             </View>

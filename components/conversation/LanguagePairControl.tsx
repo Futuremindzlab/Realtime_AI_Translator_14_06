@@ -59,6 +59,8 @@ export function LanguagePairControl({
         style={[styles.swap, disabled && styles.sideDisabled]}
         onPress={disabled ? undefined : onSwap}
         activeOpacity={disabled ? 1 : 0.7}
+        accessibilityRole="button"
+        accessibilityLabel="Swap source and target languages"
       >
         <ArrowLeftRight color="#fff" size={17} strokeWidth={2.5} />
       </TouchableOpacity>

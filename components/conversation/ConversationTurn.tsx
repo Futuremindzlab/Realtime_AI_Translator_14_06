@@ -22,11 +22,13 @@ const STAGE_LABEL: Partial<Record<TranslationProgress['stage'], string>> = {
 };
 
 /**
- * Design C's centerpiece: the two speakers face each other across the phone,
- * so whoever is receiving the translation reads it right-side-up when the
- * phone is laid flat between them — the listening half is rotated 180°.
+ * Single-sided conversation view: both the current speaker's line and the
+ * translation read upright, stacked normally — no rotating the phone or
+ * laying it flat between two people (that was SplitFaceToFace's "Design C",
+ * replaced per explicit feedback that the face-to-face/flip mechanic wasn't
+ * wanted). Same prop contract as SplitFaceToFace so this is a drop-in swap.
  */
-export function SplitFaceToFace({ progress, isActive, disabled, onTogglePress, getLangName }: Props) {
+export function ConversationTurn({ progress, isActive, disabled, onTogglePress, getLangName }: Props) {
   const speaker = progress?.currentPerson || 'A';
   const listener = speaker === 'A' ? 'B' : 'A';
   const stage = progress?.stage;
@@ -41,34 +43,18 @@ export function SplitFaceToFace({ progress, isActive, disabled, onTogglePress, g
 
   const speakerColor = speaker === 'A' ? t.personA : t.personB;
   const listenerColor = listener === 'A' ? t.personA : t.personB;
-  const listenerHalfGradient = listener === 'A' ? t.personAHalfGradient : t.personBHalfGradient;
-  const speakerHalfGradient = speaker === 'A' ? t.personAHalfGradient : t.personBHalfGradient;
+  const speakerBg = speaker === 'A' ? t.personABg : t.personBBg;
+  const listenerBg = listener === 'A' ? t.personABg : t.personBBg;
+  const speakerBorder = speaker === 'A' ? t.personABorder : t.personBBorder;
+  const listenerBorder = listener === 'A' ? t.personABorder : t.personBBorder;
 
   const speakerLang = getLangName(progress?.currentSourceLanguage || '');
   const listenerLang = getLangName(progress?.currentTargetLanguage || '');
 
   return (
-    <View style={styles.split}>
-      {/* Listener half — rotated toward the person receiving the translation */}
-      <LinearGradient colors={listenerHalfGradient} style={[styles.half, styles.halfFlip]}>
-        <View style={styles.who}>
-          <View style={[styles.dot, { backgroundColor: listenerColor, shadowColor: listenerColor }]} />
-          <Text style={[styles.whoText, { color: listenerColor }]}>Person {listener} · {listenerLang}</Text>
-        </View>
-        {progress?.translatedText ? (
-          <Text style={styles.big} numberOfLines={5}>{progress.translatedText}</Text>
-        ) : (
-          <Text style={styles.mutedBig}>
-            {isPlaying ? 'Translation is playing…' : 'Waiting for the translation…'}
-          </Text>
-        )}
-        <View style={[styles.langtag, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
-          <Text style={styles.langtagText}>{listenerLang}</Text>
-        </View>
-      </LinearGradient>
-
-      {/* Speaker half — upright, whoever is speaking right now */}
-      <LinearGradient colors={speakerHalfGradient} style={styles.half}>
+    <View style={styles.wrap}>
+      {/* Current speaker — upright */}
+      <View style={[styles.card, { backgroundColor: speakerBg, borderColor: speakerBorder }]}>
         <View style={styles.who}>
           <View style={[styles.dot, { backgroundColor: speakerColor, shadowColor: speakerColor }]} />
           <Text style={[styles.whoText, { color: speakerColor }]}>Person {speaker} · {speakerLang}</Text>
@@ -90,30 +76,54 @@ export function SplitFaceToFace({ progress, isActive, disabled, onTogglePress, g
             <Text style={[styles.listeningText, { color: speakerColor }]}>Listening</Text>
           </View>
         )}
-        <View style={[styles.langtag, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
-          <Text style={styles.langtagText}>{speakerLang}</Text>
-        </View>
-      </LinearGradient>
+      </View>
 
-      {/* Center dock — rendered last (and absolutely positioned) so it paints on
-          top of both halves instead of being cut off by whichever half comes
-          after it in document order. */}
-      <View style={styles.dockWrap} pointerEvents="box-none">
-        <View style={styles.dockLine} />
+      {/* Translation for the other person — also upright, read normally */}
+      <View style={[styles.card, { backgroundColor: listenerBg, borderColor: listenerBorder }]}>
+        <View style={styles.who}>
+          <View style={[styles.dot, { backgroundColor: listenerColor, shadowColor: listenerColor }]} />
+          <Text style={[styles.whoText, { color: listenerColor }]}>Person {listener} · {listenerLang}</Text>
+        </View>
+        {progress?.translatedText ? (
+          <Text style={styles.big} numberOfLines={5}>{progress.translatedText}</Text>
+        ) : (
+          <Text style={styles.mutedBig}>
+            {isPlaying ? 'Translation is playing…' : 'Waiting for the translation…'}
+          </Text>
+        )}
+      </View>
+
+      {/* Mic / stop control */}
+      <View style={styles.controlRow}>
+        <View style={[styles.sidePerson, speaker !== 'A' && styles.sidePersonDim]}>
+          <View style={[styles.sideAvatar, { borderColor: t.personA, backgroundColor: t.personABg }]}>
+            <Text style={[styles.sideAvatarText, { color: t.personA }]}>A</Text>
+          </View>
+        </View>
+
         <TouchableOpacity
-          style={[
-            styles.dockMic,
-            { backgroundColor: isActive ? t.recordGradient[0] : t.idleGradient[0] },
-            disabled && { opacity: 0.6 },
-          ]}
+          style={[styles.mic, disabled && styles.micDisabled]}
           onPress={onTogglePress}
           disabled={disabled}
           activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={isActive ? 'Stop conversation' : 'Start conversation'}
         >
-          {isActive
-            ? <Square color="#fff" size={24} fill="#fff" />
-            : <Mic color="#fff" size={24} />}
+          <LinearGradient
+            colors={isActive ? t.recordGradient : t.idleGradient}
+            style={styles.micInner}
+          >
+            {isActive
+              ? <Square color="#fff" size={24} fill="#fff" />
+              : <Mic color="#fff" size={24} />}
+          </LinearGradient>
         </TouchableOpacity>
+
+        <View style={[styles.sidePerson, speaker !== 'B' && styles.sidePersonDim]}>
+          <View style={[styles.sideAvatar, { borderColor: t.personB, backgroundColor: t.personBBg }]}>
+            <Text style={[styles.sideAvatarText, { color: t.personB }]}>B</Text>
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -131,21 +141,16 @@ function ListeningBars({ color }: { color: string }) {
 }
 
 const styles = StyleSheet.create({
-  split: {
-    flex: 1,
-    borderRadius: 24,
-    overflow: 'hidden',
-    minHeight: 420,
-    position: 'relative',
-  },
-  half: {
-    flex: 1,
-    padding: 20,
-    justifyContent: 'center',
+  wrap: {
     gap: 12,
   },
-  halfFlip: {
-    transform: [{ rotate: '180deg' }],
+  card: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 18,
+    gap: 10,
+    minHeight: 110,
+    justifyContent: 'center',
   },
   who: {
     flexDirection: 'row',
@@ -166,27 +171,16 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   big: {
-    fontSize: 20,
-    lineHeight: 28,
+    fontSize: 18,
+    lineHeight: 25,
     fontWeight: '650' as any,
     color: t.text,
     letterSpacing: -0.2,
   },
   mutedBig: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14.5,
+    lineHeight: 21,
     color: t.textMuted,
-  },
-  langtag: {
-    alignSelf: 'flex-start',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 999,
-  },
-  langtagText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: t.text,
   },
   listening: {
     flexDirection: 'row',
@@ -202,33 +196,48 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     height: 16,
   },
-  dockWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: '50%',
-    marginTop: -31, // half of dockMic's 62px — centers it exactly on the seam
+  controlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 24,
+    paddingTop: 6,
+  },
+  sidePerson: {
+    opacity: 1,
+  },
+  sidePersonDim: {
+    opacity: 0.4,
+  },
+  sideAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dockLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 30,
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+  sideAvatarText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
-  dockMic: {
-    width: 62,
-    height: 62,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+  mic: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.4,
     shadowRadius: 16,
     elevation: 10,
+  },
+  micDisabled: {
+    opacity: 0.6,
+  },
+  micInner: {
+    flex: 1,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

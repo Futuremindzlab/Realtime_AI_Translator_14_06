@@ -99,7 +99,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           resizeMode="contain"
         />
         <Text style={styles.welcomeTitle}>OneLingo</Text>
-        <Text style={styles.welcomeTagline}>UNLIMIT YOUR VOICE</Text>
+        <Text style={styles.welcomeTagline}>TWO VOICES, ONE CONVERSATION</Text>
         <TouchableOpacity style={styles.welcomeButton} onPress={() => setShowWelcome(false)}>
           <Text style={styles.primaryButtonText}>Get Started</Text>
         </TouchableOpacity>
@@ -610,8 +610,8 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   welcomeLogo: {
-    width: 180,
-    height: 137,
+    width: 190,
+    height: 152,
     marginBottom: 28,
   },
   welcomeTitle: {
