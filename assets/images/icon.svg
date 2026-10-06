@@ -24,9 +24,11 @@
     M 512 262 A 330 250 0 1 1 511.9 262 Z
     M 512 352 A 240 160 0 1 1 511.9 352 Z
   "/>
-  <!-- Capital L: top and right joined to the ring, kept compact so it
-       reads as a letter rather than a bar spanning the whole counter. -->
-  <path d="M 512 352 L 512 522 L 738 522"
+  <!-- lowercase l: a vertical stroke joined to the ring at top, ending in a
+       short curl rather than a horizontal bar — matches the glyph as it
+       actually renders on-device (confirmed against a real screenshot),
+       which reads as a stylized lowercase "l" rather than a capital L. -->
+  <path d="M 512 352 L 512 540 Q 512 572 548 572"
         fill="none" stroke="#ffffff" stroke-width="46"
         stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
