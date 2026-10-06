@@ -1,22 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <!-- OneLingo mark: an O+L monogram — an oval O ring with a capital L
-       joined to it at the top and right, white on a warm orange-red
-       gradient. -->
+       joined to it at the top and right, white on the "Four-Stop" gradient
+       (gold → orange → hot pink → magenta/purple), chosen for brightness —
+       see the design-comparison artifact this was picked from for the
+       reasoning (indigo/violet read darker than the rest of the spectrum,
+       so purple is compressed to one corner instead of spread evenly). -->
   <defs>
-    <radialGradient id="bg" cx="50%" cy="46%" r="75%">
-      <stop offset="0%"   stop-color="#FF7A3D"/>
-      <stop offset="100%" stop-color="#FF4D4D"/>
-    </radialGradient>
-    <radialGradient id="glow" cx="30%" cy="20%" r="80%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>
-      <stop offset="55%" stop-color="#ffffff" stop-opacity="0"/>
-    </radialGradient>
+    <linearGradient id="bg" x1="15%" y1="100%" x2="85%" y2="0%">
+      <stop offset="0%"   stop-color="#FFC700"/>
+      <stop offset="35%"  stop-color="#FF7A00"/>
+      <stop offset="65%"  stop-color="#FF2E63"/>
+      <stop offset="88%"  stop-color="#E619B0"/>
+      <stop offset="100%" stop-color="#8A2BE2"/>
+    </linearGradient>
   </defs>
 
   <!-- Full-bleed square — iOS/Android/web each apply their own corner
        mask, so this must NOT pre-round its own corners. -->
   <rect width="1024" height="1024" fill="url(#bg)"/>
-  <rect width="1024" height="1024" fill="url(#glow)"/>
 
   <!-- O: oval ring (ellipse minus a smaller concentric ellipse, evenodd) -->
   <path fill="#ffffff" fill-rule="evenodd" d="
