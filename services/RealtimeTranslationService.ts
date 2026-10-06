@@ -8,7 +8,7 @@ import { resolveLanguage, isCorrectScript, detectScriptLanguage } from '@/lib/co
 import { isNetworkError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 import { withTimeout, TimeoutError } from '@/lib/withTimeout';
-import { classifyWhisperHallucination } from '@/lib/whisperHallucinations';
+import { classifyWhisperHallucination, hasNoSpeechContent } from '@/lib/whisperHallucinations';
 import { computeNextTurnLanguages, resolvePersonAAutoSourceLanguage } from '@/lib/conversationTurnLanguage';
 
 // expo-file-system is native-only — audio history persistence is skipped on
@@ -341,8 +341,13 @@ export class RealtimeTranslationService {
       // description on ambient noise/silence (see whisperHallucinations.ts
       // for the full explanation). Treated identically to no speech at all,
       // since that's what actually happened.
-      if (!actualText || actualText.length < 3) {
-        logger.info('Single-mode turn rejected as no speech', { cause: 'too-short', rawLength: actualText.length, platform: Platform.OS });
+      //
+      // Content check, not a length check — a length < 3 gate used to sit
+      // here and silently discarded genuine short replies ("Hi", "No", "OK",
+      // and most CJK single/double-character words). See
+      // hasNoSpeechContent's doc comment for the full reasoning.
+      if (!actualText || hasNoSpeechContent(actualText)) {
+        logger.info('Single-mode turn rejected as no speech', { cause: 'no-content', rawLength: actualText.length, platform: Platform.OS });
         this.updateProgress({ stage: 'error', error: 'No speech detected — please speak clearly and try again' });
         this.isActive = false;
         return;
@@ -769,9 +774,9 @@ export class RealtimeTranslationService {
     // that's exactly when the mic is open with nobody talking yet (see
     // lib/whisperHallucinations.ts). Same handling as true silence: the
     // caller hands control to the other person instead of retrying.
-    if (!actualText || actualText.length < 3) {
-      logger.info('Turn rejected as no speech', { cause: 'too-short', rawLength: actualText.length, platform: Platform.OS });
-      console.log(`⚠️ No valid speech (empty/too short), will retry`);
+    if (!actualText || hasNoSpeechContent(actualText)) {
+      logger.info('Turn rejected as no speech', { cause: 'no-content', rawLength: actualText.length, platform: Platform.OS });
+      console.log(`⚠️ No valid speech (empty/punctuation-only), will retry`);
       return { success: false, reason: 'No speech detected' };
     }
     // Bug fix: a real transcript (detectedLanguage populated above, 39 chars —
