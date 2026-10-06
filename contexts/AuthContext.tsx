@@ -5,7 +5,7 @@ import {
   CognitoUserAttribute,
   CognitoUserSession,
 } from 'amazon-cognito-identity-js';
-import { userPool, cognitoStorage } from '@/lib/aws';
+import { userPool, cognitoStorage, cognitoStorageReady } from '@/lib/aws';
 import { dynamoService } from '@/services/dynamoService';
 import { ttsService } from '@/services/ttsService';
 import { UserSettings, UserRole } from '@/types';
@@ -103,33 +103,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // Try to restore existing session
-    const currentUser = userPool.getCurrentUser();
-    if (currentUser) {
-      currentUser.getSession((err: Error | null, session: CognitoUserSession | null) => {
-        if (err || !session || !session.isValid()) {
-          console.log('📱 No valid session, user needs to sign in');
-          setLoading(false);
-          return;
-        }
+    (async () => {
+      // Bug fix: cognitoStorage (lib/aws.ts) bridges SecureStore/AsyncStorage's
+      // async API to the sync ICognitoStorage interface the Cognito SDK
+      // requires, via an in-memory cache that's populated by an async
+      // hydration call fired at module load. getCurrentUser() below reads
+      // that cache synchronously — called before hydration finished, it reads
+      // an empty cache, finds no cached user, and this looks exactly like
+      // "never signed in" even though a valid session sits in secure storage.
+      // This was a real race (not just theoretical): on a cold start, this
+      // effect and the hydration read are two independent async chains with
+      // no ordering guarantee between them, so a session that *should*
+      // restore intermittently doesn't, and the user lands back on the
+      // sign-in screen despite a still-valid refresh token. Awaiting the
+      // same promise lib/aws.ts exports removes the race entirely.
+      await cognitoStorageReady;
 
-        const idToken = session.getIdToken().getJwtToken();
-        const payload = session.getIdToken().payload;
-        const userId = payload['sub'] as string;
-        // Phone-based accounts have a synthetic placeholder email (see backend/src/phone.mjs
-        // derivePhoneUsername) — prefer the real phone_number claim when present so a
-        // restored session doesn't display the internal placeholder to the user.
-        const displayId = (payload['phone_number'] as string) || (payload['email'] as string);
-        const role = extractRole(payload);
+      // Try to restore existing session
+      const currentUser = userPool!.getCurrentUser();
+      if (currentUser) {
+        currentUser.getSession((err: Error | null, session: CognitoUserSession | null) => {
+          if (err || !session || !session.isValid()) {
+            console.log('📱 No valid session, user needs to sign in');
+            setLoading(false);
+            return;
+          }
 
-        console.log(`✅ Session restored for ${displayId} (role: ${role})`);
-        dynamoService.initialize(idToken);
-        setUser({ id: userId, email: displayId, role });
-        loadUserSettings(userId);
-      });
-    } else {
-      setLoading(false);
-    }
+          const idToken = session.getIdToken().getJwtToken();
+          const payload = session.getIdToken().payload;
+          const userId = payload['sub'] as string;
+          // Phone-based accounts have a synthetic placeholder email (see backend/src/phone.mjs
+          // derivePhoneUsername) — prefer the real phone_number claim when present so a
+          // restored session doesn't display the internal placeholder to the user.
+          const displayId = (payload['phone_number'] as string) || (payload['email'] as string);
+          const role = extractRole(payload);
+
+          console.log(`✅ Session restored for ${displayId} (role: ${role})`);
+          dynamoService.initialize(idToken);
+          setUser({ id: userId, email: displayId, role });
+          loadUserSettings(userId);
+        });
+      } else {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   /**

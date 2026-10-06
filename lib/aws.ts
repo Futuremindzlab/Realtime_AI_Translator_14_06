@@ -110,7 +110,10 @@ async function hydrateCognitoStorage() {
     logger.warn('Cognito session hydration failed', { err: String(err) });
   }
 }
-hydrateCognitoStorage();
+// Exported so callers that need `cognitoStorage` fully populated before they
+// read it (AuthContext's startup session restore) can await this instead of
+// racing it — see that export's own doc comment for the bug this fixes.
+export const cognitoStorageReady = hydrateCognitoStorage();
 
 // Don't crash if AWS env vars are missing (offline mode)
 let userPool: CognitoUserPool | null = null;
