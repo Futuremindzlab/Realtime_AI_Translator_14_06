@@ -91,11 +91,17 @@ module.exports = {
       adaptiveIcon: {
         // Glyph-only, transparent-background image padded inside Android's
         // adaptive-icon safe zone — using the full icon.png here (as before)
-        // let Android's circular/rounded masks clip the mark. backgroundColor
-        // is a solid color sampled from the hot-pink midpoint of icon.png's
-        // own "Four-Stop" gradient (Android's adaptive-icon background can't
-        // itself be a gradient).
+        // let Android's circular/rounded masks clip the mark. backgroundImage
+        // is the same Four-Stop gradient as icon.png but with the glyph
+        // removed (pure background layer) — Expo's Android icon plugin
+        // composites foreground-over-backgroundImage as two separate mipmap
+        // layers, so this is what actually renders on a real device's home
+        // screen on any launcher that supports adaptive icons (Android 8+,
+        // effectively all of them). backgroundColor stays as a fallback for
+        // the rare path that only reads it (backgroundImage always wins when
+        // both are set — see @expo/prebuild-config's withAndroidIcons).
         foregroundImage: './assets/images/adaptive-icon-foreground.png',
+        backgroundImage: './assets/images/adaptive-icon-background.png',
         backgroundColor: '#FF2E63',
       },
     },
