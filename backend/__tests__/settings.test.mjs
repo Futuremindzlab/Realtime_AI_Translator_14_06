@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { adminSetPlan } = await import('../src/handlers/settings.mjs');
+const { adminSetPlan, patchSettings } = await import('../src/handlers/settings.mjs');
 const { db } = await import('../src/db.mjs');
 
 function ownerEvent(userId, body) {
@@ -11,6 +11,13 @@ function ownerEvent(userId, body) {
         claims: { sub: userId, 'cognito:groups': 'owner' },
       },
     },
+    body: JSON.stringify(body),
+  };
+}
+
+function userEvent(userId, body) {
+  return {
+    requestContext: { authorizer: { claims: { sub: userId, 'cognito:groups': '' } } },
     body: JSON.stringify(body),
   };
 }
@@ -48,5 +55,43 @@ describe('adminSetPlan — DynamoDB call', () => {
     };
     const response = await adminSetPlan(event);
     assert.equal(response.statusCode, 403);
+  });
+});
+
+describe('patchSettings — full_name/country (billing/account basics)', () => {
+  test('writes full_name and country via the allowlisted UpdateExpression', async (t) => {
+    let capturedCommand;
+    t.mock.method(db, 'send', async (command) => {
+      capturedCommand = command;
+      return { Attributes: { user_id: 'user_1', full_name: 'Jane Doe', country: 'India' } };
+    });
+
+    const response = await patchSettings(userEvent('user_1', { full_name: 'Jane Doe', country: 'India' }));
+
+    assert.equal(response.statusCode, 200, `expected success, got: ${response.body}`);
+    const { ExpressionAttributeNames, ExpressionAttributeValues } = capturedCommand.input;
+    // Names/values pair by matching index — #k0 -> :v0, #k1 -> :v1, etc.
+    const nameKey    = Object.keys(ExpressionAttributeNames).find((k) => ExpressionAttributeNames[k] === 'full_name');
+    const countryKey = Object.keys(ExpressionAttributeNames).find((k) => ExpressionAttributeNames[k] === 'country');
+    assert.ok(nameKey, 'full_name should be in the UpdateExpression');
+    assert.ok(countryKey, 'country should be in the UpdateExpression');
+    assert.equal(ExpressionAttributeValues[`:v${nameKey.slice(2)}`], 'Jane Doe');
+    assert.equal(ExpressionAttributeValues[`:v${countryKey.slice(2)}`], 'India');
+  });
+
+  test('rejects an empty full_name', async () => {
+    const response = await patchSettings(userEvent('user_1', { full_name: '   ' }));
+    assert.equal(response.statusCode, 400);
+  });
+
+  test('rejects a non-string country', async () => {
+    const response = await patchSettings(userEvent('user_1', { country: 42 }));
+    assert.equal(response.statusCode, 400);
+  });
+
+  test('accepts full_name explicitly set to null (clearing it)', async (t) => {
+    t.mock.method(db, 'send', async () => ({ Attributes: { user_id: 'user_1', full_name: null } }));
+    const response = await patchSettings(userEvent('user_1', { full_name: null }));
+    assert.equal(response.statusCode, 200, `expected success, got: ${response.body}`);
   });
 });

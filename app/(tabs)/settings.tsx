@@ -11,8 +11,9 @@ import {
   Share,
   Linking,
   Platform,
+  TextInput,
 } from 'react-native';
-import { LogOut, Save, Mic, Trash2, Bug, Zap, FileText } from 'lucide-react-native';
+import { LogOut, Save, Mic, Trash2, Bug, Zap, FileText, User as UserIcon, Globe2 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { audioService } from '@/services/audioService';
 import { ttsService, TTSService } from '@/services/ttsService';
@@ -49,6 +50,9 @@ export default function SettingsScreen() {
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('female');
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
   const [conversationModeDefault, setConversationModeDefault] = useState(true);
+  const [fullName, setFullName] = useState('');
+  const [country, setCountry] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [isCloningVoice, setIsCloningVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -72,6 +76,8 @@ export default function SettingsScreen() {
       setConversationModeDefault(settings.conversation_mode_default);
       setVoiceGender(settings.voice_gender || 'female');
       setSelectedVoiceId(settings.selected_voice_id || null);
+      setFullName(settings.full_name || '');
+      setCountry(settings.country || '');
       ttsService.setCustomVoiceId(settings.custom_voice_id || null);
       ttsService.setVoiceGender(settings.voice_gender || 'female');
       ttsService.setSelectedVoiceId(settings.selected_voice_id || null);
@@ -84,6 +90,26 @@ export default function SettingsScreen() {
       Alert.alert('Success', 'Signed out successfully');
     } catch {
       Alert.alert('Error', 'Failed to sign out');
+    }
+  };
+
+  // Fallback for accounts that completed onboarding before the profile step
+  // existed (OnboardingFlow only ever asks once, on first run) — lets them
+  // fill in the same billing/account basics (name, country) here instead.
+  const handleSaveProfile = async () => {
+    if (!fullName.trim() || !country.trim()) {
+      Alert.alert('Missing info', 'Please enter both your name and country.');
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      await updateSettings({ full_name: fullName.trim(), country: country.trim() });
+      Alert.alert('Saved', 'Your details have been updated.');
+    } catch (error) {
+      console.error('Profile save error:', error);
+      Alert.alert('Error', 'Failed to save your details. Please try again.');
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -401,6 +427,46 @@ export default function SettingsScreen() {
       <View style={styles.card}>
             <Text style={styles.sectionTitle}>Account</Text>
             <Text style={styles.userEmail}>{user.email}</Text>
+
+            <View style={styles.profileFieldRow}>
+              <UserIcon size={16} color={t.personB} />
+              <TextInput
+                style={styles.profileFieldInput}
+                value={fullName}
+                onChangeText={setFullName}
+                placeholder="Full name"
+                placeholderTextColor={t.textFaint}
+                autoCapitalize="words"
+                autoComplete="name"
+                maxLength={120}
+              />
+            </View>
+            <View style={styles.profileFieldRow}>
+              <Globe2 size={16} color={t.personB} />
+              <TextInput
+                style={styles.profileFieldInput}
+                value={country}
+                onChangeText={setCountry}
+                placeholder="Country"
+                placeholderTextColor={t.textFaint}
+                autoCapitalize="words"
+                maxLength={80}
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.neutralButton, { marginBottom: 12 }]}
+              disabled={savingProfile}
+              onPress={handleSaveProfile}>
+              {savingProfile ? (
+                <ActivityIndicator size="small" color={t.personB} />
+              ) : (
+                <>
+                  <Save size={18} color={t.personB} />
+                  <Text style={styles.neutralButtonText}>Save Details</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.secondaryButton} onPress={handleSignOut}>
               <LogOut size={20} color={t.danger} />
               <Text style={styles.secondaryButtonText}>Sign Out</Text>
@@ -848,6 +914,39 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: t.textMuted,
     marginBottom: 16,
+  },
+  profileFieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: t.bgElevated,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+  },
+  profileFieldInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: t.text,
+  },
+  neutralButton: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: t.personBBorder,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 8,
+    gap: 8,
+  },
+  neutralButtonText: {
+    color: t.personB,
+    fontSize: 16,
+    fontWeight: '600',
   },
   secondaryButton: {
     backgroundColor: 'transparent',

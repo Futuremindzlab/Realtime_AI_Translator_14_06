@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking, TextInput } from 'react-native';
 import {
   Plane, Briefcase, GraduationCap, Users, MoreHorizontal,
-  ChevronLeft, ShieldCheck, Mic, Database, Ban,
+  ChevronLeft, ShieldCheck, Mic, Database, Ban, User as UserIcon, Globe2,
 } from 'lucide-react-native';
 import { UserSettings } from '@/types';
 import { canvasTheme as t } from '@/lib/canvasTheme';
@@ -27,7 +27,7 @@ interface Props {
   refreshSettings: () => Promise<void>;
 }
 
-const STEPS = ['use-case', 'privacy', 'paywall'] as const;
+const STEPS = ['use-case', 'privacy', 'profile', 'paywall'] as const;
 type Step = typeof STEPS[number];
 
 /**
@@ -37,15 +37,19 @@ type Step = typeof STEPS[number];
  * as separate routed screens, so there's no risk of a user navigating away
  * from it or a redirect race with expo-router.
  *
- * Three steps: what you'll use OneLingo for (personalization only, never
+ * Four steps: what you'll use OneLingo for (personalization only, never
  * gates anything) → a plain-language privacy summary you must acknowledge →
- * the 7-day free trial / subscribe choice. Finishing either the trial path
- * or a real subscription marks onboarding_completed and hands control back
- * to AuthGate's `children`.
+ * basic account details (name + country — billing/support basics, deliberately
+ * NOT including sex, address, or education; see the PR that added this step
+ * for the reasoning) → the 7-day free trial / subscribe choice. Finishing
+ * either the trial path or a real subscription marks onboarding_completed
+ * and hands control back to AuthGate's `children`.
  */
 export function OnboardingFlow({ updateSettings, refreshSettings }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
   const [useCase, setUseCase] = useState<string | null>(null);
+  const [fullName, setFullName] = useState('');
+  const [country, setCountry] = useState('');
   const [finishing, setFinishing] = useState(false);
   const step: Step = STEPS[stepIndex];
 
@@ -56,7 +60,12 @@ export function OnboardingFlow({ updateSettings, refreshSettings }: Props) {
     if (finishing) return;
     setFinishing(true);
     try {
-      await updateSettings({ onboarding_completed: true, use_case: useCase });
+      await updateSettings({
+        onboarding_completed: true,
+        use_case: useCase,
+        full_name: fullName.trim(),
+        country: country.trim(),
+      });
     } catch {
       Alert.alert('Something went wrong', 'Could not save your preferences — please check your connection and try again.');
     } finally {
@@ -150,6 +159,53 @@ export function OnboardingFlow({ updateSettings, refreshSettings }: Props) {
 
             <TouchableOpacity style={styles.primaryButton} onPress={goNext}>
               <Text style={styles.primaryButtonText}>Agree & Continue</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {step === 'profile' && (
+          <>
+            <Text style={styles.title}>A few basics</Text>
+            <Text style={styles.subtitle}>For your account and billing — nothing more. We never ask for sensitive details like your gender, address, or education.</Text>
+
+            <View style={styles.inputGroup}>
+              <View style={styles.inputLabelRow}>
+                <UserIcon size={16} color={t.personB} />
+                <Text style={styles.inputLabel}>Full name</Text>
+              </View>
+              <TextInput
+                style={styles.textInput}
+                value={fullName}
+                onChangeText={setFullName}
+                placeholder="Your name"
+                placeholderTextColor={t.textFaint}
+                autoCapitalize="words"
+                autoComplete="name"
+                maxLength={120}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <View style={styles.inputLabelRow}>
+                <Globe2 size={16} color={t.personB} />
+                <Text style={styles.inputLabel}>Country</Text>
+              </View>
+              <TextInput
+                style={styles.textInput}
+                value={country}
+                onChangeText={setCountry}
+                placeholder="Your country"
+                placeholderTextColor={t.textFaint}
+                autoCapitalize="words"
+                maxLength={80}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.primaryButton, (!fullName.trim() || !country.trim()) && styles.primaryButtonDisabled]}
+              disabled={!fullName.trim() || !country.trim()}
+              onPress={goNext}>
+              <Text style={styles.primaryButtonText}>Continue</Text>
             </TouchableOpacity>
           </>
         )}
@@ -280,10 +336,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
   },
+  primaryButtonDisabled: {
+    opacity: 0.45,
+  },
   primaryButtonText: {
     color: t.bg,
     fontSize: 15,
     fontWeight: '800',
+  },
+  inputGroup: {
+    marginBottom: 18,
+  },
+  inputLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  inputLabel: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: t.text,
+  },
+  textInput: {
+    backgroundColor: t.card,
+    borderWidth: 1,
+    borderColor: t.cardBorder,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: t.text,
   },
   finishing: {
     paddingTop: 60,
