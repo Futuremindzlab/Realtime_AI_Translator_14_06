@@ -1,40 +1,52 @@
 /**
- * "Conversation Canvas" palette — the dark, two-speaker visual language chosen
- * from the four design directions reviewed in design-previews/03-conversation-canvas.html
- * (see PR #5). Scoped to the Talk and Phrases tabs for now; History, Dashboard
- * and Settings keep their existing light theme until/unless a follow-up extends
- * this palette to the rest of the app.
+ * "Four-Stop" palette — the light, gradient-accented visual language approved
+ * from the UI-direction comparison (two mockups: a vibrant full-gradient
+ * background vs. this one, a warm neutral base with the brand gradient
+ * reserved for signature moments — mic button, logo mark, accent icons).
+ * Replaces the earlier dark "Conversation Canvas" palette app-wide: this
+ * app has one shared theme now, not a per-tab split.
+ *
+ * The gradient itself (gold → orange → hot pink → magenta → purple) is the
+ * same one baked into assets/images/icon.svg — these tokens exist so the
+ * in-app UI reads as the same brand as the app icon, which it didn't before.
  */
 export const canvasTheme = {
-  bg: '#0f1117',
-  bgElevated: '#151824',
-  card: 'rgba(255,255,255,0.06)',
-  cardBorder: 'rgba(255,255,255,0.1)',
-  cardBorderStrong: 'rgba(255,255,255,0.14)',
+  bg: '#FFFCF8',
+  bgElevated: '#FFFFFF',
+  card: '#FFFFFF',
+  cardBorder: 'rgba(33,26,43,0.08)',
+  cardBorderStrong: 'rgba(33,26,43,0.14)',
 
-  text: '#f4f6fb',
-  textMuted: '#8b98b8',
-  textFaint: '#7b88a8',
+  text: '#211A2B',
+  textMuted: '#8A8296',
+  textFaint: '#B9B2C4',
 
-  // Person A — violet/purple
-  personA: '#a855f7',
-  personABg: 'rgba(168,85,247,0.14)',
-  personABorder: 'rgba(168,85,247,0.28)',
-  personAGradient: ['#7e22ce', '#a855f7'] as const,
-  personAHalfGradient: ['#1a1226', '#150f21'] as const,
+  // Person A — warm pink/rose (first stop of the brand gradient's back half)
+  personA: '#FF2E63',
+  personABg: 'rgba(255,46,99,0.1)',
+  personABorder: 'rgba(255,46,99,0.28)',
+  personAGradient: ['#FF7A00', '#FF2E63'] as const,
+  personAHalfGradient: ['#FFF4EA', '#FFE9EF'] as const,
 
-  // Person B — sky blue
-  personB: '#38bdf8',
-  personBBg: 'rgba(56,189,248,0.12)',
-  personBBorder: 'rgba(56,189,248,0.28)',
-  personBGradient: ['#0369a1', '#38bdf8'] as const,
-  personBHalfGradient: ['#10233a', '#0d1a2b'] as const,
+  // Person B — deep purple (far stop of the brand gradient)
+  personB: '#8A2BE2',
+  personBBg: 'rgba(138,43,226,0.1)',
+  personBBorder: 'rgba(138,43,226,0.28)',
+  personBGradient: ['#E619B0', '#8A2BE2'] as const,
+  personBHalfGradient: ['#F6ECFC', '#F1E5FA'] as const,
 
-  // Mic / record state
-  recordGradient: ['#ef4444', '#f97316'] as const,
-  idleGradient: ['#38bdf8', '#6366f1'] as const,
+  // Mic / record state — idle shows the full brand gradient (the one
+  // signature "loud" moment in an otherwise quiet UI); recording switches to
+  // a clear, unambiguous red so Stop never reads as just another accent.
+  idleGradient: ['#FF7A00', '#FF2E63', '#8A2BE2'] as const,
+  recordGradient: ['#FB7185', '#E11D48'] as const,
 
-  danger: '#fca5a5',
-  success: '#6ee7b7',
-  warning: '#fbbf24',
+  // Full 5-stop brand gradient — assets/images/icon.svg's own stops, for
+  // anywhere that wants the complete gradient rather than the 2-3 stop
+  // excerpts above (e.g. a hero banner or the welcome screen).
+  brandGradient: ['#FFC700', '#FF7A00', '#FF2E63', '#E619B0', '#8A2BE2'] as const,
+
+  danger: '#E11D48',
+  success: '#15803D',
+  warning: '#B45309',
 } as const;
