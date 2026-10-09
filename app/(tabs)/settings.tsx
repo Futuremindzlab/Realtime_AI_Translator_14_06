@@ -11,9 +11,8 @@ import {
   Share,
   Linking,
   Platform,
-  TextInput,
 } from 'react-native';
-import { LogOut, Save, Mic, Trash2, Bug, Zap, FileText, User as UserIcon, Globe2 } from 'lucide-react-native';
+import { LogOut, Save, Mic, Trash2, Bug, Zap, FileText, User as UserIcon, SlidersHorizontal } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { audioService } from '@/services/audioService';
 import { ttsService, TTSService } from '@/services/ttsService';
@@ -50,9 +49,6 @@ export default function SettingsScreen() {
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('female');
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
   const [conversationModeDefault, setConversationModeDefault] = useState(true);
-  const [fullName, setFullName] = useState('');
-  const [country, setCountry] = useState('');
-  const [savingProfile, setSavingProfile] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [isCloningVoice, setIsCloningVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -76,8 +72,6 @@ export default function SettingsScreen() {
       setConversationModeDefault(settings.conversation_mode_default);
       setVoiceGender(settings.voice_gender || 'female');
       setSelectedVoiceId(settings.selected_voice_id || null);
-      setFullName(settings.full_name || '');
-      setCountry(settings.country || '');
       ttsService.setCustomVoiceId(settings.custom_voice_id || null);
       ttsService.setVoiceGender(settings.voice_gender || 'female');
       ttsService.setSelectedVoiceId(settings.selected_voice_id || null);
@@ -90,26 +84,6 @@ export default function SettingsScreen() {
       Alert.alert('Success', 'Signed out successfully');
     } catch {
       Alert.alert('Error', 'Failed to sign out');
-    }
-  };
-
-  // Fallback for accounts that completed onboarding before the profile step
-  // existed (OnboardingFlow only ever asks once, on first run) — lets them
-  // fill in the same billing/account basics (name, country) here instead.
-  const handleSaveProfile = async () => {
-    if (!fullName.trim() || !country.trim()) {
-      Alert.alert('Missing info', 'Please enter both your name and country.');
-      return;
-    }
-    setSavingProfile(true);
-    try {
-      await updateSettings({ full_name: fullName.trim(), country: country.trim() });
-      Alert.alert('Saved', 'Your details have been updated.');
-    } catch (error) {
-      console.error('Profile save error:', error);
-      Alert.alert('Error', 'Failed to save your details. Please try again.');
-    } finally {
-      setSavingProfile(false);
     }
   };
 
@@ -425,49 +399,36 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Account</Text>
-            <Text style={styles.userEmail}>{user.email}</Text>
-
-            <View style={styles.profileFieldRow}>
-              <UserIcon size={16} color={t.personB} />
-              <TextInput
-                style={styles.profileFieldInput}
-                value={fullName}
-                onChangeText={setFullName}
-                placeholder="Full name"
-                placeholderTextColor={t.textFaint}
-                autoCapitalize="words"
-                autoComplete="name"
-                maxLength={120}
-              />
+            <View style={styles.cardHeaderRow}>
+              <View style={styles.cardHeaderIcon}>
+                <UserIcon size={16} color={t.personB} />
+              </View>
+              <Text style={styles.sectionTitle}>Account</Text>
             </View>
-            <View style={styles.profileFieldRow}>
-              <Globe2 size={16} color={t.personB} />
-              <TextInput
-                style={styles.profileFieldInput}
-                value={country}
-                onChangeText={setCountry}
-                placeholder="Country"
-                placeholderTextColor={t.textFaint}
-                autoCapitalize="words"
-                maxLength={80}
-              />
-            </View>
-            <TouchableOpacity
-              style={[styles.neutralButton, { marginBottom: 12 }]}
-              disabled={savingProfile}
-              onPress={handleSaveProfile}>
-              {savingProfile ? (
-                <ActivityIndicator size="small" color={t.personB} />
-              ) : (
-                <>
-                  <Save size={18} color={t.personB} />
-                  <Text style={styles.neutralButtonText}>Save Details</Text>
-                </>
-              )}
-            </TouchableOpacity>
 
-            <TouchableOpacity style={styles.secondaryButton} onPress={handleSignOut}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Email</Text>
+              <Text style={styles.infoValue}>{user.email}</Text>
+            </View>
+            {/* Name/country are only ever collected once, during onboarding for a
+                new signup (components/onboarding/OnboardingFlow.tsx) — shown here
+                as read-only confirmation, never as an editable prompt. An existing
+                account that onboarded before that step existed simply has neither
+                field and sees neither row; it is deliberately never asked here. */}
+            {settings?.full_name ? (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Name</Text>
+                <Text style={styles.infoValue}>{settings.full_name}</Text>
+              </View>
+            ) : null}
+            {settings?.country ? (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Country</Text>
+                <Text style={styles.infoValue}>{settings.country}</Text>
+              </View>
+            ) : null}
+
+            <TouchableOpacity style={[styles.secondaryButton, { marginTop: 16 }]} onPress={handleSignOut}>
               <LogOut size={20} color={t.danger} />
               <Text style={styles.secondaryButtonText}>Sign Out</Text>
             </TouchableOpacity>
@@ -487,7 +448,12 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Your Plan</Text>
+            <View style={styles.cardHeaderRow}>
+              <View style={styles.cardHeaderIcon}>
+                <Zap size={16} color={t.personB} />
+              </View>
+              <Text style={styles.sectionTitle}>Your Plan</Text>
+            </View>
             <View style={styles.planBadgeRow}>
               <View style={styles.planBadge}>
                 <Zap size={14} color={t.personB} />
@@ -537,7 +503,12 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Preferences</Text>
+            <View style={styles.cardHeaderRow}>
+              <View style={styles.cardHeaderIcon}>
+                <SlidersHorizontal size={16} color={t.personB} />
+              </View>
+              <Text style={styles.sectionTitle}>Preferences</Text>
+            </View>
 
             {!isUserView && (
               <>
@@ -739,7 +710,12 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Voice Cloning</Text>
+            <View style={styles.cardHeaderRow}>
+              <View style={styles.cardHeaderIcon}>
+                <Mic size={16} color={t.personB} />
+              </View>
+              <Text style={styles.sectionTitle}>Voice Cloning</Text>
+            </View>
             <Text style={styles.sectionDescription}>
               {currentPlan !== 'live'
                 ? 'Available on the Live plan — hear translations spoken in your own voice.'
@@ -821,7 +797,12 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Legal</Text>
+            <View style={styles.cardHeaderRow}>
+              <View style={styles.cardHeaderIcon}>
+                <FileText size={16} color={t.personB} />
+              </View>
+              <Text style={styles.sectionTitle}>Legal</Text>
+            </View>
             <TouchableOpacity
               style={[styles.secondaryButton, { borderColor: t.cardBorderStrong }]}
               onPress={() => Linking.openURL('https://theonelingo.com/legal/policies.html#privacy')}
@@ -841,7 +822,12 @@ export default function SettingsScreen() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Diagnostics</Text>
+            <View style={styles.cardHeaderRow}>
+              <View style={styles.cardHeaderIcon}>
+                <Bug size={16} color={t.personB} />
+              </View>
+              <Text style={styles.sectionTitle}>Diagnostics</Text>
+            </View>
             <Text style={styles.sectionDescription}>
               If a translation or conversation-mode issue happens, share this log right after —
               it captures what actually happened on this device (stage-by-stage), which is far more
@@ -899,54 +885,49 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: t.cardBorder,
   },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  cardHeaderIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: t.personBBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: t.text,
-    marginBottom: 8,
   },
   sectionDescription: {
     fontSize: 14,
     color: t.textMuted,
     marginBottom: 16,
   },
-  userEmail: {
-    fontSize: 16,
-    color: t.textMuted,
-    marginBottom: 16,
-  },
-  profileFieldRow: {
+  infoRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: t.bgElevated,
-    borderWidth: 1,
-    borderColor: t.cardBorder,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    marginBottom: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: t.cardBorder,
   },
-  profileFieldInput: {
-    flex: 1,
-    paddingVertical: 12,
+  infoLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: t.textFaint,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  infoValue: {
     fontSize: 15,
     color: t.text,
-  },
-  neutralButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: t.personBBorder,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 14,
-    borderRadius: 8,
-    gap: 8,
-  },
-  neutralButtonText: {
-    color: t.personB,
-    fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   secondaryButton: {
     backgroundColor: 'transparent',
