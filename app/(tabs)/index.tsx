@@ -13,6 +13,7 @@ import {
   Modal,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Mic, Square, Users, User, Settings as SettingsIcon, Clock, Volume2 } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
 import { LanguagePairControl } from '@/components/conversation/LanguagePairControl';
@@ -433,7 +434,7 @@ export default function HomeScreen() {
         ) : (
           <View style={styles.micSection}>
             <TouchableOpacity
-              style={[styles.micButton, isActive && styles.micButtonActive]}
+              style={styles.micButton}
               onPress={handleToggleRecording}
               disabled={isButtonDisabled}
               activeOpacity={0.85}
@@ -444,17 +445,24 @@ export default function HomeScreen() {
                   : (conversationMode ? 'Start conversation' : 'Start recording')
               }
             >
-              {isActive
-                ? <Square color="white" size={34} fill="white" />
-                : <Mic    color="white" size={34} />}
+              <LinearGradient
+                colors={isActive ? t.recordGradient : t.idleGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.micButtonGradient}
+              >
+                {isActive
+                  ? <Square color="white" size={34} fill="white" />
+                  : <Mic    color="white" size={34} />}
+              </LinearGradient>
             </TouchableOpacity>
             <Text style={[
               styles.statusText,
               {
                 color: isActive
-                  ? '#fca5a5'
+                  ? t.danger
                   : progress?.stage === 'error'
-                  ? '#fca5a5'
+                  ? t.danger
                   : progress?.stage === 'complete'
                   ? t.success
                   : t.textMuted,
@@ -667,18 +675,18 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 28,
-    backgroundColor: t.idleGradient[1],
+    elevation: 8,
+    shadowColor: t.personB,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+  },
+  micButtonGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 8,
-    shadowColor: t.idleGradient[1],
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-  },
-  micButtonActive: {
-    backgroundColor: '#dc2626',
-    shadowColor: '#dc2626',
   },
   statusText: {
     marginTop: 14,
