@@ -8,7 +8,7 @@ import { resolveLanguage, isCorrectScript, detectScriptLanguage } from '@/lib/co
 import { isNetworkError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
 import { withTimeout, TimeoutError } from '@/lib/withTimeout';
-import { classifyWhisperHallucination } from '@/lib/whisperHallucinations';
+import { classifyWhisperHallucination, hasNoSpeechContent } from '@/lib/whisperHallucinations';
 import { computeNextTurnLanguages, resolvePersonAAutoSourceLanguage } from '@/lib/conversationTurnLanguage';
 
 // expo-file-system is native-only — audio history persistence is skipped on
@@ -74,6 +74,10 @@ export class RealtimeTranslationService {
   private originalTargetLanguage = '';
   private singleModeMaxDurationTimer: ReturnType<typeof setTimeout> | null = null;
   private isStoppingSingleModeRecording = false;
+  // Set when single-mode recording starts; used to tell a genuine Whisper
+  // hallucination apart from a recording glitched by an AppState background
+  // blip (see audioService.hadAppStateBlipSince's doc comment).
+  private singleModeRecordingStartedAt = 0;
 
   // Safety cap for single-translation-mode recording (conversation mode already
   // auto-stops at 10s of silence). Without this, a forgotten open mic could record
@@ -273,6 +277,7 @@ export class RealtimeTranslationService {
     this.originalTargetLanguage = targetLanguage;
 
     console.log(`🎤 Single mode: ${sourceLanguage} → ${targetLanguage}`);
+    this.singleModeRecordingStartedAt = Date.now();
     this.updateProgress({ stage: 'recording', isRealtime: true });
     await audioService.startRecording();
 
@@ -341,16 +346,39 @@ export class RealtimeTranslationService {
       // description on ambient noise/silence (see whisperHallucinations.ts
       // for the full explanation). Treated identically to no speech at all,
       // since that's what actually happened.
-      if (!actualText || actualText.length < 3) {
-        logger.info('Single-mode turn rejected as no speech', { cause: 'too-short', rawLength: actualText.length, platform: Platform.OS });
-        this.updateProgress({ stage: 'error', error: 'No speech detected — please speak clearly and try again' });
+      //
+      // Content check, not a length check — a length < 3 gate used to sit
+      // here and silently discarded genuine short replies ("Hi", "No", "OK",
+      // and most CJK single/double-character words). See
+      // hasNoSpeechContent's doc comment for the full reasoning.
+      // Was this recording's window crossed by an AppState background blip
+      // (even a transient one the debounce in index.tsx ended up ignoring)?
+      // If so, a rejection below is more likely a glitched recording than a
+      // genuine empty/hallucinated one — see
+      // audioService.hadAppStateBlipSince's doc comment for the full
+      // mechanism. Surfacing this distinction (both in the log and in the
+      // message shown to the user) turns "the app randomly fails sometimes"
+      // into a diagnosable, specific condition instead of looking identical
+      // to the person simply not having spoken clearly.
+      const interruptedByAppStateBlip = audioService.hadAppStateBlipSince(this.singleModeRecordingStartedAt);
+      const interruptedMessage = 'Recording was interrupted — please try again';
+
+      if (!actualText || hasNoSpeechContent(actualText)) {
+        logger.info('Single-mode turn rejected as no speech', { cause: 'no-content', rawLength: actualText.length, interruptedByAppStateBlip, platform: Platform.OS });
+        this.updateProgress({
+          stage: 'error',
+          error: interruptedByAppStateBlip ? interruptedMessage : 'No speech detected — please speak clearly and try again',
+        });
         this.isActive = false;
         return;
       }
       const singleModeHallucinationMatch = classifyWhisperHallucination(actualText);
       if (singleModeHallucinationMatch) {
-        logger.info('Single-mode turn rejected as likely Whisper hallucination', { cause: singleModeHallucinationMatch, textLength: actualText.length, platform: Platform.OS });
-        this.updateProgress({ stage: 'error', error: 'No speech detected — please speak clearly and try again' });
+        logger.info('Single-mode turn rejected as likely Whisper hallucination', { cause: singleModeHallucinationMatch, textLength: actualText.length, interruptedByAppStateBlip, platform: Platform.OS });
+        this.updateProgress({
+          stage: 'error',
+          error: interruptedByAppStateBlip ? interruptedMessage : 'No speech detected — please speak clearly and try again',
+        });
         this.isActive = false;
         return;
       }
@@ -587,6 +615,7 @@ export class RealtimeTranslationService {
         // await would otherwise block forever with the UI stuck on "Listening…"
         // and no way to recover. Only reachable on-device; web has no native bridge
         // to hang on, which is why this class of failure never showed up there.
+        const turnRecordingStartedAt = Date.now();
         const audioUri = await withTimeout(
           audioService.startRecordingWithAutoStop(this.silenceTimeoutMs, -45, 2500, 1500),
           this.silenceTimeoutMs + 8000,
@@ -621,7 +650,7 @@ export class RealtimeTranslationService {
         // or a network call already covered by NetworkError, but a generous outer
         // bound catches anything else that could otherwise hang indefinitely.
         const { success, reason } = await withTimeout(
-          this.processConversationTurn(audioUri),
+          this.processConversationTurn(audioUri, turnRecordingStartedAt),
           45_000,
           'Turn processing',
         );
@@ -743,7 +772,7 @@ export class RealtimeTranslationService {
    * retry the same person, with `reason` surfaced to the user so a failed turn
    * doesn't look identical to the app just still listening.
    */
-  private async processConversationTurn(audioUri: string): Promise<{ success: boolean; reason?: string }> {
+  private async processConversationTurn(audioUri: string, turnRecordingStartedAt: number): Promise<{ success: boolean; reason?: string }> {
     const pipelineStartedAt = Date.now();
 
     // ── 1. TRANSCRIBE ──
@@ -769,9 +798,18 @@ export class RealtimeTranslationService {
     // that's exactly when the mic is open with nobody talking yet (see
     // lib/whisperHallucinations.ts). Same handling as true silence: the
     // caller hands control to the other person instead of retrying.
-    if (!actualText || actualText.length < 3) {
-      logger.info('Turn rejected as no speech', { cause: 'too-short', rawLength: actualText.length, platform: Platform.OS });
-      console.log(`⚠️ No valid speech (empty/too short), will retry`);
+    // Was this turn's recording window crossed by an AppState background blip
+    // (even a transient one index.tsx's debounce ended up ignoring)? If so, a
+    // rejection below is more likely a glitched recording than a genuine
+    // empty/hallucinated one — see audioService.hadAppStateBlipSince's doc
+    // comment. Logged (not surfaced to the user here — a silence handover
+    // already reads fine either way), so a repeat report is provably one or
+    // the other instead of indistinguishable from the outside.
+    const interruptedByAppStateBlip = audioService.hadAppStateBlipSince(turnRecordingStartedAt);
+
+    if (!actualText || hasNoSpeechContent(actualText)) {
+      logger.info('Turn rejected as no speech', { cause: 'no-content', rawLength: actualText.length, interruptedByAppStateBlip, platform: Platform.OS });
+      console.log(`⚠️ No valid speech (empty/punctuation-only), will retry`);
       return { success: false, reason: 'No speech detected' };
     }
     // Bug fix: a real transcript (detectedLanguage populated above, 39 chars —
@@ -783,7 +821,7 @@ export class RealtimeTranslationService {
     // next reproduction instead of guessed at.
     const hallucinationMatch = classifyWhisperHallucination(actualText);
     if (hallucinationMatch) {
-      logger.info('Turn rejected as likely Whisper hallucination', { cause: hallucinationMatch, textLength: actualText.length, platform: Platform.OS });
+      logger.info('Turn rejected as likely Whisper hallucination', { cause: hallucinationMatch, textLength: actualText.length, interruptedByAppStateBlip, platform: Platform.OS });
       console.log(`⚠️ Whisper hallucination (${hallucinationMatch}): "${actualText}"`);
       return { success: false, reason: 'No speech detected' };
     }

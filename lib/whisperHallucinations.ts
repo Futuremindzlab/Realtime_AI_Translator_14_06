@@ -142,3 +142,25 @@ export function classifyWhisperHallucination(text: string): WhisperHallucination
 export function isLikelyWhisperHallucination(text: string): boolean {
   return classifyWhisperHallucination(text) !== null;
 }
+
+// Characters a transcript can consist entirely of and still count as "no
+// real speech" — stray punctuation/symbols Whisper sometimes emits on pure
+// silence or a mic click, not anything a person said.
+const PUNCTUATION_ONLY = /^[\s.,!?;:…\-–—*"'“”‘’(){}\[\]~`^_|\\/]*$/;
+
+/**
+ * Root cause of a real false-positive report (user spoke clearly in a quiet
+ * room, got "No input — passing to the other person" anyway): callers used
+ * to reject any transcript under 3 characters as "no speech". That's a
+ * reasonable-looking guard against stray punctuation, but it also discards
+ * genuine short utterances — "Hi", "No", "OK" in English, and single- or
+ * double-character complete words in many other languages (CJK especially:
+ * "是"/"不"/"好" are each one character and a full, meaningful reply). A
+ * length threshold can't tell those apart from noise; only content can.
+ * This checks content instead: empty after trimming, or made up entirely of
+ * punctuation/whitespace, counts as no speech — anything with real
+ * character content, however short, does not.
+ */
+export function hasNoSpeechContent(text: string): boolean {
+  return PUNCTUATION_ONLY.test(text);
+}

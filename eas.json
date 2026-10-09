@@ -12,6 +12,7 @@
     "preview": {
       "distribution": "internal",
       "node": "22.11.0",
+      "autoIncrement": true,
       "android": {
         "buildType": "apk"
       }

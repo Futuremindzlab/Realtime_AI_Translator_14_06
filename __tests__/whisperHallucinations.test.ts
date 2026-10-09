@@ -1,4 +1,4 @@
-import { isLikelyWhisperHallucination, classifyWhisperHallucination } from '@/lib/whisperHallucinations';
+import { isLikelyWhisperHallucination, classifyWhisperHallucination, hasNoSpeechContent } from '@/lib/whisperHallucinations';
 
 describe('isLikelyWhisperHallucination — non-speech caption denylist (existing behavior)', () => {
   it('flags known caption-style hallucinations', () => {
@@ -99,5 +99,42 @@ describe('classifyWhisperHallucination — names which rule fired (new)', () => 
     for (const text of cases) {
       expect(classifyWhisperHallucination(text) !== null).toBe(isLikelyWhisperHallucination(text));
     }
+  });
+});
+
+describe('hasNoSpeechContent — replaces a length<3 gate that discarded real short replies', () => {
+  // Real bug report, reproduced three times: the user spoke clearly in a
+  // quiet room and still got "No input — passing to the other person".
+  // A length < 3 check used to run before this existed and rejected any
+  // transcript under 3 characters regardless of content, discarding every
+  // one of these.
+  it('does NOT flag short real words as no speech', () => {
+    expect(hasNoSpeechContent('Hi')).toBe(false);
+    expect(hasNoSpeechContent('No')).toBe(false);
+    expect(hasNoSpeechContent('OK')).toBe(false);
+    expect(hasNoSpeechContent('I')).toBe(false);
+  });
+
+  it('does NOT flag single/double-character CJK words — short but complete replies', () => {
+    expect(hasNoSpeechContent('是')).toBe(false); // Chinese "yes"
+    expect(hasNoSpeechContent('不')).toBe(false); // Chinese "no"
+    expect(hasNoSpeechContent('好')).toBe(false); // Chinese "ok/good"
+    expect(hasNoSpeechContent('はい')).toBe(false); // Japanese "yes"
+  });
+
+  it('flags empty and whitespace-only input as no speech', () => {
+    expect(hasNoSpeechContent('')).toBe(true);
+    expect(hasNoSpeechContent('   ')).toBe(true);
+  });
+
+  it('flags punctuation-only stray output as no speech', () => {
+    expect(hasNoSpeechContent('.')).toBe(true);
+    expect(hasNoSpeechContent('...')).toBe(true);
+    expect(hasNoSpeechContent('-')).toBe(true);
+    expect(hasNoSpeechContent('! ?')).toBe(true);
+  });
+
+  it('does not flag ordinary real sentences', () => {
+    expect(hasNoSpeechContent('Can you tell me where the nearest station is?')).toBe(false);
   });
 });

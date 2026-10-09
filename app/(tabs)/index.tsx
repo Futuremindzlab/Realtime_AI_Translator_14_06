@@ -119,6 +119,14 @@ export default function HomeScreen() {
       logger.info('AppState changed', { next, wasConversationActive: realtimeTranslationService.getIsActive() });
 
       if (next === 'background') {
+        // Record this blip unconditionally, before the debounce below decides
+        // whether it's a real backgrounding — even a transient blip the
+        // debounce ends up ignoring can still glitch an in-flight recording at
+        // the OS level (see audioService.noteAppStateBlip's doc comment). This
+        // lets a recording that started just before/during this blip be
+        // identified later instead of silently looking like a genuine Whisper
+        // hallucination.
+        audioService.noteAppStateBlip();
         // True background: OS kills mic access — must stop everything.
         // NOTE: 'inactive' is intentionally excluded — on iOS it fires for
         // notification overlays, permission dialogs, and control center
