@@ -40,6 +40,8 @@ export async function getSettings(event) {
         plan:                     'basic',
         onboarding_completed:     false,
         use_case:                 null,
+        full_name:                null,
+        country:                  null,
         updated_at:               new Date().toISOString(),
       });
     }
@@ -52,7 +54,7 @@ export async function getSettings(event) {
     // only a genuinely brand-new row (the !result.Item branch above) defaults
     // it to false. See backfillOnboardingCompleted().
     return sendSuccess({
-      plan: 'basic', use_case: null, ...result.Item,
+      plan: 'basic', use_case: null, full_name: null, country: null, ...result.Item,
       onboarding_completed: backfillOnboardingCompleted(result.Item),
     });
   } catch (err) {
@@ -100,6 +102,8 @@ export async function putSettings(event) {
     // reset the trial clock/counters back to unset.
     const onboardingCompleted = backfillOnboardingCompleted(existing.Item);
     const useCase             = existing.Item?.use_case ?? null;
+    const fullName             = existing.Item?.full_name ?? null;
+    const country               = existing.Item?.country ?? null;
     const trialStartDate         = existing.Item?.trial_start_date;
     const trialTranslationsUsed  = existing.Item?.trial_translations_used;
     const trialConversationsUsed = existing.Item?.trial_conversations_used;
@@ -115,6 +119,8 @@ export async function putSettings(event) {
       plan,
       onboarding_completed:     onboardingCompleted,
       use_case:                 useCase,
+      full_name:                fullName,
+      country:                  country,
       ...(razorpaySubscriptionId     ? { razorpay_subscription_id: razorpaySubscriptionId }         : {}),
       ...(razorpaySubscriptionStatus ? { razorpay_subscription_status: razorpaySubscriptionStatus }  : {}),
       ...(trialStartDate         !== undefined ? { trial_start_date: trialStartDate }                 : {}),
@@ -157,6 +163,18 @@ export async function patchSettings(event) {
     if (typeof body.use_case === 'string' && body.use_case.length > 100) {
       return sendError(400, 'use_case must be under 100 characters');
     }
+    if ('full_name' in body && body.full_name !== null && typeof body.full_name !== 'string') {
+      return sendError(400, 'full_name must be a string or null');
+    }
+    if (typeof body.full_name === 'string' && (body.full_name.trim().length === 0 || body.full_name.length > 120)) {
+      return sendError(400, 'full_name must be 1-120 characters');
+    }
+    if ('country' in body && body.country !== null && typeof body.country !== 'string') {
+      return sendError(400, 'country must be a string or null');
+    }
+    if (typeof body.country === 'string' && (body.country.trim().length === 0 || body.country.length > 80)) {
+      return sendError(400, 'country must be 1-80 characters');
+    }
 
     const allowed = [
       'default_source_language', 'default_target_language',
@@ -166,6 +184,9 @@ export async function patchSettings(event) {
       // here — those are server-incremented counters, only ever written by
       // POST /v1/usage/trial/consume, never accepted from an arbitrary client PATCH.
       'onboarding_completed', 'use_case',
+      // Billing/account basics — see the PR that added these for why the
+      // collected set stops here (no sex, address, or education).
+      'full_name', 'country',
     ];
 
     const expressionParts  = [];
@@ -265,6 +286,8 @@ export async function resetSettings(event) {
     const razorpaySubscriptionStatus = existing.Item?.razorpay_subscription_status;
     const onboardingCompleted = backfillOnboardingCompleted(existing.Item);
     const useCase             = existing.Item?.use_case ?? null;
+    const fullName             = existing.Item?.full_name ?? null;
+    const country               = existing.Item?.country ?? null;
     const trialStartDate         = existing.Item?.trial_start_date;
     const trialTranslationsUsed  = existing.Item?.trial_translations_used;
     const trialConversationsUsed = existing.Item?.trial_conversations_used;
@@ -280,6 +303,8 @@ export async function resetSettings(event) {
       plan,
       onboarding_completed:     onboardingCompleted,
       use_case:                 useCase,
+      full_name:                fullName,
+      country:                  country,
       ...(razorpaySubscriptionId     ? { razorpay_subscription_id: razorpaySubscriptionId }         : {}),
       ...(razorpaySubscriptionStatus ? { razorpay_subscription_status: razorpaySubscriptionStatus }  : {}),
       ...(trialStartDate         !== undefined ? { trial_start_date: trialStartDate }                 : {}),

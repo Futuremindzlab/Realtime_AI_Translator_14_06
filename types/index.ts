@@ -53,6 +53,14 @@ export interface UserSettings {
    *  (e.g. 'travel', 'business', 'learning', 'family', 'other'). Not used for
    *  gating anything — personalization/analytics only. */
   use_case?: string | null;
+  /** Billing/account basics — collected once during onboarding (new users) or
+   *  from Settings → Account (existing users who onboarded before this
+   *  existed). Deliberately limited to what has a clear purpose (invoicing,
+   *  support, Razorpay KYC): no sex, address, or education — see the PR that
+   *  added this for the reasoning. Email/phone aren't duplicated here; they
+   *  already live on the Cognito user (AuthContext's `user`). */
+  full_name?: string | null;
+  country?: string | null;
   updated_at: string;
 }
 
