@@ -2,7 +2,6 @@ import { Tabs } from 'expo-router';
 import { Mic, History, Settings, BarChart2, BookOpen } from 'lucide-react-native';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth } from '@/contexts/AuthContext';
 import { canvasTheme as t } from '@/lib/canvasTheme';
 
 // Polyfill must stay at the top — fast-text-encoding self-installs
@@ -11,12 +10,7 @@ import { canvasTheme as t } from '@/lib/canvasTheme';
 import 'fast-text-encoding';
 
 export default function TabLayout() {
-  const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  // Hide Dashboard (internal analytics) from regular customer accounts —
-  // real OWNER-role accounts see it. No more same-account preview toggle:
-  // an owner wanting the regular-customer experience signs in as one.
-  const isUserView = user?.role === 'USER';
 
   // On Android the system navigation bar (gesture strip or buttons) sits at the
   // bottom. insets.bottom gives the exact height we need to clear it so all tabs
@@ -73,8 +67,12 @@ export default function TabLayout() {
         name="stats"
         options={{
           title: 'Dashboard',
-          // href: null hides the tab from the tab bar (Expo Router v3)
-          href: isUserView ? null : undefined,
+          // Previously hidden from regular customer accounts (OWNER-role
+          // only) — now shown to everyone. Safe to open up: getStats()
+          // (backend/src/handlers/translations.mjs) queries DynamoDB by
+          // the caller's own user_id partition key, so this has always
+          // been each user's own translation history, never cross-user
+          // data — the gate was hiding a feature, not a data leak.
           tabBarIcon: ({ size, color }) => <BarChart2 size={size} color={color} />,
         }}
       />
