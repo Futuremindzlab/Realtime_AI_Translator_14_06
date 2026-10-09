@@ -53,6 +53,36 @@ export class AudioService {
   // keeps going. Mirrors recordingToken's fencing of startRecording().
   private playbackToken = 0;
 
+  // Diagnostic + root-cause fix for a real report: a user spoke clearly and
+  // still got their turn rejected as a Whisper "hallucination" (stuck
+  // repeating-word pattern), twice in a row, right after index.tsx's AppState
+  // listener logged a background→active blip within ~100ms — far too fast to
+  // be a deliberate app switch. index.tsx's own comment already documents
+  // this exact phenomenon (audio-focus negotiation / OEM overlay / the
+  // mic-privacy indicator momentarily stealing focus right as recording
+  // starts) and debounces it so it doesn't tear the conversation down — but
+  // that debounce only protects app-level state. It does nothing for the
+  // actual audio capture: a real native focus blip, even one too brief to
+  // count as a genuine backgrounding, can glitch the in-flight recording at
+  // the OS level and produce exactly the stuck/duplicated-buffer pattern the
+  // hallucination filter is designed to catch — so what looks like "Whisper
+  // made something up" may really be "the mic briefly glitched mid-recording".
+  // index.tsx calls noteAppStateBlip() on every 'background' transition
+  // (even a transient one the debounce ends up ignoring); callers that know
+  // when a recording started can then ask whether a blip landed inside that
+  // window and log/report the distinction instead of the two cases looking
+  // identical from the outside.
+  private lastAppStateBlipAt = 0;
+
+  noteAppStateBlip(): void {
+    this.lastAppStateBlipAt = Date.now();
+  }
+
+  /** True if an AppState background blip was observed at or after `recordingStartedAt`. */
+  hadAppStateBlipSince(recordingStartedAt: number): boolean {
+    return this.lastAppStateBlipAt >= recordingStartedAt;
+  }
+
   async requestPermissions(): Promise<boolean> {
     try {
       const { status } = await Audio.requestPermissionsAsync();
