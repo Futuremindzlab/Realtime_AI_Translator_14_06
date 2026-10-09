@@ -25,6 +25,36 @@ describe('isLikelyWhisperHallucination — non-speech caption denylist (existing
   });
 });
 
+describe('isLikelyWhisperHallucination — bracketed sound-caption detection (new)', () => {
+  // Real production report: "(sizzling)" was transcribed and translated as
+  // if it were genuine speech — a sound word never seen before, so it
+  // wasn't on the denylist. This covers the whole shape (any short,
+  // entirely-bracketed span), not just this one word.
+  it('flags the reported case: "(sizzling)"', () => {
+    expect(isLikelyWhisperHallucination('(sizzling)')).toBe(true);
+    expect(classifyWhisperHallucination('(sizzling)')).toBe('bracketed-caption');
+  });
+
+  it('flags other sound words never added to the denylist, as long as they are bracketed', () => {
+    expect(isLikelyWhisperHallucination('(dripping)')).toBe(true);
+    expect(isLikelyWhisperHallucination('[typing]')).toBe(true);
+    expect(isLikelyWhisperHallucination('(papers rustling in the background)')).toBe(true);
+  });
+
+  it('does NOT flag a real sentence that merely contains a parenthetical aside', () => {
+    expect(isLikelyWhisperHallucination('The meeting is at 5pm (confirmed)')).toBe(false);
+  });
+
+  it('does NOT flag an empty bracket pair (handled by hasNoSpeechContent instead)', () => {
+    expect(isLikelyWhisperHallucination('()')).toBe(false);
+    expect(hasNoSpeechContent('()')).toBe(true);
+  });
+
+  it('does not flag a long bracketed span that reads as real spoken content, not a caption', () => {
+    expect(isLikelyWhisperHallucination('(I think we should meet again next week to discuss this further)')).toBe(false);
+  });
+});
+
 describe('isLikelyWhisperHallucination — repetition-loop detection (new)', () => {
   it('flags a single word repeating many times in a row', () => {
     // The exact production case: Malayalam STT stuck on a single word
