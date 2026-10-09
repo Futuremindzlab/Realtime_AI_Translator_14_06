@@ -107,6 +107,18 @@
     font-size: 17px;
     white-space: nowrap;
   }
+  .brand .name {
+    color: #FF2E63; /* fallback for browsers without background-clip: text */
+    font-weight: 700;
+  }
+  @supports (background-clip: text) or (-webkit-background-clip: text) {
+    .brand .name {
+      background: linear-gradient(90deg, #FFC700, #FF7A00, #FF2E63, #E619B0, #8A2BE2);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+  }
   .brand .tag {
     font-family: 'IBM Plex Sans', sans-serif;
     font-weight: 500;
@@ -114,6 +126,16 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--ink-faint);
+  }
+  .brand-logo {
+    height: 38px;
+    width: 38px;
+    flex-shrink: 0;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(138, 43, 226, 0.35), 0 0 0 1px rgba(33, 26, 43, 0.06);
+  }
+  @media (max-width: 560px) {
+    .brand-logo { height: 30px; width: 30px; border-radius: 8px; }
   }
   nav.switcher {
     display: flex;
@@ -210,25 +232,30 @@
   section.clause li { margin-bottom: 6px; }
   section.clause strong { font-weight: 600; }
 
-  table.data-table {
-    width: 100%;
-    border-collapse: collapse;
+  section.clause .fact-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     margin: 14px 0 18px;
+  }
+  section.clause .fact-list .fact {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    box-shadow: var(--shadow);
+  }
+  section.clause .fact-list .fact .fact-title {
     font-size: 14px;
-  }
-  table.data-table th, table.data-table td {
-    text-align: left;
-    padding: 9px 12px;
-    border-bottom: 1px solid var(--border);
-  }
-  table.data-table th {
-    font-size: 11.5px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
     font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 3px;
   }
-  table.data-table td.num { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+  section.clause .fact-list .fact .fact-detail {
+    font-size: 13.5px;
+    color: var(--ink-muted);
+    line-height: 1.55;
+  }
 
   .callout {
     background: var(--accent-soft);
@@ -285,12 +312,13 @@
 
 <div class="topbar">
   <div class="topbar-inner">
-    <div class="brand">The OneLingo <span class="tag">Legal</span></div>
+    <div class="brand">The <span class="name">OneLingo</span> <span class="tag">Legal</span></div>
     <nav class="switcher" id="switcher">
       <a href="#privacy" data-key="privacy" class="active">Privacy</a>
       <a href="#terms" data-key="terms">Terms</a>
       <a href="#refunds" data-key="refunds">Refunds</a>
     </nav>
+    <img class="brand-logo" src="../images/icon.png" alt="OneLingo logo" />
   </div>
 </div>
 
@@ -319,28 +347,19 @@
 
     <section class="clause">
       <h3><span class="num">2.</span>What we collect</h3>
-      <table class="data-table">
-        <thead><tr><th>Category</th><th>What, specifically</th><th>Why</th></tr></thead>
-        <tbody>
-          <tr><td>Account</td><td>Email address, or phone number for OTP sign-in</td><td>Sign-in and account recovery</td></tr>
-          <tr><td>Translation content</td><td>Recorded audio and the resulting transcript/translation text</td><td>To produce the translation you asked for, and to show it in your history</td></tr>
-          <tr><td>Usage &amp; preferences</td><td>Chosen languages, voice settings, subscription plan</td><td>To run the app the way you configured it</td></tr>
-          <tr><td>Payment</td><td>Subscription status and plan — <strong>we never see or store your card/UPI details</strong>, Razorpay handles those directly</td><td>To grant Plus/Live access and manage billing</td></tr>
-          <tr><td>Diagnostics (optional)</td><td>On-device app logs, only if you tap "Share Diagnostics"</td><td>To debug a problem you reported</td></tr>
-        </tbody>
-      </table>
+      <div class="fact-list">
+        <div class="fact"><div class="fact-title">Account</div><div class="fact-detail">Email address, or phone number for OTP sign-in; your name and country, collected once during onboarding or from Settings — used for sign-in, account recovery, and support/billing correspondence.</div></div>
+        <div class="fact"><div class="fact-title">Translation content</div><div class="fact-detail">Recorded audio and the resulting transcript/translation text — to produce the translation you asked for, and to show it in your history.</div></div>
+        <div class="fact"><div class="fact-title">Usage &amp; preferences</div><div class="fact-detail">Chosen languages, voice settings, subscription plan — to run the app the way you configured it.</div></div>
+        <div class="fact"><div class="fact-title">Payment</div><div class="fact-detail">Subscription status and plan — <strong>we never see or store your card/UPI details</strong>, our payment partner handles those directly — to grant Plus/Live access and manage billing.</div></div>
+        <div class="fact"><div class="fact-title">Diagnostics (optional)</div><div class="fact-detail">On-device app logs, only if you tap "Share Diagnostics" — to debug a problem you reported.</div></div>
+      </div>
     </section>
 
     <section class="clause">
       <h3><span class="num">3.</span>Who we share it with</h3>
-      <p>We use the following processors to run the app. None of them may use your data for their own purposes beyond providing the service to us.</p>
-      <ul>
-        <li><strong>Amazon Web Services</strong> (Cognito, DynamoDB, S3, Lambda, API Gateway) — hosting, authentication, storage, compute. Region: us-east-1 (N. Virginia, USA).</li>
-        <li><strong>OpenAI</strong> — speech transcription, translation, and text-to-speech.</li>
-        <li><strong>ElevenLabs</strong> and <strong>Microsoft Azure Speech</strong> — alternative text-to-speech voices, used only if you select them.</li>
-        <li><strong>Razorpay</strong> — payment processing for Plus/Live subscriptions.</li>
-      </ul>
-      <p>We do not sell your data, and do not share it with anyone else.</p>
+      <p>Running the app requires a small set of specialist partners — cloud hosting and authentication, the AI models that power transcription/translation/speech, and a payment processor for subscriptions. Each is bound by a data-processing agreement that lets them use your data only to provide that service to us, never for their own purposes.</p>
+      <p>We do not sell your data, and do not share it with anyone outside that narrow set of service providers.</p>
     </section>
 
     <section class="clause">
@@ -361,14 +380,10 @@
 
     <section class="clause">
       <h3><span class="num">7.</span>Grievance officer</h3>
-      <p>Under India's Information Technology Rules, 2021:</p>
-      <table class="data-table">
-        <tbody>
-          <tr><td>Name</td><td>Bharathi Subramaniyam</td></tr>
-          <tr><td>Email</td><td>Bhrathi@futuremindzlab.com</td></tr>
-          <tr><td>Address</td><td>Futureminds Lab LLP, PL No.77, JBR Tech Park, 6th Road, EPIP Zone, Whitefield, Bangalore South, Bangalore - 560066, Karnataka, India</td></tr>
-        </tbody>
-      </table>
+      <p>Under India's Information Technology Rules, 2021, the grievance officer for The OneLingo is:</p>
+      <div class="fact-list">
+        <div class="fact"><div class="fact-title">Futureminds Lab LLP</div><div class="fact-detail">Email: Admin@futuremindzlab.com<br />Address: PL No.77, JBR Tech Park, 6th Road, EPIP Zone, Whitefield, Bangalore South, Bangalore - 560066, Karnataka, India</div></div>
+      </div>
     </section>
 
     <section class="clause">
@@ -397,15 +412,12 @@
     <section class="clause">
       <h3><span class="num">2.</span>What you're getting</h3>
       <p>The OneLingo converts spoken audio into another spoken/written language using third-party AI models (see Privacy Policy §3). Three plans are available:</p>
-      <table class="data-table">
-        <thead><tr><th>Plan</th><th>Price</th><th>What changes</th></tr></thead>
-        <tbody>
-          <tr><td>Basic</td><td class="num">Free</td><td>Standard record → translate → speak pipeline</td></tr>
-          <tr><td>Plus</td><td class="num">Coming soon</td><td>Streaming translation — starts speaking before the sentence finishes generating</td></tr>
-          <tr><td>Live</td><td class="num">Coming soon</td><td>Continuous live interpretation</td></tr>
-        </tbody>
-      </table>
-      <p style="font-size:13.5px; color:var(--ink-muted);">Plus/Live pricing is not finalized yet — this table will be updated with exact amounts before launch.</p>
+      <div class="fact-list">
+        <div class="fact"><div class="fact-title">Basic — Free</div><div class="fact-detail">Standard record → translate → speak pipeline.</div></div>
+        <div class="fact"><div class="fact-title">Plus — pricing coming soon</div><div class="fact-detail">Streaming translation — starts speaking before the sentence finishes generating.</div></div>
+        <div class="fact"><div class="fact-title">Live — pricing coming soon</div><div class="fact-detail">Continuous live interpretation.</div></div>
+      </div>
+      <p style="font-size:13.5px; color:var(--ink-muted);">Plus/Live pricing is not finalized yet — this section will be updated with exact amounts before launch.</p>
       <div class="callout"><strong>Translations are AI-generated and can be wrong.</strong> Don't rely on this app for medical, legal, safety, or other high-stakes situations.</div>
     </section>
 
