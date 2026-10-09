@@ -110,8 +110,34 @@ function hasRepeatingLoop(normalized: string): boolean {
   return false;
 }
 
+// Real production report, reproduced from a screenshot: "(sizzling)"
+// transcribed and translated word-for-word, exactly the caption-hallucination
+// pattern this file exists to catch — just a sound word that had never
+// turned up before, so it wasn't in HALLUCINATION_EXACT or the keyword
+// regex. Rather than add "sizzling" (and the next one-off sound word, and
+// the one after that — Whisper's caption vocabulary for ambient noise is
+// effectively unbounded: dripping, clicking, typing, barking, chirping...),
+// this catches the *shape* all of them share: Whisper's non-speech captions
+// are consistently emitted as a single bracket/paren-wrapped span and
+// nothing else — "(sizzling)", "(applause)", "[Music]", "(papers
+// rustling)". Nobody actually speaks literal parentheses aloud in a live
+// conversation, so a transcript that is ENTIRELY one such wrapped span,
+// short enough to read as a caption rather than a real sentence, is safe to
+// treat as a hallucination regardless of which word is inside it.
+const BRACKETED_CAPTION_RE = /^([([])([^()[\]]*)([)\]])$/;
+const MAX_WORDS_FOR_BRACKETED_CAPTION = 6;
+
+function isBracketedCaption(raw: string): boolean {
+  const match = raw.trim().match(BRACKETED_CAPTION_RE);
+  if (!match) return false;
+  const inner = match[2].trim();
+  if (!inner) return false; // "()"/"[]" alone — hasNoSpeechContent's job, not this
+  const wordCount = inner.split(/\s+/).filter(Boolean).length;
+  return wordCount <= MAX_WORDS_FOR_BRACKETED_CAPTION;
+}
+
 /** Which specific rule flagged the text, or null if none did — see classifyWhisperHallucination. */
-export type WhisperHallucinationMatch = 'exact' | 'keyword' | 'repeating-loop' | null;
+export type WhisperHallucinationMatch = 'exact' | 'keyword' | 'repeating-loop' | 'bracketed-caption' | null;
 
 /**
  * Same classification as isLikelyWhisperHallucination, but names which rule
@@ -125,6 +151,10 @@ export type WhisperHallucinationMatch = 'exact' | 'keyword' | 'repeating-loop' |
  * existing test suite).
  */
 export function classifyWhisperHallucination(text: string): WhisperHallucinationMatch {
+  // Checked on the raw text, before normalize() strips the bracket wrapper —
+  // that stripping is exactly the signal this check needs to see.
+  if (isBracketedCaption(text)) return 'bracketed-caption';
+
   const normalized = normalize(text);
   if (!normalized) return null;
   if (HALLUCINATION_EXACT.has(normalized)) return 'exact';
