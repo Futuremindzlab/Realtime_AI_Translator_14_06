@@ -18,6 +18,11 @@
     --accent-ink: #6A1FB8;
     --accent-soft: #F1E6FC;
     --shadow: 0 1px 2px rgba(22,18,29,0.04), 0 8px 24px rgba(22,18,29,0.05);
+    /* Same "Four-Stop" gradient stops as the homepage, used for the
+       background glow below — not just a flat --bg color. */
+    --c1: #FFC700;
+    --c2: #FF2E63;
+    --c3: #8A2BE2;
   }
 
   /* Light-only, matching the app and the marketing homepage — no
@@ -29,7 +34,13 @@
 
   body {
     margin: 0;
-    background: var(--bg);
+    background-color: var(--bg);
+    background-image:
+      radial-gradient(900px circle at 8% -8%, color-mix(in srgb, var(--c2) 14%, transparent), transparent 60%),
+      radial-gradient(820px circle at 106% 8%, color-mix(in srgb, var(--c1) 12%, transparent), transparent 55%),
+      radial-gradient(760px circle at 46% 108%, color-mix(in srgb, var(--c3) 10%, transparent), transparent 55%);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
     color: var(--ink);
     font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
     padding-inline: 20px;
