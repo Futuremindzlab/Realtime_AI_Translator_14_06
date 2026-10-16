@@ -9,7 +9,7 @@ below.
 
 `policies.html` is a single self-contained page covering the Privacy Policy, Terms of Service, and Refund/Cancellation Policy for The OneLingo (formerly referred to internally as Realtime AI Translator). Everything in it is grounded in what the app actually does (see the code it's based on — the retention sweep, `settings.mjs`'s `plan`/`razorpay_subscription_*` fields, `billing.mjs`'s cancel-at-cycle-end behavior).
 
-**Filled in so far** (from business details provided 2026-09-13; grievance officer's address added 2026-10-05; grievance officer changed from a named individual to the company itself, every `<table>` replaced with prose/fact-cards, and the named third-party vendor list (AWS/OpenAI/ElevenLabs/Azure/Razorpay) replaced with a generic description, all on 2026-10-09):
+**Filled in so far** (from business details provided 2026-09-13; grievance officer's address added 2026-10-05; grievance officer changed from a named individual to the company itself, every `<table>` replaced with prose/fact-cards, and the named third-party vendor list (AWS/OpenAI/ElevenLabs/Azure/Razorpay) replaced with a generic description, on 2026-10-09; the three doc-head "meta-card" grids (Effective/Applies to/Governing law, etc.) replaced with a single plain-text line each on 2026-10-16 — same request, applied to a presentational element that still read as a table even though it wasn't a literal `<table>`):
 - Legal/business name: Futureminds Lab LLP
 - App/brand name throughout: The OneLingo
 - Support email: Admin@futuremindzlab.com

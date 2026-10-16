@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>The OneLingo</title>
 <meta name="description" content="The OneLingo turns any conversation into one you can both understand — speak naturally, hear the reply back instantly, even in your own cloned voice. 45+ languages, launching soon." />
-<meta name="theme-color" content="#7C4FE0" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%97%A3%EF%B8%8F%3C/text%3E%3C/svg%3E" />
+<meta name="theme-color" content="#8A2BE2" />
+<link rel="icon" type="image/png" href="images/icon.png" />
 <link rel="canonical" href="https://theonelingo.com/" />
 
 <meta property="og:type" content="website" />
@@ -32,12 +32,15 @@
     --muted: #6B6577;
     --border: #E7E2ED;
     --border-2: #DCD5E6;
-    --accent: #7C4FE0;
-    --accent-ink: #5F35BE;
-    --c1: #FF6B5B; /* coral */
-    --c2: #8B5CF6; /* violet */
-    --c3: #2BC6B9; /* teal */
-    --grad: linear-gradient(100deg, var(--c1) 0%, var(--c2) 52%, var(--c3) 100%);
+    --accent: #8A2BE2;
+    --accent-ink: #6A1FB8;
+    /* Same "Four-Stop" gradient as the app icon/in-app theme (gold → orange →
+       rose → magenta → purple) — c1/c2/c3 are three representative stops used
+       for the radial background blobs below; --grad uses the full sequence. */
+    --c1: #FFC700; /* gold */
+    --c2: #FF2E63; /* rose */
+    --c3: #8A2BE2; /* purple */
+    --grad: linear-gradient(100deg, #FFC700 0%, #FF7A00 25%, #FF2E63 50%, #E619B0 75%, #8A2BE2 100%);
     --shadow-sm: 0 1px 2px rgba(21,18,29,0.04), 0 2px 8px rgba(21,18,29,0.04);
     --shadow-md: 0 4px 16px rgba(21,18,29,0.06), 0 12px 32px rgba(21,18,29,0.06);
     --radius: 20px;
@@ -52,11 +55,11 @@
       --muted: #9C93AE;
       --border: #2C2739;
       --border-2: #383049;
-      --accent: #A98BFA;
-      --accent-ink: #C4AEFF;
-      --c1: #FF8B7D;
-      --c2: #A98BFA;
-      --c3: #4FE0D2;
+      --accent: #C9A3FF;
+      --accent-ink: #DDBFFF;
+      --c1: #FFD23D;
+      --c2: #FF5C85;
+      --c3: #C9A3FF;
       --shadow-sm: 0 1px 2px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.25);
       --shadow-md: 0 8px 24px rgba(0,0,0,0.4), 0 16px 40px rgba(0,0,0,0.35);
     }
@@ -69,11 +72,11 @@
     --muted: #9C93AE;
     --border: #2C2739;
     --border-2: #383049;
-    --accent: #A98BFA;
-    --accent-ink: #C4AEFF;
-    --c1: #FF8B7D;
-    --c2: #A98BFA;
-    --c3: #4FE0D2;
+    --accent: #C9A3FF;
+    --accent-ink: #DDBFFF;
+    --c1: #FFD23D;
+    --c2: #FF5C85;
+    --c3: #C9A3FF;
     --shadow-sm: 0 1px 2px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.25);
     --shadow-md: 0 8px 24px rgba(0,0,0,0.4), 0 16px 40px rgba(0,0,0,0.35);
   }
@@ -181,21 +184,27 @@
     font-weight: 700; font-size: 19px; color: var(--ink);
     text-decoration: none;
   }
-  .wordmark .glyph {
+  .wordmark-icon {
     width: 26px; height: 26px; border-radius: 8px;
-    background: var(--grad);
-    position: relative; flex-shrink: 0;
-  }
-  .wordmark .glyph::after {
-    content: ''; position: absolute; inset: 7px;
-    background: var(--paper); border-radius: 3px;
+    flex-shrink: 0;
+    box-shadow: 0 1px 4px color-mix(in srgb, var(--c3) 35%, transparent);
   }
   .wordmark .pre { color: var(--muted); font-weight: 500; }
   nav.links { display: flex; align-items: center; gap: 28px; }
   nav.links a:not(.btn) { color: var(--ink-2); text-decoration: none; font-size: 14.5px; font-weight: 600; }
   nav.links a:not(.btn):hover { color: var(--ink); }
-  .nav-cta { display: flex; align-items: center; gap: 14px; }
+  .nav-cta { display: flex; align-items: center; gap: 16px; }
+  /* The prominent, full-color brand mark — deliberately bigger than the
+     wordmark's small icon, and the first thing that should register on
+     landing, so it sits at the end of the nav where the eye lands after
+     reading the links, right before the CTA. */
+  .nav-logo-badge {
+    width: 44px; height: 44px; border-radius: 12px;
+    flex-shrink: 0;
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--c2) 40%, transparent), 0 0 0 1px var(--border-2);
+  }
   @media (max-width: 780px) { nav.links { display: none; } }
+  @media (max-width: 480px) { .nav-logo-badge { width: 36px; height: 36px; border-radius: 10px; } }
 
   /* ── hero ── */
   .hero {
@@ -414,7 +423,7 @@
 <body>
 <header class="nav">
   <div class="nav-inner">
-    <a href="#top" class="wordmark"><span class="glyph"></span><span class="pre">The</span>&nbsp;OneLingo</a>
+    <a href="#top" class="wordmark"><img class="wordmark-icon" src="images/icon.png" alt="" /><span class="pre">The</span>&nbsp;OneLingo</a>
     <nav class="links">
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
@@ -422,6 +431,7 @@
       <a href="#faq">FAQ</a>
     </nav>
     <div class="nav-cta">
+      <img class="nav-logo-badge" src="images/icon.png" alt="The OneLingo" />
       <a class="btn btn-primary btn-sm" href="#join">Join the waitlist</a>
     </div>
   </div>
@@ -593,9 +603,9 @@
       <p>We didn't train our own shaky speech model — we built on the ones already trusted for real speech, translation, and voice.</p>
     </div>
     <div class="trust-row">
-      <div class="trust-badge"><span class="dot2"></span>OpenAI — speech &amp; translation</div>
-      <div class="trust-badge"><span class="dot2"></span>ElevenLabs — natural &amp; cloned voices</div>
-      <div class="trust-badge"><span class="dot2"></span>Microsoft Azure Speech</div>
+      <div class="trust-badge"><span class="dot2"></span>Real-time speech recognition</div>
+      <div class="trust-badge"><span class="dot2"></span>Natural, even cloned voices</div>
+      <div class="trust-badge"><span class="dot2"></span>Production-grade since day one</div>
     </div>
     <div class="trust-foot">🔒 Your conversations are never sold, and never used to train anyone's model without your say. <a href="/legal/policies.html#privacy" target="_blank" rel="noopener">Read the privacy policy →</a></div>
   </section>

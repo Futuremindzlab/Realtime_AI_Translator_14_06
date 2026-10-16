@@ -182,29 +182,12 @@
   }
   .doc h2 { font-size: 26px; margin: 0 0 14px; }
 
-  .meta-card {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1px;
-    background: var(--border);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: var(--shadow);
+  .doc-meta {
+    font-size: 13.5px;
+    color: var(--ink-muted);
   }
-  .meta-cell { background: var(--surface); padding: 12px 16px; }
-  .meta-cell .label {
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: var(--ink-faint);
-    margin-bottom: 4px;
-  }
-  .meta-cell .value { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--ink); }
-  @media (max-width: 560px) {
-    .meta-card { grid-template-columns: 1fr; }
-  }
+  .doc-meta b { color: var(--ink); font-weight: 600; }
+  .doc-meta .sep { color: var(--ink-faint); margin-inline: 8px; }
 
   section.clause { margin-top: 30px; }
   section.clause h3 {
@@ -333,11 +316,7 @@
     <div class="doc-head">
       <div class="doc-eyebrow">Document 1 of 3</div>
       <h2>Privacy Policy</h2>
-      <div class="meta-card">
-        <div class="meta-cell"><div class="label">Effective</div><div class="value">Coming soon</div></div>
-        <div class="meta-cell"><div class="label">Applies to</div><div class="value">The OneLingo (Android)</div></div>
-        <div class="meta-cell"><div class="label">Governing law</div><div class="value">India</div></div>
-      </div>
+      <p class="doc-meta">Effective: <b>Coming soon</b><span class="sep">·</span>Applies to: <b>The OneLingo (Android)</b><span class="sep">·</span>Governing law: <b>India</b></p>
     </div>
 
     <section class="clause">
@@ -397,11 +376,7 @@
     <div class="doc-head">
       <div class="doc-eyebrow">Document 2 of 3</div>
       <h2>Terms of Service</h2>
-      <div class="meta-card">
-        <div class="meta-cell"><div class="label">Effective</div><div class="value">Coming soon</div></div>
-        <div class="meta-cell"><div class="label">Applies to</div><div class="value">The OneLingo (Android)</div></div>
-        <div class="meta-cell"><div class="label">Governing law</div><div class="value">India</div></div>
-      </div>
+      <p class="doc-meta">Effective: <b>Coming soon</b><span class="sep">·</span>Applies to: <b>The OneLingo (Android)</b><span class="sep">·</span>Governing law: <b>India</b></p>
     </div>
 
     <section class="clause">
@@ -463,11 +438,7 @@
     <div class="doc-head">
       <div class="doc-eyebrow">Document 3 of 3</div>
       <h2>Refund &amp; Cancellation Policy</h2>
-      <div class="meta-card">
-        <div class="meta-cell"><div class="label">Effective</div><div class="value">Coming soon</div></div>
-        <div class="meta-cell"><div class="label">Billing partner</div><div class="value">Razorpay</div></div>
-        <div class="meta-cell"><div class="label">Currency</div><div class="value">INR</div></div>
-      </div>
+      <p class="doc-meta">Effective: <b>Coming soon</b><span class="sep">·</span>Billing partner: <b>Razorpay</b><span class="sep">·</span>Currency: <b>INR</b></p>
     </div>
 
     <section class="clause">
