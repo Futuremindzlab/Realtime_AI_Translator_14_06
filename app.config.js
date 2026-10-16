@@ -126,6 +126,24 @@ module.exports = {
       ],
       'expo-audio',
       'expo-asset',
+      // Scan & Translate — these two plugins add the camera + photo-library
+      // usage-description strings (and, on Android, the corresponding
+      // manifest permissions) automatically; no manual android.permissions
+      // entry needed the way RECORD_AUDIO has above.
+      [
+        'expo-camera',
+        {
+          cameraPermission:
+            'The OneLingo uses your camera to read and translate signs, menus, and other printed text.',
+        },
+      ],
+      [
+        'expo-image-picker',
+        {
+          photosPermission:
+            'The OneLingo uses your photos to read and translate text from a picture you already have.',
+        },
+      ],
     ],
     experiments: {
       typedRoutes: true,
