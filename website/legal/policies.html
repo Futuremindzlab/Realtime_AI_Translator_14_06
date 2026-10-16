@@ -3,20 +3,21 @@
   @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
   :root {
-    --bg: #F6F7FA;
+    /* Same warm paper + brand-purple tokens as the marketing homepage
+       (website/index.html) — this page used to carry its own leftover
+       cool-gray/blue palette, which is why it looked like a different
+       product next to the homepage. */
+    --bg: #F8F4FE;
     --surface: #FFFFFF;
-    --surface-2: #EEF1F6;
-    --ink: #161A20;
-    --ink-muted: #5B6472;
-    --ink-faint: #8891A0;
-    --border: #E1E4EA;
-    --accent: #2554EB;
-    --accent-ink: #1740B8;
-    --accent-soft: #EAF0FF;
-    --placeholder-bg: #FFF4E0;
-    --placeholder-border: #E8A93B;
-    --placeholder-ink: #8A5A0A;
-    --shadow: 0 1px 2px rgba(22,26,32,0.04), 0 8px 24px rgba(22,26,32,0.05);
+    --surface-2: #F3EEFA;
+    --ink: #15121D;
+    --ink-muted: #6B6577;
+    --ink-faint: #B9B2C4;
+    --border: #E7E2ED;
+    --accent: #8A2BE2;
+    --accent-ink: #6A1FB8;
+    --accent-soft: #F1E6FC;
+    --shadow: 0 1px 2px rgba(22,18,29,0.04), 0 8px 24px rgba(22,18,29,0.05);
   }
 
   /* Light-only, matching the app and the marketing homepage — no
@@ -220,38 +221,6 @@
   }
   .callout strong { color: var(--accent-ink); }
 
-  /* ── Placeholder marker ── */
-  .fill {
-    display: inline;
-    background: var(--placeholder-bg);
-    border: 1px dashed var(--placeholder-border);
-    color: var(--placeholder-ink);
-    border-radius: 5px;
-    padding: 1px 7px;
-    font-size: 0.93em;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .placeholder-key {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    color: var(--ink-muted);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 16px;
-    margin-top: 24px;
-    box-shadow: var(--shadow);
-  }
-  .placeholder-key .swatch {
-    width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
-    background: var(--placeholder-bg);
-    border: 1px dashed var(--placeholder-border);
-  }
-
   footer {
     max-width: 760px;
     margin: 0 auto;
@@ -277,7 +246,7 @@
 <main>
   <div class="intro">
     <h1>Privacy, Terms &amp; Refunds</h1>
-    <p>These three documents govern the use of The OneLingo mobile app and its subscription plans. Fields marked <span class="fill">like&nbsp;this</span> are placeholders — publish nothing publicly until every one is replaced.</p>
+    <p>These three documents govern the use of The OneLingo mobile app and its subscription plans.</p>
   </div>
 
   <!-- ══════════════════════════ PRIVACY POLICY ══════════════════════════ -->
@@ -335,7 +304,7 @@
 
     <section class="clause">
       <h3><span class="num">8.</span>Changes to this policy</h3>
-      <p>If we materially change what we collect or why, we'll update the "Effective" date above and notify you in-app.</p>
+      <p>If we materially change what we collect or why, we'll notify you in-app before the change takes effect.</p>
     </section>
   </div>
 
@@ -391,7 +360,7 @@
 
     <section class="clause">
       <h3><span class="num">7.</span>Changes &amp; termination</h3>
-      <p>We may update these Terms (we'll change the "Effective" date and notify you in-app) or discontinue the service with reasonable notice. You may stop using the app and delete your account at any time.</p>
+      <p>We may update these Terms (we'll notify you in-app before changes take effect) or discontinue the service with reasonable notice. You may stop using the app and delete your account at any time.</p>
     </section>
 
     <section class="clause">
@@ -423,8 +392,8 @@
       <p>Because cancellation already stops billing at the natural end of a paid period, and access continues through that period:</p>
       <ul>
         <li><strong>We do not offer prorated or partial-period refunds</strong> for cancelling partway through a billing cycle.</li>
-        <li>If you're charged in error (e.g. a duplicate charge, or a charge after you'd already cancelled), contact us at Admin@futuremindzlab.com within <span class="fill">30</span> days and we'll investigate and refund confirmed errors in full.</li>
-        <li>Refunds, where approved, are issued to the original payment method via Razorpay and can take <span class="fill">5–7</span> business days to appear, per your bank/UPI provider.</li>
+        <li>If you're charged in error (e.g. a duplicate charge, or a charge after you'd already cancelled), contact us at Admin@futuremindzlab.com within <strong>30</strong> days and we'll investigate and refund confirmed errors in full.</li>
+        <li>Refunds, where approved, are issued to the original payment method via Razorpay and can take <strong>5–7</strong> business days to appear, per your bank/UPI provider.</li>
       </ul>
       <div class="callout"><strong>Adjust this section to match your actual policy</strong> — as built, the app only supports cancel-at-cycle-end with no automatic proration. If you want to offer a cooling-off refund window instead (common for a first-time subscriber), say so and this page — and the cancellation code — can both be updated to match.</div>
     </section>
@@ -440,13 +409,9 @@
     </section>
   </div>
 
-  <div class="placeholder-key">
-    <span class="swatch"></span>
-    Any field shown like <span class="fill">this</span> is a placeholder — replace every one before publishing this page for real.
-  </div>
-</main>
+  </main>
 
-<footer>The OneLingo — drafted for review, not yet published as final.</footer>
+<footer>&copy; 2026 Futureminds Lab LLP. The OneLingo.</footer>
 
 <script>
   (function () {
