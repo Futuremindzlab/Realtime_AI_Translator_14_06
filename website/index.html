@@ -46,40 +46,10 @@
     --radius: 20px;
   }
 
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --paper: #120F1A;
-      --surface: #1B1726;
-      --ink: #F3EFFA;
-      --ink-2: #D8D0E8;
-      --muted: #9C93AE;
-      --border: #2C2739;
-      --border-2: #383049;
-      --accent: #C9A3FF;
-      --accent-ink: #DDBFFF;
-      --c1: #FFD23D;
-      --c2: #FF5C85;
-      --c3: #C9A3FF;
-      --shadow-sm: 0 1px 2px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.25);
-      --shadow-md: 0 8px 24px rgba(0,0,0,0.4), 0 16px 40px rgba(0,0,0,0.35);
-    }
-  }
-  :root[data-theme="dark"] {
-    --paper: #120F1A;
-    --surface: #1B1726;
-    --ink: #F3EFFA;
-    --ink-2: #D8D0E8;
-    --muted: #9C93AE;
-    --border: #2C2739;
-    --border-2: #383049;
-    --accent: #C9A3FF;
-    --accent-ink: #DDBFFF;
-    --c1: #FFD23D;
-    --c2: #FF5C85;
-    --c3: #C9A3FF;
-    --shadow-sm: 0 1px 2px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.25);
-    --shadow-md: 0 8px 24px rgba(0,0,0,0.4), 0 16px 40px rgba(0,0,0,0.35);
-  }
+  /* This page is deliberately light-only, matching the app (which has no
+     dark mode) — no automatic prefers-color-scheme switching, and no
+     dark-mode token block, so the brand gradient and copy always render
+     exactly as designed regardless of the visitor's OS/browser theme. */
 
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
@@ -387,8 +357,6 @@
     position: relative;
     overflow: hidden;
   }
-  :root[data-theme="dark"] .cta-panel { background: var(--surface); border: 1px solid var(--border-2); }
-  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cta-panel { background: var(--surface); border: 1px solid var(--border-2); } }
   .cta-panel::before {
     content: ''; position: absolute; inset: 0; opacity: 0.5;
     background: var(--grad); filter: blur(90px); transform: translateY(-40%);

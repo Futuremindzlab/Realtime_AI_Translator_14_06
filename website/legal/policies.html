@@ -19,40 +19,9 @@
     --shadow: 0 1px 2px rgba(22,26,32,0.04), 0 8px 24px rgba(22,26,32,0.05);
   }
 
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #12151B;
-      --surface: #1A1E26;
-      --surface-2: #20242D;
-      --ink: #E7E9EE;
-      --ink-muted: #99A2B3;
-      --ink-faint: #6B7383;
-      --border: #2A2F3A;
-      --accent: #6E96FF;
-      --accent-ink: #A9C1FF;
-      --accent-soft: #1D2740;
-      --placeholder-bg: #2E260F;
-      --placeholder-border: #B98A2E;
-      --placeholder-ink: #F2C169;
-      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #12151B;
-    --surface: #1A1E26;
-    --surface-2: #20242D;
-    --ink: #E7E9EE;
-    --ink-muted: #99A2B3;
-    --ink-faint: #6B7383;
-    --border: #2A2F3A;
-    --accent: #6E96FF;
-    --accent-ink: #A9C1FF;
-    --accent-soft: #1D2740;
-    --placeholder-bg: #2E260F;
-    --placeholder-border: #B98A2E;
-    --placeholder-ink: #F2C169;
-    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
-  }
+  /* Light-only, matching the app and the marketing homepage — no
+     automatic prefers-color-scheme switching, so this always renders as
+     designed regardless of the visitor's OS/browser theme. */
 
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
