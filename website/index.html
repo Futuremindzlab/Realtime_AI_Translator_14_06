@@ -352,30 +352,35 @@
     border-radius: 28px;
     padding: 64px 40px;
     text-align: center;
-    background: var(--ink);
-    color: var(--paper);
+    background: var(--surface);
+    border: 1px solid var(--border-2);
+    color: var(--ink);
     position: relative;
     overflow: hidden;
+    box-shadow: var(--shadow-md);
   }
   .cta-panel::before {
-    content: ''; position: absolute; inset: 0; opacity: 0.5;
-    background: var(--grad); filter: blur(90px); transform: translateY(-40%);
+    content: ''; position: absolute; inset: 0; opacity: 0.4;
+    background: var(--grad); filter: blur(70px); transform: translateY(-45%);
+  }
+  .cta-panel::after {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 5px;
+    background: var(--grad);
   }
   .cta-panel > * { position: relative; z-index: 1; }
-  .cta-panel h2 { color: var(--paper); font-size: clamp(26px, 4vw, 38px); margin-bottom: 14px; }
-  .cta-panel p { color: color-mix(in srgb, var(--paper) 72%, transparent); max-width: 50ch; margin-inline: auto; margin-bottom: 30px; }
+  .cta-panel h2 { color: var(--ink); font-size: clamp(26px, 4vw, 38px); margin-bottom: 14px; }
+  .cta-panel p { color: var(--muted); max-width: 50ch; margin-inline: auto; margin-bottom: 30px; }
 
   .waitlist-form { display: flex; gap: 10px; max-width: 420px; margin: 0 auto; flex-wrap: wrap; justify-content: center; }
   .waitlist-form input {
     flex: 1; min-width: 200px;
-    padding: 13px 18px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.25);
-    background: rgba(255,255,255,0.08); color: var(--paper); font-family: 'Karla', sans-serif; font-size: 15px;
+    padding: 13px 18px; border-radius: 999px; border: 1px solid var(--border-2);
+    background: var(--paper); color: var(--ink); font-family: 'Karla', sans-serif; font-size: 15px;
   }
-  .waitlist-form input::placeholder { color: rgba(255,255,255,0.5); }
-  .waitlist-form input:focus { outline: 2px solid var(--c3); outline-offset: 2px; }
-  .waitlist-form .btn-primary { background: var(--paper); color: var(--ink); }
-  .form-status { margin-top: 14px; font-size: 13.5px; min-height: 18px; color: color-mix(in srgb, var(--paper) 80%, transparent); }
-  .form-status.success { color: #7BE8C6; font-weight: 700; }
+  .waitlist-form input::placeholder { color: var(--muted); }
+  .waitlist-form input:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .form-status { margin-top: 14px; font-size: 13.5px; min-height: 18px; color: var(--muted); }
+  .form-status.success { color: #15803D; font-weight: 700; }
 
   /* ── footer ── */
   footer { padding-block: 48px 40px; }
