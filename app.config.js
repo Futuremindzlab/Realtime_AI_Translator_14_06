@@ -121,6 +121,16 @@ module.exports = {
             // All endpoints (API Gateway, Cognito, OpenAI/ElevenLabs/Azure) are HTTPS —
             // cleartext (HTTP) traffic is never needed and should stay disabled.
             usesCleartextTraffic: false,
+            // Scoped to the `preview` profile only (EAS sets EAS_BUILD_PROFILE
+            // during the build) — the default build compiles native C++ for
+            // all 4 ABIs including x86/x86_64 (emulator-only, never a real
+            // phone), which exhausted the GitHub Actions runner's disk on
+            // this branch's first preview build ("No space left on device"
+            // mid-compile of react-native-reanimated). arm64-v8a alone covers
+            // virtually every real Android device, so this only trims a
+            // internal-testing APK — production/development profiles, and
+            // what ships to the Play Store, are untouched.
+            ...(process.env.EAS_BUILD_PROFILE === 'preview' ? { buildArchs: ['arm64-v8a'] } : {}),
           },
         },
       ],
