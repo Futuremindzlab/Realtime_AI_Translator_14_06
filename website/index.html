@@ -160,6 +160,17 @@
     box-shadow: 0 1px 4px color-mix(in srgb, var(--c3) 35%, transparent);
   }
   .wordmark .pre { color: var(--muted); font-weight: 500; }
+  .wordmark .brand-name {
+    color: #FF2E63; /* fallback for browsers without background-clip: text */
+  }
+  @supports (background-clip: text) or (-webkit-background-clip: text) {
+    .wordmark .brand-name {
+      background: var(--grad);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+  }
   nav.links { display: flex; align-items: center; gap: 28px; }
   nav.links a:not(.btn) { color: var(--ink-2); text-decoration: none; font-size: 14.5px; font-weight: 600; }
   nav.links a:not(.btn):hover { color: var(--ink); }
@@ -396,7 +407,7 @@
 <body>
 <header class="nav">
   <div class="nav-inner">
-    <a href="#top" class="wordmark"><img class="wordmark-icon" src="images/icon.png" alt="" /><span class="pre">The</span>&nbsp;OneLingo</a>
+    <a href="#top" class="wordmark"><img class="wordmark-icon" src="images/icon.png" alt="" /><span class="pre">The</span>&nbsp;<span class="brand-name">OneLingo</span></a>
     <nav class="links">
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
@@ -629,7 +640,7 @@
 
 <footer class="wrap">
   <div class="footer-grid">
-    <a href="#top" class="wordmark"><span class="glyph"></span><span class="pre">The</span>&nbsp;OneLingo</a>
+    <a href="#top" class="wordmark"><span class="glyph"></span><span class="pre">The</span>&nbsp;<span class="brand-name">OneLingo</span></a>
     <div class="footer-links">
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
