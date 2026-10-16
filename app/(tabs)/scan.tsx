@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Platform,
+  ScrollView,
+  Linking,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -102,6 +104,11 @@ export default function ScanScreen() {
 
   // ---------- Permission gate ----------
   if (!permission.granted) {
+    // Once denied with canAskAgain: false (iOS after one refusal; Android
+    // after "Don't ask again"), calling requestPermission() again just
+    // silently resolves with the same denied status — the only way back in
+    // is the OS Settings app, so point there instead of a dead-end retry.
+    const permanentlyDenied = !permission.canAskAgain;
     return (
       <View style={[styles.container, styles.centered]}>
         <View style={styles.permissionIconWrap}>
@@ -109,11 +116,17 @@ export default function ScanScreen() {
         </View>
         <Text style={styles.permissionTitle}>Camera access needed</Text>
         <Text style={styles.permissionText}>
-          The OneLingo uses your camera to read and translate signs, menus, and other printed text you point it at.
+          {permanentlyDenied
+            ? 'Camera access is currently off for The OneLingo. Turn it on in Settings to scan text, or choose a photo instead.'
+            : 'The OneLingo uses your camera to read and translate signs, menus, and other printed text you point it at.'}
         </Text>
-        <TouchableOpacity style={styles.primaryButtonWrap} onPress={requestPermission} activeOpacity={0.85}>
+        <TouchableOpacity
+          style={styles.primaryButtonWrap}
+          onPress={permanentlyDenied ? () => Linking.openSettings() : requestPermission}
+          activeOpacity={0.85}
+        >
           <LinearGradient colors={t.idleGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>Allow camera access</Text>
+            <Text style={styles.primaryButtonText}>{permanentlyDenied ? 'Open Settings' : 'Allow camera access'}</Text>
           </LinearGradient>
         </TouchableOpacity>
         <TouchableOpacity style={styles.secondaryButton} onPress={handlePickFromLibrary}>
@@ -131,7 +144,11 @@ export default function ScanScreen() {
           <Text style={styles.title}>Scan & Translate</Text>
         </View>
 
-        <View style={styles.resultBody}>
+        <ScrollView
+          style={styles.resultBody}
+          contentContainerStyle={styles.resultBodyContent}
+          keyboardShouldPersistTaps="handled"
+        >
           {previewUri && <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="cover" />}
 
           {stage === 'scanning' && (
@@ -170,7 +187,7 @@ export default function ScanScreen() {
               <Text style={styles.translatedText}>{result.translatedText}</Text>
             </View>
           )}
-        </View>
+        </ScrollView>
 
         {stage === 'result' && (
           <TouchableOpacity style={styles.primaryButtonWrap} onPress={reset} activeOpacity={0.85}>
@@ -379,7 +396,10 @@ const styles = StyleSheet.create({
   // Result stage
   resultBody: {
     flex: 1,
+  },
+  resultBodyContent: {
     padding: 20,
+    paddingBottom: 32,
   },
   previewImage: {
     width: '100%',
