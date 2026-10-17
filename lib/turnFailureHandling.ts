@@ -25,12 +25,31 @@ export type TurnFailureOutcome =
  * `interruptedByAppStateBlip` tells the two apart: only genuine silence
  * hands control to the other person; a blip-glitched turn retries the same
  * person instead, with an honest "Recording was interrupted" message.
+ *
+ * Real report: on some Android devices/OS versions, that same AppState
+ * 'background' blip fires on EVERY recording start (OEM mic-privacy
+ * indicator / audio-focus negotiation) regardless of whether the recording
+ * is actually fine — two back-to-back successful turns can show the exact
+ * same blip as a failing one right after. There, `interruptedByAppStateBlip`
+ * is true on every turn, so it can no longer distinguish "this failure was
+ * caused by the blip" from "this is genuine silence" — and always retrying
+ * the same person on it turned repeated genuine silence into a dead-end
+ * retry loop that exhausts the retry budget and forces a restart, worse
+ * than the pre-fix silence-handover for that case. `blipRetryAlreadyUsedThisTurn`
+ * caps the benefit of the doubt at one retry per person-turn: a second
+ * consecutive 'No speech detected' failure hands over regardless of the
+ * blip flag, since by then repetition has already disproven "this was a
+ * one-off glitch."
  */
 export function classifyTurnFailure(
   reason: string | undefined,
-  interruptedByAppStateBlip: boolean | undefined
+  interruptedByAppStateBlip: boolean | undefined,
+  blipRetryAlreadyUsedThisTurn: boolean
 ): TurnFailureOutcome {
-  if (reason === 'No speech detected' && !interruptedByAppStateBlip) {
+  if (reason === 'No speech detected') {
+    if (interruptedByAppStateBlip && !blipRetryAlreadyUsedThisTurn) {
+      return { kind: 'retry', message: 'Recording was interrupted' };
+    }
     return { kind: 'silence-handover' };
   }
   return { kind: 'retry', message: interruptedByAppStateBlip ? 'Recording was interrupted' : (reason || 'Turn failed') };
