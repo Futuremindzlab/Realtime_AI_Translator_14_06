@@ -10,7 +10,6 @@ import { logger } from '@/lib/logger';
 import { withTimeout, TimeoutError } from '@/lib/withTimeout';
 import { classifyWhisperHallucination, hasNoSpeechContent } from '@/lib/whisperHallucinations';
 import { computeNextTurnLanguages, resolvePersonAAutoSourceLanguage } from '@/lib/conversationTurnLanguage';
-import { classifyTurnFailure } from '@/lib/turnFailureHandling';
 
 // expo-file-system is native-only — audio history persistence is skipped on
 // web, where recording/TTS URIs are blob: URLs FileSystem can't read anyway.
@@ -99,24 +98,6 @@ export class RealtimeTranslationService {
   // capped so a conversation with no one talking doesn't ping-pong forever.
   private consecutiveSilenceHandovers = 0;
   private static readonly MAX_CONSECUTIVE_SILENCE_HANDOVERS = 6;
-
-  // Real diagnostics logs disproved the assumption this used to lean on:
-  // audioService.hadAppStateBlipSince's AppState 'background' blip (OEM
-  // mic-privacy indicator / audio-focus negotiation) fires on EVERY
-  // recording start on some Android devices — including both turns right
-  // before a failing one that succeeded cleanly — so it never actually
-  // predicted a corrupted recording; it's just ambient device noise. Gating
-  // the retry on it meant some devices always retried (the flag was always
-  // true there) and others may have under-retried real hiccups the flag
-  // missed. classifyTurnFailure now retries every 'No speech detected'
-  // failure once regardless of the flag — simpler, and more patient exactly
-  // where it matters: a person who paused before speaking, or whose first
-  // attempt was cut short, gets a real second chance instead of an
-  // immediate handover. retryUsedForCurrentTurn caps that at one retry per
-  // person-turn — a second consecutive failure hands over to the other
-  // person — so a genuinely silent person still doesn't block the
-  // conversation forever.
-  private retryUsedForCurrentTurn = false;
 
   private clearSingleModeMaxDurationTimer() {
     if (this.singleModeMaxDurationTimer) {
@@ -541,7 +522,6 @@ export class RealtimeTranslationService {
     this.currentUserId = userId;
     this.silenceTimeoutMs = silenceTimeoutMs > 0 ? silenceTimeoutMs : RealtimeTranslationService.DEFAULT_SILENCE_TIMEOUT_MS;
     this.consecutiveSilenceHandovers = 0;
-    this.retryUsedForCurrentTurn = false;
     // Pinned for the whole conversation — see the field's own comment and
     // whisperService.transcribeWithFallback's `useOnDevice` param for why
     // this must NOT be re-checked live on every turn.
@@ -694,25 +674,22 @@ export class RealtimeTranslationService {
         if (success) {
           consecutiveErrors = 0;
           this.consecutiveSilenceHandovers = 0;
-          this.retryUsedForCurrentTurn = false;
           await this.swapTurnToNextPerson();
           continue;
         }
 
-        // Feature: timeout & control handover. Real silence (the person chose not
-        // to speak) hands control to the other person immediately instead of
-        // re-prompting the same person and burning the shared MAX_ERRORS budget —
-        // but not on the very first failure. classifyTurnFailure (see its own doc
-        // comment) grants one retry to every 'No speech detected' result
-        // regardless of the AppState-blip flag, since that flag turned out not to
-        // be predictive of anything (real diagnostics showed it firing on
-        // successful turns too). retryUsedForCurrentTurn (see its own field
-        // comment) caps that at one retry per person-turn — a second consecutive
-        // failure hands over to the other person.
-        const outcome = classifyTurnFailure(reason, interruptedByAppStateBlip, this.retryUsedForCurrentTurn);
-        if (outcome.kind === 'silence-handover') {
+        // Reverted to the original, proven behavior (confirmed working across
+        // repeated real-device testing): any 'No speech detected' result —
+        // genuine silence or a rare glitched/hallucinated recording alike —
+        // hands control to the other person immediately and quietly, instead
+        // of showing a visible "Recording was interrupted — retrying" banner
+        // first. The retry-then-handover version tried here was more
+        // transparent about what happened, but it also meant a rare, mostly
+        // harmless hiccup now showed up as a visible, alarming error where it
+        // used to pass as an unremarkable turn handover — strictly louder,
+        // not strictly more reliable. Match what's actually been validated.
+        if (reason === 'No speech detected') {
           this.consecutiveSilenceHandovers++;
-          this.retryUsedForCurrentTurn = false;
           const nextPerson = this.isPersonATurn ? 'B' : 'A';
           console.log(`⏭️ Silence timeout for Person ${person} — handing control to Person ${nextPerson}`);
           if (this.consecutiveSilenceHandovers >= RealtimeTranslationService.MAX_CONSECUTIVE_SILENCE_HANDOVERS) {
@@ -723,21 +700,14 @@ export class RealtimeTranslationService {
           continue;
         }
 
-        // Bounded retry, same person — any other soft failure (transcription/
-        // translation came back empty, a 'No speech detected' first attempt, or
-        // this turn's recording was glitched by an AppState blip, in which case
-        // outcome.message is an honest "Recording was interrupted" rather than
-        // the generic "No speech detected yet", since the person likely did
-        // speak).
-        if (reason === 'No speech detected') {
-          this.retryUsedForCurrentTurn = true;
-        }
+        // Any other soft failure (e.g. transcription/translation came back empty) — bounded retry, same person.
         consecutiveErrors++;
+        const baseMessage = reason || 'Turn failed';
         this.updateProgress({
           stage: 'error',
           error: consecutiveErrors >= MAX_ERRORS
-            ? `${outcome.message}. Please restart.`
-            : `${outcome.message} — retrying (${consecutiveErrors}/${MAX_ERRORS})…`,
+            ? `${baseMessage}. Please restart.`
+            : `${baseMessage} — retrying (${consecutiveErrors}/${MAX_ERRORS})…`,
           isRealtime: true,
         });
         if (consecutiveErrors >= MAX_ERRORS) break;
