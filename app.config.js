@@ -126,6 +126,18 @@ module.exports = {
       ],
       'expo-audio',
       'expo-asset',
+      // Native crash reporting (Java/ObjC crashes, not just JS errors — see
+      // lib/sentry.ts's own header comment on this exact gap). Safe to add
+      // unconditionally: this plugin degrades gracefully when organization/
+      // project/authToken aren't supplied (falls back to the SENTRY_ORG /
+      // SENTRY_PROJECT / SENTRY_AUTH_TOKEN env vars at build time, or just
+      // skips sourcemap upload entirely if none of those are set either —
+      // it does not fail the build). Still wires native crash-handler init
+      // either way. No DSN is read here; that's still only
+      // EXPO_PUBLIC_SENTRY_DSN, read at runtime by lib/sentry.ts's
+      // initSentry(), same as before — if that's unset, Sentry no-ops
+      // completely, JS and native alike.
+      '@sentry/react-native',
     ],
     experiments: {
       typedRoutes: true,
