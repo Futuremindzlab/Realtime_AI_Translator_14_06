@@ -422,18 +422,20 @@ export default function SettingsScreen() {
               <Text style={styles.infoLabel}>Email</Text>
               <Text style={styles.infoValue}>{user.email}</Text>
             </View>
-            {/* Name/country are only ever collected once, during onboarding for a
-                new signup (components/onboarding/OnboardingFlow.tsx) — shown here
-                as read-only confirmation, never as an editable prompt. An existing
-                account that onboarded before that step existed simply has neither
-                field and sees neither row; it is deliberately never asked here. */}
-            {settings?.full_name ? (
+            {/* Name/country are collected once during onboarding
+                (components/onboarding/OnboardingFlow.tsx) for account/billing
+                decisioning, not as something a customer needs to see again —
+                shown here only on the owner-facing view (isUserView === false),
+                same read-only treatment as before this was hidden from
+                customers. An existing account that onboarded before that step
+                existed simply has neither field and sees neither row. */}
+            {!isUserView && settings?.full_name ? (
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Name</Text>
                 <Text style={styles.infoValue}>{settings.full_name}</Text>
               </View>
             ) : null}
-            {settings?.country ? (
+            {!isUserView && settings?.country ? (
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Country</Text>
                 <Text style={styles.infoValue}>{settings.country}</Text>
