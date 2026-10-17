@@ -20,7 +20,9 @@ import { subscribeToPlan, cancelSubscription as cancelRazorpaySubscription, Chec
 import { SubscriptionPlan } from '@/types';
 import { logger } from '@/lib/logger';
 import { PLAN_INFO, PAID_PLAN_PRICE } from '@/lib/plans';
+import { DEFAULT_TARGET_LANGUAGE } from '@/lib/constants';
 import { canvasTheme as t } from '@/lib/canvasTheme';
+import { LanguagePicker } from '@/components/LanguagePicker';
 
 // Customer-facing (isUserView) voice picker: exactly 4 curated OpenAI voices —
 // 2 female/2 male, 1 Indian-script-tuned + 1 global each — pulled from the
@@ -46,6 +48,14 @@ export default function SettingsScreen() {
   const [cancellingSubscription, setCancellingSubscription] = useState(false);
 
   const [ttsProvider, setTtsProvider] = useState<'elevenlabs' | 'openai' | 'device' | 'azure'>('device');
+  // Default translate-to language — Conversation Mode and Scan & Translate
+  // both read settings.default_target_language as their starting target
+  // (previously a hardcoded 'es' for every account, regardless of who they
+  // actually are; see the user report this fixed). Deliberately not asked
+  // during onboarding — that's the signup critical path right before launch,
+  // and this needed zero risk to it — so new accounts still start on that
+  // same 'es' fallback until they set it here, same as any other preference.
+  const [defaultTargetLanguage, setDefaultTargetLanguage] = useState(DEFAULT_TARGET_LANGUAGE);
   const [voiceGender, setVoiceGender] = useState<'male' | 'female'>('female');
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
   const [conversationModeDefault, setConversationModeDefault] = useState(true);
@@ -69,6 +79,7 @@ export default function SettingsScreen() {
   React.useEffect(() => {
     if (settings) {
       setTtsProvider(settings.tts_provider);
+      setDefaultTargetLanguage(settings.default_target_language || DEFAULT_TARGET_LANGUAGE);
       setConversationModeDefault(settings.conversation_mode_default);
       setVoiceGender(settings.voice_gender || 'female');
       setSelectedVoiceId(settings.selected_voice_id || null);
@@ -194,6 +205,7 @@ export default function SettingsScreen() {
         // to be the effect of omitting tts_provider here entirely). Owners
         // keep full control via their own provider picker, unchanged.
         tts_provider: isUserView ? 'openai' : ttsProvider,
+        default_target_language: defaultTargetLanguage,
         conversation_mode_default: conversationModeDefault,
         voice_gender: voiceGender,
         selected_voice_id: selectedVoiceId || undefined,
@@ -509,6 +521,15 @@ export default function SettingsScreen() {
               </View>
               <Text style={styles.sectionTitle}>Preferences</Text>
             </View>
+
+            <LanguagePicker
+              label="Translate into"
+              selectedLanguage={defaultTargetLanguage}
+              onSelectLanguage={setDefaultTargetLanguage}
+            />
+            <Text style={styles.voiceDesc}>
+              The language Conversation Mode and Scan &amp; Translate default to — change it here anytime.
+            </Text>
 
             {!isUserView && (
               <>
