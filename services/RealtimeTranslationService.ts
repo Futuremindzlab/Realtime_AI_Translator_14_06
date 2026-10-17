@@ -10,6 +10,7 @@ import { logger } from '@/lib/logger';
 import { withTimeout, TimeoutError } from '@/lib/withTimeout';
 import { classifyWhisperHallucination, hasNoSpeechContent } from '@/lib/whisperHallucinations';
 import { computeNextTurnLanguages, resolvePersonAAutoSourceLanguage } from '@/lib/conversationTurnLanguage';
+import { classifyTurnFailure } from '@/lib/turnFailureHandling';
 
 // expo-file-system is native-only — audio history persistence is skipped on
 // web, where recording/TTS URIs are blob: URLs FileSystem can't read anyway.
@@ -649,12 +650,12 @@ export class RealtimeTranslationService {
         // playback each ultimately touch a native bridge (file read, Audio.Sound)
         // or a network call already covered by NetworkError, but a generous outer
         // bound catches anything else that could otherwise hang indefinitely.
-        const { success, reason } = await withTimeout(
+        const { success, reason, interruptedByAppStateBlip } = await withTimeout(
           this.processConversationTurn(audioUri, turnRecordingStartedAt),
           45_000,
           'Turn processing',
         );
-        logger.info('Turn processed', { person, success, reason, platform: Platform.OS });
+        logger.info('Turn processed', { person, success, reason, interruptedByAppStateBlip, platform: Platform.OS });
 
         if (!this.isActive || !this.autoContinueEnabled || this.loopGeneration !== myGeneration) break;
 
@@ -665,12 +666,15 @@ export class RealtimeTranslationService {
           continue;
         }
 
-        // Feature: timeout & control handover. A "No speech detected" result means
-        // the silenceTimeoutMs window elapsed with nothing said — that's expected
-        // behavior (the person chose not to speak), not an error, so hand control to
-        // Person B immediately instead of re-prompting the same person and burning
-        // the shared MAX_ERRORS budget. Capped so an empty room doesn't ping-pong forever.
-        if (reason === 'No speech detected') {
+        // Feature: timeout & control handover. Real silence (the person chose not
+        // to speak) hands control to the other person immediately instead of
+        // re-prompting the same person and burning the shared MAX_ERRORS budget.
+        // A recording glitched by an AppState background blip is NOT silence —
+        // see classifyTurnFailure's doc comment for the full reasoning (bug fix:
+        // this branch used to also catch a blip-glitched turn, silently dropping
+        // it behind a misleading "no input" handover with no chance to retry).
+        const outcome = classifyTurnFailure(reason, interruptedByAppStateBlip);
+        if (outcome.kind === 'silence-handover') {
           this.consecutiveSilenceHandovers++;
           const nextPerson = this.isPersonATurn ? 'B' : 'A';
           console.log(`⏭️ Silence timeout for Person ${person} — handing control to Person ${nextPerson}`);
@@ -682,14 +686,17 @@ export class RealtimeTranslationService {
           continue;
         }
 
-        // Any other soft failure (e.g. transcription/translation came back empty) — bounded retry, same person.
+        // Bounded retry, same person — any other soft failure (transcription/
+        // translation came back empty, or this turn's recording was glitched by
+        // an AppState blip, in which case outcome.message is an honest
+        // "Recording was interrupted" rather than the generic "No speech
+        // detected", since the person likely did speak).
         consecutiveErrors++;
-        const baseMessage = reason || 'Turn failed';
         this.updateProgress({
           stage: 'error',
           error: consecutiveErrors >= MAX_ERRORS
-            ? `${baseMessage}. Please restart.`
-            : `${baseMessage} — retrying (${consecutiveErrors}/${MAX_ERRORS})…`,
+            ? `${outcome.message}. Please restart.`
+            : `${outcome.message} — retrying (${consecutiveErrors}/${MAX_ERRORS})…`,
           isRealtime: true,
         });
         if (consecutiveErrors >= MAX_ERRORS) break;
@@ -772,7 +779,7 @@ export class RealtimeTranslationService {
    * retry the same person, with `reason` surfaced to the user so a failed turn
    * doesn't look identical to the app just still listening.
    */
-  private async processConversationTurn(audioUri: string, turnRecordingStartedAt: number): Promise<{ success: boolean; reason?: string }> {
+  private async processConversationTurn(audioUri: string, turnRecordingStartedAt: number): Promise<{ success: boolean; reason?: string; interruptedByAppStateBlip?: boolean }> {
     const pipelineStartedAt = Date.now();
 
     // ── 1. TRANSCRIBE ──
@@ -802,15 +809,17 @@ export class RealtimeTranslationService {
     // (even a transient one index.tsx's debounce ended up ignoring)? If so, a
     // rejection below is more likely a glitched recording than a genuine
     // empty/hallucinated one — see audioService.hadAppStateBlipSince's doc
-    // comment. Logged (not surfaced to the user here — a silence handover
-    // already reads fine either way), so a repeat report is provably one or
-    // the other instead of indistinguishable from the outside.
+    // comment. Returned to the caller (not just logged): a blip-glitched turn
+    // means the person likely did speak, so it's handled as a same-person
+    // retry instead of the silent "no input, passing to the other person"
+    // handover a genuine silence/hallucination gets — see the caller's use
+    // of this flag for the full reasoning.
     const interruptedByAppStateBlip = audioService.hadAppStateBlipSince(turnRecordingStartedAt);
 
     if (!actualText || hasNoSpeechContent(actualText)) {
       logger.info('Turn rejected as no speech', { cause: 'no-content', rawLength: actualText.length, interruptedByAppStateBlip, platform: Platform.OS });
       console.log(`⚠️ No valid speech (empty/punctuation-only), will retry`);
-      return { success: false, reason: 'No speech detected' };
+      return { success: false, reason: 'No speech detected', interruptedByAppStateBlip };
     }
     // Bug fix: a real transcript (detectedLanguage populated above, 39 chars —
     // not silence) was still discarded here, but the log only ever recorded
@@ -823,7 +832,7 @@ export class RealtimeTranslationService {
     if (hallucinationMatch) {
       logger.info('Turn rejected as likely Whisper hallucination', { cause: hallucinationMatch, textLength: actualText.length, interruptedByAppStateBlip, platform: Platform.OS });
       console.log(`⚠️ Whisper hallucination (${hallucinationMatch}): "${actualText}"`);
-      return { success: false, reason: 'No speech detected' };
+      return { success: false, reason: 'No speech detected', interruptedByAppStateBlip };
     }
 
     // ── Resolve 'auto' source on Person A's first turn ──
