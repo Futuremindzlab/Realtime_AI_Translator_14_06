@@ -1,39 +1,47 @@
 import { classifyTurnFailure } from '@/lib/turnFailureHandling';
 
-// Real report: conversation mode's turn 3 failed, Whisper having hallucinated
-// a short bracketed caption from a recording glitched by an AppState
-// background blip (see audioService.hadAppStateBlipSince). The app treated it
-// identically to genuine silence — handing control to the other person with
-// "No input from Person X — passing to Person Y" — even though Person X had
-// actually spoken. These tests lock in the fix: only real silence (no blip)
-// hands control over; a blip-glitched turn retries the same person instead,
-// with a message that doesn't claim the person said nothing.
+// Real reports, two rounds:
+//
+// Round 1: conversation mode's turn 3 failed, Whisper having hallucinated a
+// short bracketed caption from a recording glitched by an AppState background
+// blip (see audioService.hadAppStateBlipSince). The app treated it identically
+// to genuine silence — handing control to the other person with "No input
+// from Person X — passing to Person Y" — even though Person X had actually
+// spoken. First fix: only real silence (no blip) hands control over; a
+// blip-glitched turn retries the same person instead.
+//
+// Round 2: fresh diagnostics logs showed the AppState blip firing on EVERY
+// recording start on some devices — including both turns right before a
+// failing one that succeeded cleanly. The flag was never actually predictive
+// of a corrupted recording there, so gating the retry on it was either always
+// open (useless) or, on a device where it stayed rare, potentially too eager
+// to hand over. These tests lock in the corrected behavior: every
+// 'No speech detected' failure gets exactly one retry regardless of the blip
+// flag (the flag only picks the message), and a second consecutive failure
+// hands over.
 describe('classifyTurnFailure', () => {
-  it('genuine silence (no blip) hands control to the other person', () => {
-    expect(classifyTurnFailure('No speech detected', false, false)).toEqual({ kind: 'silence-handover' });
-    expect(classifyTurnFailure('No speech detected', undefined, false)).toEqual({ kind: 'silence-handover' });
-  });
-
-  it('a blip-glitched "no speech" result retries the same person with an honest message, on the first failure', () => {
+  it('a first "no speech" failure always retries, blip or not', () => {
+    expect(classifyTurnFailure('No speech detected', false, false)).toEqual({
+      kind: 'retry',
+      message: 'No speech detected yet',
+    });
+    expect(classifyTurnFailure('No speech detected', undefined, false)).toEqual({
+      kind: 'retry',
+      message: 'No speech detected yet',
+    });
     expect(classifyTurnFailure('No speech detected', true, false)).toEqual({
       kind: 'retry',
       message: 'Recording was interrupted',
     });
   });
 
-  // Real follow-up report: on some Android devices the AppState blip fires on
-  // EVERY recording start, success or not — two healthy turns can show the
-  // same blip as a failing third one. There, the flag can't distinguish a
-  // genuine glitch from normal device noise, and always trusting it turned
-  // repeated genuine silence into a retry loop that exhausted the retry
-  // budget and forced a restart. This caps the benefit of the doubt at one
-  // retry: a second consecutive blip-flagged "no speech" failure for the
-  // same person's turn hands over instead of retrying again.
-  it('a second consecutive blip-flagged "no speech" failure for the same turn hands over instead of retrying again', () => {
+  it('a second consecutive "no speech" failure hands over, blip or not', () => {
+    expect(classifyTurnFailure('No speech detected', false, true)).toEqual({ kind: 'silence-handover' });
     expect(classifyTurnFailure('No speech detected', true, true)).toEqual({ kind: 'silence-handover' });
+    expect(classifyTurnFailure('No speech detected', undefined, true)).toEqual({ kind: 'silence-handover' });
   });
 
-  it('any other failure reason retries the same person, blip or not, regardless of prior blip-retry use', () => {
+  it('any other failure reason retries the same person, blip or not, regardless of prior retry use', () => {
     expect(classifyTurnFailure('Translation failed', false, false)).toEqual({
       kind: 'retry',
       message: 'Translation failed',

@@ -100,20 +100,23 @@ export class RealtimeTranslationService {
   private consecutiveSilenceHandovers = 0;
   private static readonly MAX_CONSECUTIVE_SILENCE_HANDOVERS = 6;
 
-  // Real report: on some Android devices, the AppState 'background' blip
-  // audioService.hadAppStateBlipSince checks for fires on EVERY recording
-  // start (OEM mic-privacy indicator / audio-focus negotiation) — not just
-  // on rare glitches. There, interruptedByAppStateBlip is true for every
-  // turn regardless of outcome, so it can't tell "this failure was caused
-  // by the blip" apart from "this is genuine silence" — and classifyTurnFailure
-  // kept retrying the same person on repeated genuine silence instead of
-  // handing over, eventually exhausting MAX_ERRORS and forcing a restart
-  // (worse than the pre-#81 behavior for this case). Giving the blip only
-  // ONE courtesy retry per person-turn — a second consecutive failure falls
-  // back to silence-handover regardless of the flag — keeps #81's actual
-  // fix (a single real glitch no longer silently drops a turn) without
-  // trusting a signal that repetition has already disproven.
-  private blipRetryUsedForCurrentTurn = false;
+  // Real diagnostics logs disproved the assumption this used to lean on:
+  // audioService.hadAppStateBlipSince's AppState 'background' blip (OEM
+  // mic-privacy indicator / audio-focus negotiation) fires on EVERY
+  // recording start on some Android devices — including both turns right
+  // before a failing one that succeeded cleanly — so it never actually
+  // predicted a corrupted recording; it's just ambient device noise. Gating
+  // the retry on it meant some devices always retried (the flag was always
+  // true there) and others may have under-retried real hiccups the flag
+  // missed. classifyTurnFailure now retries every 'No speech detected'
+  // failure once regardless of the flag — simpler, and more patient exactly
+  // where it matters: a person who paused before speaking, or whose first
+  // attempt was cut short, gets a real second chance instead of an
+  // immediate handover. retryUsedForCurrentTurn caps that at one retry per
+  // person-turn — a second consecutive failure hands over to the other
+  // person — so a genuinely silent person still doesn't block the
+  // conversation forever.
+  private retryUsedForCurrentTurn = false;
 
   private clearSingleModeMaxDurationTimer() {
     if (this.singleModeMaxDurationTimer) {
@@ -538,7 +541,7 @@ export class RealtimeTranslationService {
     this.currentUserId = userId;
     this.silenceTimeoutMs = silenceTimeoutMs > 0 ? silenceTimeoutMs : RealtimeTranslationService.DEFAULT_SILENCE_TIMEOUT_MS;
     this.consecutiveSilenceHandovers = 0;
-    this.blipRetryUsedForCurrentTurn = false;
+    this.retryUsedForCurrentTurn = false;
     // Pinned for the whole conversation — see the field's own comment and
     // whisperService.transcribeWithFallback's `useOnDevice` param for why
     // this must NOT be re-checked live on every turn.
@@ -632,9 +635,15 @@ export class RealtimeTranslationService {
         // await would otherwise block forever with the UI stuck on "Listening…"
         // and no way to recover. Only reachable on-device; web has no native bridge
         // to hang on, which is why this class of failure never showed up there.
+        // silenceDurationMs (3000) and minRecordingMs (2000) widened from
+        // 2500/1500 — real-world report: a person who paused briefly before
+        // starting to speak, or whose voice took a moment to clear the
+        // calibrated noise floor, could get cut short right as they began.
+        // More patience here means fewer turns ever reach the retry/handover
+        // logic below in the first place.
         const turnRecordingStartedAt = Date.now();
         const audioUri = await withTimeout(
-          audioService.startRecordingWithAutoStop(this.silenceTimeoutMs, -45, 2500, 1500),
+          audioService.startRecordingWithAutoStop(this.silenceTimeoutMs, -45, 3000, 2000),
           this.silenceTimeoutMs + 8000,
           'Recording',
         );
@@ -678,25 +687,25 @@ export class RealtimeTranslationService {
         if (success) {
           consecutiveErrors = 0;
           this.consecutiveSilenceHandovers = 0;
-          this.blipRetryUsedForCurrentTurn = false;
+          this.retryUsedForCurrentTurn = false;
           await this.swapTurnToNextPerson();
           continue;
         }
 
         // Feature: timeout & control handover. Real silence (the person chose not
         // to speak) hands control to the other person immediately instead of
-        // re-prompting the same person and burning the shared MAX_ERRORS budget.
-        // A recording glitched by an AppState background blip is NOT silence —
-        // see classifyTurnFailure's doc comment for the full reasoning (bug fix:
-        // this branch used to also catch a blip-glitched turn, silently dropping
-        // it behind a misleading "no input" handover with no chance to retry).
-        // blipRetryUsedForCurrentTurn (see its own field comment) caps that
-        // benefit of the doubt at one retry — a second consecutive failure for
-        // this same person's turn hands over regardless of the blip flag.
-        const outcome = classifyTurnFailure(reason, interruptedByAppStateBlip, this.blipRetryUsedForCurrentTurn);
+        // re-prompting the same person and burning the shared MAX_ERRORS budget —
+        // but not on the very first failure. classifyTurnFailure (see its own doc
+        // comment) grants one retry to every 'No speech detected' result
+        // regardless of the AppState-blip flag, since that flag turned out not to
+        // be predictive of anything (real diagnostics showed it firing on
+        // successful turns too). retryUsedForCurrentTurn (see its own field
+        // comment) caps that at one retry per person-turn — a second consecutive
+        // failure hands over to the other person.
+        const outcome = classifyTurnFailure(reason, interruptedByAppStateBlip, this.retryUsedForCurrentTurn);
         if (outcome.kind === 'silence-handover') {
           this.consecutiveSilenceHandovers++;
-          this.blipRetryUsedForCurrentTurn = false;
+          this.retryUsedForCurrentTurn = false;
           const nextPerson = this.isPersonATurn ? 'B' : 'A';
           console.log(`⏭️ Silence timeout for Person ${person} — handing control to Person ${nextPerson}`);
           if (this.consecutiveSilenceHandovers >= RealtimeTranslationService.MAX_CONSECUTIVE_SILENCE_HANDOVERS) {
@@ -708,12 +717,13 @@ export class RealtimeTranslationService {
         }
 
         // Bounded retry, same person — any other soft failure (transcription/
-        // translation came back empty, or this turn's recording was glitched by
-        // an AppState blip, in which case outcome.message is an honest
-        // "Recording was interrupted" rather than the generic "No speech
-        // detected", since the person likely did speak).
-        if (reason === 'No speech detected' && interruptedByAppStateBlip) {
-          this.blipRetryUsedForCurrentTurn = true;
+        // translation came back empty, a 'No speech detected' first attempt, or
+        // this turn's recording was glitched by an AppState blip, in which case
+        // outcome.message is an honest "Recording was interrupted" rather than
+        // the generic "No speech detected yet", since the person likely did
+        // speak).
+        if (reason === 'No speech detected') {
+          this.retryUsedForCurrentTurn = true;
         }
         consecutiveErrors++;
         this.updateProgress({

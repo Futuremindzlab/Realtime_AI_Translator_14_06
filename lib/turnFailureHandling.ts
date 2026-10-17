@@ -11,44 +11,40 @@ export type TurnFailureOutcome =
   | { kind: 'retry'; message: string };
 
 /**
- * `reason === 'No speech detected'` covers two different underlying causes
- * that used to be handled identically:
- *   - A person genuinely staying silent — handed to the other person
- *     immediately, with a "No input from Person X" notice. Expected,
- *     designed-for behavior.
- *   - A recording glitched by an AppState background blip (OS-level audio-
- *     focus hiccup, mic-privacy indicator, etc. — see
- *     audioService.hadAppStateBlipSince), where the person likely DID speak
- *     but Whisper hallucinated a short caption from the corrupted audio.
- *     Treating this as silence silently dropped a real turn behind a
- *     misleading "no input" message with no chance to retry.
- * `interruptedByAppStateBlip` tells the two apart: only genuine silence
- * hands control to the other person; a blip-glitched turn retries the same
- * person instead, with an honest "Recording was interrupted" message.
+ * `reason === 'No speech detected'` gets exactly one courtesy retry before
+ * handing control to the other person — not zero (a person who paused before
+ * speaking, or whose first attempt was glitched, shouldn't be dropped
+ * immediately), and not unbounded (a person who's genuinely silent shouldn't
+ * block the conversation forever). `retryAlreadyUsedThisTurn` is that cap: a
+ * second consecutive 'No speech detected' failure for the same person's turn
+ * hands over, since one retry has already given the benefit of the doubt.
  *
- * Real report: on some Android devices/OS versions, that same AppState
- * 'background' blip fires on EVERY recording start (OEM mic-privacy
- * indicator / audio-focus negotiation) regardless of whether the recording
- * is actually fine — two back-to-back successful turns can show the exact
- * same blip as a failing one right after. There, `interruptedByAppStateBlip`
- * is true on every turn, so it can no longer distinguish "this failure was
- * caused by the blip" from "this is genuine silence" — and always retrying
- * the same person on it turned repeated genuine silence into a dead-end
- * retry loop that exhausts the retry budget and forces a restart, worse
- * than the pre-fix silence-handover for that case. `blipRetryAlreadyUsedThisTurn`
- * caps the benefit of the doubt at one retry per person-turn: a second
- * consecutive 'No speech detected' failure hands over regardless of the
- * blip flag, since by then repetition has already disproven "this was a
- * one-off glitch."
+ * This used to be gated on `interruptedByAppStateBlip` (only retry if an
+ * AppState background blip — an OS-level audio-focus hiccup, mic-privacy
+ * indicator, etc. — landed during the recording) instead of retrying every
+ * 'No speech detected' once unconditionally. Real diagnostics logs disproved
+ * that gate: on some Android devices that blip fires on EVERY recording
+ * start, success or failure alike (two back-to-back successful turns showed
+ * the identical blip right before a failing one) — so it was never actually
+ * predictive of anything; `interruptedByAppStateBlip` was true on every turn
+ * and the gate was accidentally always open on those devices, while devices
+ * where it stayed genuinely rare would have under-retried real silence
+ * differently for no good reason. Retrying once regardless of the flag is
+ * both simpler and strictly more patient — exactly what a person who spoke
+ * but was cut short, or started a beat late, needs — while the flag is kept
+ * only to choose an honest message, never to gate the retry itself.
  */
 export function classifyTurnFailure(
   reason: string | undefined,
   interruptedByAppStateBlip: boolean | undefined,
-  blipRetryAlreadyUsedThisTurn: boolean
+  retryAlreadyUsedThisTurn: boolean
 ): TurnFailureOutcome {
   if (reason === 'No speech detected') {
-    if (interruptedByAppStateBlip && !blipRetryAlreadyUsedThisTurn) {
-      return { kind: 'retry', message: 'Recording was interrupted' };
+    if (!retryAlreadyUsedThisTurn) {
+      return {
+        kind: 'retry',
+        message: interruptedByAppStateBlip ? 'Recording was interrupted' : 'No speech detected yet',
+      };
     }
     return { kind: 'silence-handover' };
   }
