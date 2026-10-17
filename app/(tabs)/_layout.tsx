@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Mic, History, Settings, BarChart2, BookOpen } from 'lucide-react-native';
+import { Mic, History, Settings, BarChart2, BookOpen, ScanText } from 'lucide-react-native';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { canvasTheme as t } from '@/lib/canvasTheme';
@@ -54,6 +54,13 @@ export default function TabLayout() {
           // only; phrasebookService.ts and this route are untouched.
           href: null,
           tabBarIcon: ({ size, color }) => <BookOpen size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="scan"
+        options={{
+          title: 'Scan',
+          tabBarIcon: ({ size, color }) => <ScanText size={size} color={color} />,
         }}
       />
       <Tabs.Screen
