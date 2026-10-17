@@ -7,6 +7,7 @@ import {
 import { UserSettings } from '@/types';
 import { canvasTheme as t } from '@/lib/canvasTheme';
 import { PaywallView } from '@/components/onboarding/PaywallView';
+import { LanguagePicker } from '@/components/LanguagePicker';
 
 const USE_CASES: { id: string; label: string; icon: typeof Plane }[] = [
   { id: 'travel',   label: 'Travel',                icon: Plane },
@@ -41,15 +42,25 @@ type Step = typeof STEPS[number];
  * gates anything) → a plain-language privacy summary you must acknowledge →
  * basic account details (name + country — billing/support basics, deliberately
  * NOT including sex, address, or education; see the PR that added this step
- * for the reasoning) → the 7-day free trial / subscribe choice. Finishing
- * either the trial path or a real subscription marks onboarding_completed
- * and hands control back to AuthGate's `children`.
+ * for the reasoning) plus mother tongue → the 7-day free trial / subscribe
+ * choice. Finishing either the trial path or a real subscription marks
+ * onboarding_completed and hands control back to AuthGate's `children`.
+ *
+ * Mother tongue seeds default_target_language (previously a hardcoded 'es'
+ * for every new account, regardless of who they actually are) since in both
+ * Conversation Mode and Scan & Translate, the target is what the person
+ * wants things translated INTO — their own language. Source stays 'auto'
+ * (detects whoever they're talking to/scanning, not fixed to one language),
+ * unaffected by this. Fully changeable afterward in Settings → Preferences
+ * (same PR this shipped alongside), same as every other onboarding choice —
+ * this only seeds the starting value.
  */
 export function OnboardingFlow({ updateSettings, refreshSettings }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
   const [useCase, setUseCase] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');
   const [country, setCountry] = useState('');
+  const [motherTongue, setMotherTongue] = useState('');
   const [finishing, setFinishing] = useState(false);
   const step: Step = STEPS[stepIndex];
 
@@ -65,6 +76,7 @@ export function OnboardingFlow({ updateSettings, refreshSettings }: Props) {
         use_case: useCase,
         full_name: fullName.trim(),
         country: country.trim(),
+        default_target_language: motherTongue,
       });
     } catch {
       Alert.alert('Something went wrong', 'Could not save your preferences — please check your connection and try again.');
@@ -166,7 +178,7 @@ export function OnboardingFlow({ updateSettings, refreshSettings }: Props) {
         {step === 'profile' && (
           <>
             <Text style={styles.title}>A few basics</Text>
-            <Text style={styles.subtitle}>For your account and billing — nothing more. We never ask for sensitive details like your gender, address, or education.</Text>
+            <Text style={styles.subtitle}>For your account, billing, and translation defaults — nothing more. We never ask for sensitive details like your gender, address, or education.</Text>
 
             <View style={styles.inputGroup}>
               <View style={styles.inputLabelRow}>
@@ -201,9 +213,20 @@ export function OnboardingFlow({ updateSettings, refreshSettings }: Props) {
               />
             </View>
 
+            <View style={styles.inputGroup}>
+              <LanguagePicker
+                label="Your language"
+                selectedLanguage={motherTongue}
+                onSelectLanguage={setMotherTongue}
+              />
+              <Text style={styles.helperText}>
+                We&apos;ll translate into this by default — in conversations and scans. Change it anytime in Settings.
+              </Text>
+            </View>
+
             <TouchableOpacity
-              style={[styles.primaryButton, (!fullName.trim() || !country.trim()) && styles.primaryButtonDisabled]}
-              disabled={!fullName.trim() || !country.trim()}
+              style={[styles.primaryButton, (!fullName.trim() || !country.trim() || !motherTongue) && styles.primaryButtonDisabled]}
+              disabled={!fullName.trim() || !country.trim() || !motherTongue}
               onPress={goNext}>
               <Text style={styles.primaryButtonText}>Continue</Text>
             </TouchableOpacity>
@@ -367,6 +390,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     fontSize: 15,
     color: t.text,
+  },
+  helperText: {
+    fontSize: 12.5,
+    color: t.textMuted,
+    lineHeight: 17,
   },
   finishing: {
     paddingTop: 60,
