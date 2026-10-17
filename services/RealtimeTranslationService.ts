@@ -635,15 +635,22 @@ export class RealtimeTranslationService {
         // await would otherwise block forever with the UI stuck on "Listening…"
         // and no way to recover. Only reachable on-device; web has no native bridge
         // to hang on, which is why this class of failure never showed up there.
-        // silenceDurationMs (3000) and minRecordingMs (2000) widened from
-        // 2500/1500 — real-world report: a person who paused briefly before
-        // starting to speak, or whose voice took a moment to clear the
-        // calibrated noise floor, could get cut short right as they began.
-        // More patience here means fewer turns ever reach the retry/handover
-        // logic below in the first place.
+        // Reverted back to 2500/1500 (from a brief 3000/2000 widening).
+        // The wider silence tail was meant to stop someone who pauses before
+        // speaking from being cut short — but it also means more trailing
+        // near-silence after real speech ends gets included in the audio
+        // sent to Whisper, and Whisper is documented to hallucinate exactly
+        // in silent regions, especially right after real input ends (see the
+        // PennSound evaluation cited in this commit's message). A new
+        // "repeating-loop" hallucination appeared specifically on a build
+        // carrying the widened timing, which it hadn't before — plausibly
+        // this fix was trading one failure mode for a worse one. Patience
+        // belongs in the retry/handover logic below (unconditional on the
+        // first 'No speech detected' failure, independent of this timing),
+        // not in capturing more silence than necessary at recording time.
         const turnRecordingStartedAt = Date.now();
         const audioUri = await withTimeout(
-          audioService.startRecordingWithAutoStop(this.silenceTimeoutMs, -45, 3000, 2000),
+          audioService.startRecordingWithAutoStop(this.silenceTimeoutMs, -45, 2500, 1500),
           this.silenceTimeoutMs + 8000,
           'Recording',
         );
