@@ -136,6 +136,12 @@ module.exports = {
       ],
       'expo-audio',
       'expo-asset',
+      // Google Play Billing for Plus/Live subscriptions — see
+      // services/billingService.ts and GOOGLE_PLAY_BILLING_INTEGRATION.md.
+      // Zero-config for the Android/Play Store case this app uses; the
+      // Play Billing Library's own AndroidManifest (merged in automatically)
+      // declares com.android.vending.BILLING, no manual permission needed.
+      'expo-iap',
       // Scan & Translate — these two plugins add the camera + photo-library
       // usage-description strings (and, on Android, the corresponding
       // manifest permissions) automatically; no manual android.permissions

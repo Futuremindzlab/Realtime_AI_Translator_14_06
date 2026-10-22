@@ -52,7 +52,17 @@
  * Auth (unauthenticated — no token exists yet)
  *   POST   /v1/auth/phone/request-otp                 requestPhoneOtp
  *
- * Billing / Razorpay recurring subscriptions
+ * Billing / Google Play (the app's live purchase flow — see
+ * GOOGLE_PLAY_BILLING_INTEGRATION.md. Required for a Play Store app selling
+ * digital subscriptions; replaces the in-app Razorpay checkout below, which
+ * is kept wired for its webhook/history only, not invoked by the client)
+ *   POST   /v1/billing/google-play/verify                verifyPurchase
+ *   POST   /v1/billing/google-play/rtdn                   handleRtdn (unauthenticated — Google Cloud Pub/Sub calls this directly)
+ *
+ * Billing / Razorpay recurring subscriptions (superseded by Google Play
+ * above for new subscriptions — see the comment on billingService.ts.
+ * create-subscription/verify/cancel are no longer called by the client;
+ * left wired for in-flight Razorpay subscriptions and billing history.)
  *   POST   /v1/billing/razorpay/create-subscription    createSubscription
  *   POST   /v1/billing/razorpay/verify                 verifySubscriptionPayment
  *   POST   /v1/billing/razorpay/cancel                 cancelSubscription
@@ -94,6 +104,11 @@ import {
   getMyBillingHistory,
   handleWebhook as handleRazorpayWebhook,
 } from './handlers/billing.mjs';
+
+import {
+  verifyPurchase as verifyGooglePlayPurchase,
+  handleRtdn as handleGooglePlayRtdn,
+} from './handlers/googlePlayBilling.mjs';
 
 import { getUserAnalytics } from './handlers/adminAnalytics.mjs';
 import { getDashboardMetrics } from './handlers/dashboardMetrics.mjs';
@@ -153,6 +168,16 @@ export const handler = async (event) => {
   if (method === 'POST' && path === '/v1/billing/razorpay/webhook') {
     return handleRazorpayWebhook(event);
   }
+
+  // ── Google Play RTDN (unauthenticated — Google Cloud Pub/Sub calls this
+  // directly, there's no Cognito token; authenticity is checked via the
+  // push subscription's own OIDC token instead — see googlePlay.mjs) ──
+  if (method === 'POST' && path === '/v1/billing/google-play/rtdn') {
+    return handleGooglePlayRtdn(event);
+  }
+
+  // ── Billing / Google Play (authenticated) ──────────────
+  if (method === 'POST' && path === '/v1/billing/google-play/verify') return verifyGooglePlayPurchase(event);
 
   // ── Billing / Razorpay (authenticated) ─────────────────
   if (method === 'POST' && path === '/v1/billing/razorpay/create-subscription') return createSubscription(event);

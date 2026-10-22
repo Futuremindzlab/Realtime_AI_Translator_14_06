@@ -153,42 +153,33 @@ class DynamoService {
   }
 
 
-  // ── BILLING / RAZORPAY ──────────────────────────────────────────────────────
+  // ── BILLING / GOOGLE PLAY ────────────────────────────────────────────────
   // Real purchase flow for 'plus'/'live' — see services/billingService.ts for
-  // the RazorpayCheckout wrapper that ties these two calls together with the
-  // native SDK. Errors are rethrown (not swallowed to null like most methods
+  // the expo-iap wrapper that ties this call together with the native Play
+  // Billing SDK. Errors are rethrown (not swallowed to null like most methods
   // above) so billingService can distinguish "network/server error" from
-  // "user cancelled the checkout" and surface each correctly.
+  // "user cancelled the purchase sheet" and surface each correctly.
+  //
+  // There's no create-subscription call here (unlike the old Razorpay flow)
+  // — Google Play Billing has no server-side "create" step; the client
+  // starts the purchase directly against Play with just a product id, and
+  // this is the one call afterward, confirming it actually happened.
+  // Cancellation also isn't a backend call — see billingService.ts's
+  // openSubscriptionManagement, which deep-links to Play Store's own UI.
 
-  /** Creates a Razorpay subscription for the given plan and returns what
-   *  Checkout needs to open (subscription_id + the public key_id). */
-  async createRazorpaySubscription(plan: 'plus' | 'live'): Promise<{ subscription_id: string; key_id: string; plan: string }> {
-    return this.request('/v1/billing/razorpay/create-subscription', {
-      method: 'POST',
-      body:   JSON.stringify({ plan }),
-    });
-  }
-
-  /** Verifies a just-completed Checkout payment and applies the plan server-side.
-   *  This is a fast in-app confirmation only — the Razorpay webhook (handled
-   *  entirely server-side) is the durable source of truth for renewals and
-   *  cancellations, which this call is never involved in. */
-  async verifyRazorpayPayment(payload: {
-    razorpay_payment_id: string;
-    razorpay_subscription_id: string;
-    razorpay_signature: string;
+  /** Verifies a just-completed Play Billing purchase and applies the plan
+   *  server-side. This is a fast in-app confirmation only — the RTDN webhook
+   *  (handled entirely server-side) is the durable source of truth for
+   *  renewals, grace periods and cancellations, which this call is never
+   *  involved in. */
+  async verifyGooglePlayPurchase(payload: {
+    product_id: string;
+    purchase_token: string;
   }): Promise<UserSettings> {
-    return this.request('/v1/billing/razorpay/verify', {
+    return this.request('/v1/billing/google-play/verify', {
       method: 'POST',
       body:   JSON.stringify(payload),
     });
-  }
-
-  /** Cancels at the end of the current billing cycle — access continues
-   *  through what's already been paid for; the actual downgrade happens when
-   *  the webhook's subscription.cancelled event lands at cycle end. */
-  async cancelRazorpaySubscription(): Promise<UserSettings> {
-    return this.request('/v1/billing/razorpay/cancel', { method: 'POST' });
   }
 
   // ── TRIAL USAGE (7-day free trial — see backend/src/lib/trialLimits.mjs) ──

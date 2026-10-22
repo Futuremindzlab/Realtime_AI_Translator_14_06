@@ -98,6 +98,41 @@ Parameters:
     Default: ""
     Description: Razorpay Plan ID for the 'live' tier (₹200/month) — created once via scripts/setup-razorpay-plans.mjs, immutable afterward.
 
+  # ── Google Play Billing — the app's live purchase flow (replaces the
+  # in-app Razorpay checkout above; see GOOGLE_PLAY_BILLING_INTEGRATION.md
+  # for how to create/link the service account and Pub/Sub topic these
+  # configure). Held server-side only, same treatment as the other secrets.
+  GooglePlayPackageName:
+    Type: String
+    Default: ""
+    Description: Android application ID as registered in Play Console (matches app.config.js's android.package). Leave blank to disable Google Play billing routes.
+
+  GooglePlayServiceAccountClientEmail:
+    Type: String
+    Default: ""
+    Description: client_email from the Google Cloud service account JSON key linked to the Play Console app with "View financial data" access.
+
+  GooglePlayServiceAccountPrivateKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: private_key from the same service account JSON key, with real newlines replaced by literal \n (CloudFormation parameters can't hold multi-line values) — googlePlay.mjs un-escapes it back before signing.
+
+  GooglePlayProductIdPlus:
+    Type: String
+    Default: ""
+    Description: Play Console subscription product ID for the 'plus' tier, created once in Play Console → Monetize → Products → Subscriptions.
+
+  GooglePlayProductIdLive:
+    Type: String
+    Default: ""
+    Description: Play Console subscription product ID for the 'live' tier.
+
+  GooglePlayRtdnAudience:
+    Type: String
+    Default: ""
+    Description: The exact HTTPS URL this stack's /v1/billing/google-play/rtdn endpoint will be reachable at (the API Gateway invoke URL + stage, e.g. https://abc123.execute-api.us-east-1.amazonaws.com/prod/v1/billing/google-play/rtdn) — must match the audience configured on the Pub/Sub push subscription's OIDC token exactly, or every RTDN delivery is rejected.
+
   # ── Cost monitoring — see the EstimatedChargesAlarm resource below for the
   # two manual, one-time account-level prerequisites CloudFormation cannot
   # set for you (billing alerts must be enabled, and this stack must deploy
@@ -195,6 +230,10 @@ Resources:
           HttpMethod:   POST
           ThrottlingBurstLimit: 20
           ThrottlingRateLimit:  10
+        - ResourcePath: /v1/billing/google-play/rtdn
+          HttpMethod:   POST
+          ThrottlingBurstLimit: 20
+          ThrottlingRateLimit:  10
 
   # ── Lambda Function ─────────────────────────────────────
   TranslatorFunction:
@@ -225,6 +264,13 @@ Resources:
           RAZORPAY_WEBHOOK_SECRET: !Ref RazorpayWebhookSecret
           RAZORPAY_PLAN_ID_PLUS:   !Ref RazorpayPlanIdPlus
           RAZORPAY_PLAN_ID_LIVE:   !Ref RazorpayPlanIdLive
+          GOOGLE_PLAY_PACKAGE_NAME:                !Ref GooglePlayPackageName
+          GOOGLE_PLAY_SERVICE_ACCOUNT_EMAIL:        !Ref GooglePlayServiceAccountClientEmail
+          GOOGLE_PLAY_SERVICE_ACCOUNT_PRIVATE_KEY:  !Ref GooglePlayServiceAccountPrivateKey
+          GOOGLE_PLAY_PRODUCT_ID_PLUS:              !Ref GooglePlayProductIdPlus
+          GOOGLE_PLAY_PRODUCT_ID_LIVE:              !Ref GooglePlayProductIdLive
+          GOOGLE_PLAY_RTDN_AUDIENCE:                !Ref GooglePlayRtdnAudience
+          GOOGLE_PLAY_PURCHASES_TABLE:              !Ref GooglePlayPurchasesTable
           USAGE_TABLE:             !Ref UsageTable
           PLUS_DAILY_CALL_LIMIT:   !Ref PlusDailyCallLimit
           LIVE_DAILY_CALL_LIMIT:   !Ref LiveDailyCallLimit
@@ -281,6 +327,27 @@ Resources:
           Properties:
             RestApiId: !Ref TranslatorApi
             Path:      /v1/billing/razorpay/webhook
+            Method:    OPTIONS
+            Auth:
+              Authorizer: NONE
+        # Unauthenticated Google Play RTDN push endpoint — Google Cloud
+        # Pub/Sub calls this directly (no Cognito token), same
+        # explicit-override pattern as the Razorpay webhook above. The
+        # handler verifies the push subscription's own OIDC token instead
+        # (see googlePlay.mjs's verifyRtdnPushToken).
+        GooglePlayRtdn:
+          Type:       Api
+          Properties:
+            RestApiId: !Ref TranslatorApi
+            Path:      /v1/billing/google-play/rtdn
+            Method:    POST
+            Auth:
+              Authorizer: NONE
+        GooglePlayRtdnOptions:
+          Type:       Api
+          Properties:
+            RestApiId: !Ref TranslatorApi
+            Path:      /v1/billing/google-play/rtdn
             Method:    OPTIONS
             Auth:
               Authorizer: NONE
@@ -457,6 +524,27 @@ Resources:
         - AttributeName: user_id
           KeyType:        HASH
 
+  # ── DynamoDB Table — Google Play purchase-token ownership claims (see
+  # handlers/googlePlayBilling.mjs's claimPurchaseToken) ──
+  # Durable, like UserSettingsTable: this is the only record of which
+  # account a given Play purchase token belongs to, needed by every future
+  # RTDN delivery for that token, not just the first verify call.
+  GooglePlayPurchasesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName:   !Sub "ai-translator-google-play-purchases-${Stage}"
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: purchase_token
+          AttributeType: S
+      KeySchema:
+        - AttributeName: purchase_token
+          KeyType:        HASH
+
   # ── Disposable per-user/per-day AI-proxy call counters (lib/usageLimits.mjs) ──
   # No PITR — this is a cost-control counter, not durable data; a lost counter
   # on restore would just under-enforce for a day, not lose anything real.
@@ -502,6 +590,7 @@ Resources:
               - !GetAtt UserSettingsTable.Arn
               - !GetAtt RateLimitTable.Arn
               - !GetAtt AiUsageTable.Arn
+              - !GetAtt GooglePlayPurchasesTable.Arn
 
   # ── IAM policy for Lambda → S3 audio bucket ─────────────
   # Scoped to objects only (bucket/*), not the bucket itself — no ListBucket,

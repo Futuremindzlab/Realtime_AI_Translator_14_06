@@ -16,7 +16,7 @@ import { LogOut, Save, Mic, Trash2, Bug, Zap, FileText, User as UserIcon, Slider
 import { useAuth } from '@/contexts/AuthContext';
 import { audioService } from '@/services/audioService';
 import { ttsService, TTSService } from '@/services/ttsService';
-import { subscribeToPlan, cancelSubscription as cancelRazorpaySubscription, CheckoutCancelledError } from '@/services/billingService';
+import { subscribeToPlan, openSubscriptionManagement, CheckoutCancelledError } from '@/services/billingService';
 import { SubscriptionPlan } from '@/types';
 import { logger } from '@/lib/logger';
 import { PLAN_INFO, PAID_PLAN_PRICE } from '@/lib/plans';
@@ -45,7 +45,6 @@ export default function SettingsScreen() {
   const isUserView = user?.role === 'USER';
   const currentPlan: SubscriptionPlan = settings?.plan || 'basic';
   const [subscribingPlan, setSubscribingPlan] = useState<'plus' | 'live' | null>(null);
-  const [cancellingSubscription, setCancellingSubscription] = useState(false);
 
   const [ttsProvider, setTtsProvider] = useState<'elevenlabs' | 'openai' | 'device' | 'azure'>('device');
   // Default translate-to language — Conversation Mode and Scan & Translate
@@ -118,31 +117,19 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleCancelSubscription = () => {
-    Alert.alert(
-      'Cancel subscription?',
-      `You'll keep ${PLAN_INFO[currentPlan].label} access until the end of your current billing cycle, then move to Basic.`,
-      [
-        { text: 'Keep subscription', style: 'cancel' },
-        {
-          text: 'Cancel subscription',
-          style: 'destructive',
-          onPress: async () => {
-            setCancellingSubscription(true);
-            try {
-              await cancelRazorpaySubscription();
-              await refreshSettings();
-              Alert.alert('Cancelled', "You'll move to Basic at the end of your current billing cycle.");
-            } catch (error) {
-              console.error('Cancel subscription error:', error);
-              Alert.alert('Error', 'Failed to cancel subscription. Please try again.');
-            } finally {
-              setCancellingSubscription(false);
-            }
-          },
-        },
-      ]
-    );
+  // Google Play Billing has no in-app "cancel" API call — this opens Play
+  // Store's own subscription management page instead (see
+  // billingService.ts's openSubscriptionManagement). The actual downgrade
+  // happens server-side once Google's Real-time Developer Notifications
+  // report the cancellation, so refreshSettings() right after returning to
+  // the app won't reflect it immediately.
+  const handleManageSubscription = async () => {
+    try {
+      await openSubscriptionManagement(currentPlan as 'plus' | 'live');
+    } catch (error) {
+      console.error('Open subscription management error:', error);
+      Alert.alert('Error', "Couldn't open Play Store's subscription page. Please try again.");
+    }
   };
 
   // Irreversible — double-confirmed given what it actually does (cancels any
@@ -477,7 +464,7 @@ export default function SettingsScreen() {
             <Text style={styles.sectionDescription}>{PLAN_INFO[currentPlan].description}</Text>
 
             {currentPlan === 'basic' ? (
-              // Real purchase flow — Razorpay recurring subscription checkout.
+              // Real purchase flow — Google Play Billing subscription purchase.
               (['plus', 'live'] as const).map((plan) => (
                 <TouchableOpacity
                   key={plan}
@@ -497,22 +484,19 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               ))
             ) : settings?.razorpay_subscription_id ? (
-              settings.razorpay_subscription_status === 'cancel_requested' ? (
-                <Text style={styles.sectionDescription}>
-                  Cancellation scheduled — you&apos;ll move to Basic at the end of your current billing cycle.
-                </Text>
-              ) : (
-                <TouchableOpacity
-                  style={styles.secondaryButton}
-                  disabled={cancellingSubscription}
-                  onPress={handleCancelSubscription}>
-                  {cancellingSubscription ? (
-                    <ActivityIndicator size="small" color={t.danger} />
-                  ) : (
-                    <Text style={[styles.secondaryButtonText, { color: t.danger }]}>Cancel Subscription</Text>
-                  )}
-                </TouchableOpacity>
-              )
+              // Legacy: a subscription from before the Google Play Billing
+              // switch. No in-app cancel call anymore (see
+              // billingService.ts) — point them at support instead of
+              // leaving a dead button.
+              <Text style={styles.sectionDescription}>
+                {settings.razorpay_subscription_status === 'cancel_requested'
+                  ? "Cancellation scheduled — you'll move to Basic at the end of your current billing cycle."
+                  : 'To manage this subscription, contact support.'}
+              </Text>
+            ) : settings?.google_play_product_id ? (
+              <TouchableOpacity style={styles.secondaryButton} onPress={handleManageSubscription}>
+                <Text style={[styles.secondaryButtonText, { color: t.danger }]}>Manage Subscription</Text>
+              </TouchableOpacity>
             ) : null}
           </View>
 

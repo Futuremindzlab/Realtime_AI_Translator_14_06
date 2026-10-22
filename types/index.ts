@@ -39,12 +39,27 @@ export interface UserSettings {
   plan?: SubscriptionPlan;
   /** Razorpay subscription ID backing `plan`, when `plan` isn't 'basic' — set
    *  by the backend (createSubscription/verify/webhook), never by the client.
-   *  Absent for a 'basic' user or one whose plan came from adminSetPlan(). */
+   *  Absent for a 'basic' user or one whose plan came from adminSetPlan().
+   *  Legacy: the live purchase flow is Google Play Billing now (below) —
+   *  this stays populated only for subscriptions that predate that switch. */
   razorpay_subscription_id?: string;
   /** Mirrors Razorpay's subscription lifecycle: 'active' | 'pending' |
    *  'cancel_requested' | 'cancelled' | 'halted' | 'completed' | 'paused', etc.
    *  See backend/src/handlers/billing.mjs for the authoritative state machine. */
   razorpay_subscription_status?: string;
+  /** Play Console product ID backing `plan`, when `plan` isn't 'basic' and the
+   *  subscription came through Google Play Billing — set by the backend
+   *  (googlePlayBilling.mjs's verify/RTDN handlers), never by the client. */
+  google_play_product_id?: string;
+  /** The purchase token Google issued for the current subscription — needed
+   *  to deep-link the user to Play Store's own subscription management UI
+   *  (see services/billingService.ts's openSubscriptionManagement). */
+  google_play_purchase_token?: string;
+  /** Raw Google Play subscriptionState, e.g. 'SUBSCRIPTION_STATE_ACTIVE' |
+   *  'SUBSCRIPTION_STATE_IN_GRACE_PERIOD' | 'SUBSCRIPTION_STATE_ON_HOLD' |
+   *  'SUBSCRIPTION_STATE_CANCELED' | 'SUBSCRIPTION_STATE_EXPIRED', etc. See
+   *  backend/src/lib/googlePlay.mjs for which states keep paid access. */
+  google_play_subscription_state?: string;
   /** True once the user has completed the onboarding flow (use-case picker +
    *  privacy consent + trial/paywall intro) — AuthGate shows OnboardingFlow
    *  instead of the app until this is true. Defaults to false server-side. */
