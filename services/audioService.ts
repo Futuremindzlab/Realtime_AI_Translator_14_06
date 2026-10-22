@@ -147,6 +147,19 @@ export class AudioService {
       // is accepted by both OpenAI Whisper API and whisper.rn (whisper.cpp with libav).
       //
       // iOS: Linear PCM .wav — whisper.rn's native CoreAudio path handles it optimally.
+      //
+      // Android mic source: there's no option below for this because expo-av's
+      // JS API doesn't expose one — AVManager.java hardcodes
+      // MediaRecorder.AudioSource.DEFAULT, which applies no noise suppression/
+      // AGC. patches/expo-av+16.0.8.patch changes that one native line to
+      // AudioSource.VOICE_RECOGNITION (Android's source tuned for speech-to-
+      // text capture), to cut down on Whisper hallucinating short garbled
+      // transcriptions from noisy real speech — see the turn-rejected-as-
+      // "bracketed-caption"-hallucination case this was written for. If this
+      // app ever drops expo-av (e.g. migrates to expo-audio, which exposes
+      // `android.audioSource` directly in JS — see RecordingOptionsAndroid in
+      // its types), this patch and the postinstall script that applies it
+      // (package.json) should go with it.
       const recordingOptions = {
         isMeteringEnabled: true,
         android: {
