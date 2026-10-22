@@ -108,6 +108,12 @@ jobs:
           RAZORPAY_WEBHOOK_SECRET: ${{ secrets.RAZORPAY_WEBHOOK_SECRET }}
           RAZORPAY_PLAN_ID_PLUS:   ${{ secrets.RAZORPAY_PLAN_ID_PLUS }}
           RAZORPAY_PLAN_ID_LIVE:   ${{ secrets.RAZORPAY_PLAN_ID_LIVE }}
+          GOOGLE_PLAY_PACKAGE_NAME:               ${{ secrets.GOOGLE_PLAY_PACKAGE_NAME }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_EMAIL:       ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_EMAIL }}
+          GOOGLE_PLAY_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_PRIVATE_KEY }}
+          GOOGLE_PLAY_PRODUCT_ID_PLUS:             ${{ secrets.GOOGLE_PLAY_PRODUCT_ID_PLUS }}
+          GOOGLE_PLAY_PRODUCT_ID_LIVE:             ${{ secrets.GOOGLE_PLAY_PRODUCT_ID_LIVE }}
+          GOOGLE_PLAY_RTDN_AUDIENCE:               ${{ secrets.GOOGLE_PLAY_RTDN_AUDIENCE }}
           CORS_ALLOWED_ORIGINS:    ${{ secrets.CORS_ALLOWED_ORIGINS }}
         run: |
           # `sam deploy --parameter-overrides` rejects a bare `Key=` with an
@@ -135,6 +141,12 @@ jobs:
           [ -n "$RAZORPAY_WEBHOOK_SECRET" ] && PARAMS+=("RazorpayWebhookSecret=${RAZORPAY_WEBHOOK_SECRET}")
           [ -n "$RAZORPAY_PLAN_ID_PLUS" ]   && PARAMS+=("RazorpayPlanIdPlus=${RAZORPAY_PLAN_ID_PLUS}")
           [ -n "$RAZORPAY_PLAN_ID_LIVE" ]   && PARAMS+=("RazorpayPlanIdLive=${RAZORPAY_PLAN_ID_LIVE}")
+          [ -n "$GOOGLE_PLAY_PACKAGE_NAME" ]               && PARAMS+=("GooglePlayPackageName=${GOOGLE_PLAY_PACKAGE_NAME}")
+          [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_EMAIL" ]       && PARAMS+=("GooglePlayServiceAccountClientEmail=${GOOGLE_PLAY_SERVICE_ACCOUNT_EMAIL}")
+          [ -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_PRIVATE_KEY" ] && PARAMS+=("GooglePlayServiceAccountPrivateKey=${GOOGLE_PLAY_SERVICE_ACCOUNT_PRIVATE_KEY}")
+          [ -n "$GOOGLE_PLAY_PRODUCT_ID_PLUS" ]             && PARAMS+=("GooglePlayProductIdPlus=${GOOGLE_PLAY_PRODUCT_ID_PLUS}")
+          [ -n "$GOOGLE_PLAY_PRODUCT_ID_LIVE" ]             && PARAMS+=("GooglePlayProductIdLive=${GOOGLE_PLAY_PRODUCT_ID_LIVE}")
+          [ -n "$GOOGLE_PLAY_RTDN_AUDIENCE" ]               && PARAMS+=("GooglePlayRtdnAudience=${GOOGLE_PLAY_RTDN_AUDIENCE}")
           [ -n "$CORS_ALLOWED_ORIGINS" ]    && PARAMS+=("CorsAllowedOrigins=${CORS_ALLOWED_ORIGINS}")
 
           sam deploy \

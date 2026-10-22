@@ -1,25 +1,64 @@
 /**
- * Razorpay subscription checkout — the only file that touches the native
- * `react-native-razorpay` module, same separation-of-concerns as
+ * Google Play Billing subscription purchase flow — the only file that
+ * touches the native `expo-iap` module, same separation-of-concerns as
  * ttsService.ts/dynamoService.ts already use for their own external SDKs.
  *
- * react-native-razorpay ships native code, so after adding it to
- * package.json this app needs a native rebuild before it'll work:
+ * Replaces the earlier in-app Razorpay checkout (see git history /
+ * RAZORPAY_INTEGRATION.md): Google Play policy requires apps selling
+ * digital subscriptions consumed inside the app to sell them through
+ * Google's own billing system, not a third-party payment processor opened
+ * in-app. Razorpay's backend code (backend/src/handlers/billing.mjs) is
+ * left in place for any in-flight subscriptions and billing history, but
+ * nothing in the client calls it to start a NEW purchase anymore.
+ *
+ * expo-iap ships native code, so after adding it to package.json this app
+ * needs a native rebuild before it'll work:
  *   npx expo prebuild
- *   npx expo run:ios   (or run:android — or an EAS build)
+ *   npx expo run:android   (or an EAS build)
  * It will NOT work inside plain Expo Go.
  *
- * Flow (see backend/src/handlers/billing.mjs for the server side):
- *   1. Ask the backend to create a Razorpay subscription for the plan.
- *   2. Open Razorpay Checkout against that subscription_id.
- *   3. On success, ask the backend to verify the payment signature and
- *      flip the user's plan — then the caller should refreshSettings().
- * Renewals and cancellations happen entirely server-side via webhook and
- * never go through this file again after the first successful checkout.
+ * Flow (see backend/src/handlers/googlePlayBilling.mjs for the server side,
+ * and GOOGLE_PLAY_BILLING_INTEGRATION.md for the one-time Play Console/GCP
+ * setup this depends on):
+ *   1. Fetch the subscription product from Play (for its current offer token).
+ *   2. Call requestPurchase() and wait for the result via
+ *      purchaseUpdatedListener/purchaseErrorListener — Play Billing's
+ *      request/response is event-based, not a direct return value (unlike
+ *      Razorpay Checkout's promise-based API).
+ *   3. Ask the backend to verify the purchase (re-reads it from Google,
+ *      never trusts the client) and apply the plan.
+ *   4. finishTransaction() — REQUIRED within 3 days or Google auto-refunds
+ *      the purchase and revokes it; the backend also acknowledges
+ *      server-side as a backstop (see googlePlay.mjs), but this is the
+ *      primary path.
+ * Renewals, grace periods and cancellations happen entirely server-side via
+ * Google's Real-time Developer Notifications and never go through this file.
+ *
+ * API usage below is verified directly against the installed expo-iap
+ * package's shipped type definitions and JSDoc (node_modules/expo-iap —
+ * v6.1.1 at the time this was written), not just its README, since this is
+ * payment-critical code and the library's public docs/community examples
+ * disagree in places (e.g. whether an Android subscriptionOffers entry is
+ * required — it is, confirmed via node_modules/expo-iap/build/types.d.ts's
+ * AndroidSubscriptionOfferInput/RequestSubscriptionAndroidProps). Still,
+ * this has NOT been run against a real Play Console product yet — the
+ * actual proof is a real-device purchase against an Internal Testing track
+ * release, not this review. Treat the first real test as the real review.
  */
-
-import RazorpayCheckout, { CheckoutOptions } from 'react-native-razorpay';
+import Constants from 'expo-constants';
+import {
+  initConnection,
+  fetchProducts,
+  requestPurchase,
+  finishTransaction,
+  deepLinkToSubscriptions,
+  purchaseUpdatedListener,
+  purchaseErrorListener,
+  isUserCancelledError,
+} from 'expo-iap';
+import type { Purchase, ProductSubscriptionAndroid } from 'expo-iap';
 import { dynamoService } from '@/services/dynamoService';
+import { PLAY_PRODUCT_ID } from '@/lib/plans';
 import { UserSettings } from '@/types';
 
 export class CheckoutCancelledError extends Error {
@@ -29,140 +68,126 @@ export class CheckoutCancelledError extends Error {
   }
 }
 
-// Razorpay's checkout promise rejects with { code, description } — description
-// text for a user-initiated cancel/back-out reliably contains "cancel"
-// (e.g. "Payment Processing Cancelled by user"), which is what we key off of
-// rather than a numeric `code` (undocumented here and not worth hard-coding
-// against without a confirmed source).
-function isUserCancellation(description: unknown): boolean {
-  return typeof description === 'string' && description.toLowerCase().includes('cancel');
+const ANDROID_PACKAGE_NAME: string = Constants.expoConfig?.android?.package || 'com.mohan.aitranslator';
+
+// expo-iap's own guidance (hyochan/expo-iap's AGENTS.md, bundled in
+// node_modules): initConnection() once per app session; mounted consumers
+// share one store connection. This module isn't a React hook, so it can't
+// rely on useIAP's automatic connect-on-mount — this tracks it manually,
+// same idea as react-native-razorpay's checkoutInProgress guard below.
+let connectionReady: Promise<void> | null = null;
+function ensureConnected(): Promise<void> {
+  if (!connectionReady) {
+    connectionReady = initConnection()
+      .then(() => undefined)
+      .catch((err) => {
+        connectionReady = null; // allow retry on the next call
+        throw err;
+      });
+  }
+  return connectionReady;
 }
 
-// The native Android SDK throws this exact text ("Initialization issue
-// between previous transaction and current transaction") when open() is
-// called while it still considers a previous Checkout session live — either
-// a genuine double-invocation (guarded against below via inProgress) or a
-// prior session left dangling by the app being backgrounded/killed mid-
-// Checkout, which the SDK can't recover from on its own. There's no
-// react-native-razorpay API to force-reset that native state from JS, so the
-// only thing to do is translate it into guidance instead of surfacing the
-// raw SDK string.
-function isStaleCheckoutSession(description: unknown): boolean {
-  return typeof description === 'string' && description.toLowerCase().includes('initialization issue');
-}
+// Synchronous module-level guard against a double-tap launching two
+// purchase flows at once — same reasoning as the Razorpay version's
+// checkoutInProgress (React state isn't guaranteed to apply before a fast
+// second onPress fires).
+let purchaseInProgress = false;
 
-// Synchronous, module-level (not React state) so it can't be bypassed by a
-// double-tap landing before setState/re-render disables the button — React's
-// state updates aren't guaranteed to apply before a second onPress fires.
-let checkoutInProgress = false;
+/**
+ * Runs the full subscribe flow for one plan and returns the updated
+ * settings on success. Throws CheckoutCancelledError if the user backs out
+ * of the Play purchase sheet (expected/benign — callers should not show an
+ * error alert for this case), or a plain Error for anything else.
+ */
+export async function subscribeToPlan(plan: 'plus' | 'live'): Promise<UserSettings> {
+  if (purchaseInProgress) {
+    throw new CheckoutCancelledError('A payment is already in progress — please wait for it to finish.');
+  }
+  purchaseInProgress = true;
 
-const PLAN_LABEL: Record<'plus' | 'live', string> = { plus: 'Plus', live: 'Live' };
+  try {
+    await ensureConnected();
 
-// The @types/react-native-razorpay CheckoutOptions interface declares
-// `subscription_id`/`recurring` (good — those really are supported), but
-// also marks `order_id`/`amount`/`currency` as required, which is only true
-// for one-time-order Checkout, not subscription Checkout — there's no
-// discriminated union between the two modes in the published types. Widening
-// to Partial<CheckoutOptions> for the fields we actually pass avoids
-// fabricating dummy order_id/amount/currency values just to satisfy the type.
-type SubscriptionCheckoutOptions = Partial<CheckoutOptions> &
-  Pick<CheckoutOptions, 'key' | 'name' | 'description' | 'theme'> & {
-    subscription_id: string;
-    recurring: true;
-  };
+    const productId = PLAY_PRODUCT_ID[plan];
+    const products = (await fetchProducts({ skus: [productId], type: 'subs' })) as ProductSubscriptionAndroid[];
+    const product = products.find((p) => p.id === productId);
+    if (!product) {
+      throw new Error(`Plan '${plan}' isn't available for purchase right now — please try again later.`);
+    }
+    const offerToken = product.subscriptionOffers?.[0]?.offerTokenAndroid;
+    if (!offerToken) {
+      throw new Error(`Plan '${plan}' has no purchasable offer configured in Play Console yet.`);
+    }
 
-// SuccessResponse (from the same types package) only declares the one-time-
-// order fields (razorpay_order_id, razorpay_payment_id, razorpay_signature) —
-// it's missing razorpay_subscription_id, which Razorpay's SDK does return for
-// a subscription Checkout at runtime. Declared locally rather than editing
-// the third-party .d.ts.
-interface SubscriptionCheckoutSuccess {
-  razorpay_payment_id: string;
-  razorpay_subscription_id: string;
-  razorpay_signature: string;
+    const purchase = await new Promise<Purchase>((resolve, reject) => {
+      const updateSub = purchaseUpdatedListener((p) => {
+        updateSub.remove();
+        errorSub.remove();
+        resolve(p);
+      });
+      const errorSub = purchaseErrorListener((error) => {
+        updateSub.remove();
+        errorSub.remove();
+        if (isUserCancelledError(error)) {
+          reject(new CheckoutCancelledError());
+        } else {
+          reject(new Error(error.message || 'Payment failed — please try again.'));
+        }
+      });
+
+      requestPurchase({
+        type: 'subs',
+        request: {
+          google: {
+            skus: [productId],
+            subscriptionOffers: [{ sku: productId, offerToken }],
+          },
+        },
+      }).catch((err) => {
+        updateSub.remove();
+        errorSub.remove();
+        reject(err instanceof Error ? err : new Error('Payment failed — please try again.'));
+      });
+    });
+
+    if (!purchase.purchaseToken) {
+      throw new Error('Purchase did not return a valid token — please try again, or check Settings in a few minutes.');
+    }
+
+    const updated = await dynamoService.verifyGooglePlayPurchase({
+      product_id: productId,
+      purchase_token: purchase.purchaseToken,
+    });
+
+    // Required within 3 days or Google auto-refunds (see module doc comment).
+    // Runs after the backend has already applied the plan, so a failure
+    // here doesn't lose the purchase — the backend's own acknowledge call
+    // (googlePlay.mjs) is the backstop if this one never completes (app
+    // killed, etc.).
+    await finishTransaction({ purchase, isConsumable: false }).catch((err) => {
+      console.error('⚠️ finishTransaction failed (backend already acknowledged as backstop):', err);
+    });
+
+    return updated;
+  } finally {
+    purchaseInProgress = false;
+  }
 }
 
 /**
- * Runs the full subscribe flow for one plan and returns the updated settings
- * on success. Throws CheckoutCancelledError if the user backs out of
- * Checkout (expected/benign — callers should not show an error alert for
- * this case), or a plain Error for anything else (network/server failure,
- * signature mismatch, etc.).
+ * Opens Play Store's own subscription-management page for this plan —
+ * Google Play Billing has no in-app "cancel" API call (unlike Razorpay);
+ * subscription management is Google's own UI by design, and that's also
+ * the standard pattern for Play Store apps generally. The actual plan
+ * downgrade happens server-side via Google's Real-time Developer
+ * Notifications once the user cancels there — refreshSettings() after the
+ * user returns to the app won't show it immediately, same lag as the old
+ * Razorpay cancel-at-cycle-end behavior.
  */
-export async function subscribeToPlan(plan: 'plus' | 'live'): Promise<UserSettings> {
-  // Guards the same class of bug the "Initialization issue between previous
-  // transaction and current transaction" native error reports: Checkout.open()
-  // called a second time before the first has finished. The Settings screen
-  // already disables its button while subscribing, but that's React state —
-  // this check is synchronous and can't be raced by a fast double-tap landing
-  // before the re-render lands.
-  if (checkoutInProgress) {
-    throw new CheckoutCancelledError('A payment is already in progress — please wait for it to finish.');
-  }
-  checkoutInProgress = true;
-
-  try {
-    const order = await dynamoService.createRazorpaySubscription(plan);
-
-    let checkoutResult: SubscriptionCheckoutSuccess;
-    try {
-      const options: SubscriptionCheckoutOptions = {
-        subscription_id: order.subscription_id,
-        key: order.key_id,
-        name: 'OneLingo',
-        description: `${PLAN_LABEL[plan]} plan — monthly subscription`,
-        // Razorpay Checkout's documented flag marking this as a recurring
-        // (subscription) payment sheet rather than a one-time order.
-        recurring: true,
-        theme: { color: '#2563eb' },
-        // Opens Checkout directly on the UPI tab instead of Card — a hint,
-        // not a restriction: the customer can still switch to any other
-        // method the Razorpay account has enabled. This only actually shows
-        // a UPI option once UPI Autopay is turned on for the account
-        // (Dashboard → Settings → Payment Methods) — it can't surface a
-        // method the account doesn't have enabled.
-        prefill: { method: 'upi' },
-      };
-      checkoutResult = (await RazorpayCheckout.open(options as CheckoutOptions)) as unknown as SubscriptionCheckoutSuccess;
-    } catch (err: any) {
-      if (isUserCancellation(err?.description)) {
-        throw new CheckoutCancelledError();
-      }
-      if (isStaleCheckoutSession(err?.description)) {
-        // Not something retrying immediately fixes — the native SDK's own
-        // session state is stuck, most often after the app was backgrounded
-        // or killed mid-Checkout last time. A full app restart clears it.
-        throw new Error('Payment could not start because a previous attempt is still active. Please close and reopen the app, then try again.');
-      }
-      throw new Error(err?.description || 'Payment failed — please try again.');
-    }
-
-    // Checkout can resolve WITHOUT throwing for a payment method whose
-    // authorization doesn't complete synchronously — an eNACH/eMandate bank
-    // mandate is the known case: it can finish registration and resolve the
-    // Checkout promise before there's an actual razorpay_payment_id to hand
-    // back (the mandate itself is still pending bank/NPCI confirmation,
-    // sometimes up to T+1 business day — see RAZORPAY_INTEGRATION.md). Without
-    // this guard, that incomplete result got forwarded straight to
-    // /v1/billing/razorpay/verify, which correctly 400s ("razorpay_payment_id,
-    // razorpay_subscription_id and razorpay_signature are required") — but as
-    // a raw API error dumped in front of the user instead of an explanation.
-    if (!checkoutResult?.razorpay_payment_id || !checkoutResult?.razorpay_subscription_id || !checkoutResult?.razorpay_signature) {
-      throw new Error(
-        'Your payment method needs extra bank confirmation before it can be verified (this happens with some bank-account-based ' +
-        'payment methods). Check Settings in a few minutes — if the subscription doesn’t activate on its own once your bank ' +
-        'confirms it, try again with a card or UPI instead.'
-      );
-    }
-
-    return await dynamoService.verifyRazorpayPayment(checkoutResult);
-  } finally {
-    checkoutInProgress = false;
-  }
-}
-
-/** Cancels the caller's active subscription (effective at cycle end — see
- *  dynamoService.cancelRazorpaySubscription's doc comment). */
-export async function cancelSubscription(): Promise<UserSettings> {
-  return dynamoService.cancelRazorpaySubscription();
+export async function openSubscriptionManagement(plan: 'plus' | 'live'): Promise<void> {
+  await deepLinkToSubscriptions({
+    skuAndroid: PLAY_PRODUCT_ID[plan],
+    packageNameAndroid: ANDROID_PACKAGE_NAME,
+  });
 }

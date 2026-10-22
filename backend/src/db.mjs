@@ -5,6 +5,10 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 export const TRANSLATIONS_TABLE = process.env.TRANSLATIONS_TABLE || 'conversation_history';
 export const SETTINGS_TABLE     = process.env.SETTINGS_TABLE     || 'user_settings';
 export const RATE_LIMIT_TABLE   = process.env.RATE_LIMIT_TABLE   || '';
+// Reverse-lookup table (PK=purchase_token) that claims which user_id a
+// Google Play purchase token belongs to — see handlers/googlePlayBilling.mjs's
+// claimPurchaseToken for why this exists.
+export const GOOGLE_PLAY_PURCHASES_TABLE = process.env.GOOGLE_PLAY_PURCHASES_TABLE || '';
 
 // Singleton DynamoDB DocumentClient — reused across warm Lambda invocations
 const raw = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });

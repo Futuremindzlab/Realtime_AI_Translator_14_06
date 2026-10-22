@@ -24,7 +24,7 @@ interface Props {
   onContinueWithTrial?: () => void;
 }
 
-/** Plan cards + Razorpay subscribe flow, shared by the onboarding wizard's
+/** Plan cards + Google Play Billing subscribe flow, shared by the onboarding wizard's
  *  final step and the modal shown when a trial limit is hit mid-use
  *  (app/(tabs)/index.tsx) — kept as one component so both stay visually and
  *  behaviorally identical instead of two hand-maintained copies. */
