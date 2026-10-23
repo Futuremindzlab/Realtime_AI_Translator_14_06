@@ -150,13 +150,17 @@ export class AudioService {
       //
       // Android mic source: there's no option below for this because expo-av's
       // JS API doesn't expose one — AVManager.java hardcodes
-      // MediaRecorder.AudioSource.DEFAULT, which applies no noise suppression/
-      // AGC. patches/expo-av+16.0.8.patch changes that one native line to
-      // AudioSource.VOICE_RECOGNITION (Android's source tuned for speech-to-
-      // text capture), to cut down on Whisper hallucinating short garbled
-      // transcriptions from noisy real speech — see the turn-rejected-as-
-      // "bracketed-caption"-hallucination case this was written for. If this
-      // app ever drops expo-av (e.g. migrates to expo-audio, which exposes
+      // MediaRecorder.AudioSource.DEFAULT, which applies no noise suppression.
+      // patches/expo-av+16.0.8.patch changes that one native line to
+      // AudioSource.VOICE_COMMUNICATION, the source Android attaches its noise
+      // suppressor / echo canceller / AGC to, to cut down on Whisper
+      // hallucinating short garbled transcriptions from noisy real speech —
+      // see the turn-rejected-as-"bracketed-caption"-hallucination case this
+      // was written for. Not VOICE_RECOGNITION: despite the name, Android
+      // requires all pre-processing (noise suppression and AGC included) to be
+      // OFF for that source, so it only made capture quieter and turns started
+      // failing as "No input from Person A" on a real device. If this app ever
+      // drops expo-av (e.g. migrates to expo-audio, which exposes
       // `android.audioSource` directly in JS — see RecordingOptionsAndroid in
       // its types), this patch and the postinstall script that applies it
       // (package.json) should go with it.
