@@ -88,6 +88,27 @@ module.exports = {
         'android.permission.RECORD_AUDIO',
         'android.permission.MODIFY_AUDIO_SETTINGS',
       ],
+      // Library manifests add these back even though `permissions` above
+      // leaves them out, so they're stripped explicitly at manifest-merge time:
+      // - READ/WRITE_EXTERNAL_STORAGE come from expo-image-picker's own
+      //   AndroidManifest.xml. Scan & Translate only uses
+      //   launchImageLibraryAsync, which goes through the system photo picker
+      //   and needs no storage permission (see the storage note above).
+      // - FOREGROUND_SERVICE_MEDIA_PLAYBACK comes from expo-audio, which is
+      //   installed but not imported anywhere yet (audio still runs on
+      //   expo-av). Declaring it makes Play Console demand a foreground-
+      //   service declaration plus demo video for a service the app never
+      //   starts. Remove this line once audio actually moves to expo-audio
+      //   with background playback.
+      // - SYSTEM_ALERT_WINDOW ("display over other apps") comes from the
+      //   React Native template for the dev-menu overlay; the shipped app
+      //   never draws over other apps, and users see it on the store page.
+      blockedPermissions: [
+        'android.permission.SYSTEM_ALERT_WINDOW',
+        'android.permission.READ_EXTERNAL_STORAGE',
+        'android.permission.WRITE_EXTERNAL_STORAGE',
+        'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
+      ],
       adaptiveIcon: {
         // Glyph-only, transparent-background image padded inside Android's
         // adaptive-icon safe zone — using the full icon.png here (as before)

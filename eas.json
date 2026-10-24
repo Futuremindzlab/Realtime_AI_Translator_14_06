@@ -19,10 +19,19 @@
     },
     "production": {
       "autoIncrement": true,
-      "node": "22.11.0"
+      "node": "22.11.0",
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./play-service-account.json",
+        "track": "internal",
+        "releaseStatus": "draft"
+      }
+    }
   }
 }
