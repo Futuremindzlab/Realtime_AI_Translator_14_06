@@ -24,11 +24,10 @@ import { DEFAULT_TARGET_LANGUAGE } from '@/lib/constants';
 import { canvasTheme as t } from '@/lib/canvasTheme';
 import { LanguagePicker } from '@/components/LanguagePicker';
 
-// Customer-facing (isUserView) voice picker: exactly 4 curated OpenAI voices —
-// 2 female/2 male, 1 Indian-script-tuned + 1 global each — pulled from the
-// existing 6-voice OPENAI_VOICES list rather than duplicating voice data.
-// Owners keep the full provider/voice picker below unchanged; this is
-// additive, shown only on the isUserView branch.
+// The only voice picker on this screen, for every account: exactly 4 curated
+// OpenAI voices — 2 female/2 male, 1 Indian-script-tuned + 1 global each —
+// pulled from the existing 6-voice OPENAI_VOICES list rather than duplicating
+// voice data. No TTS provider choice is exposed; see handleSaveSettings.
 const CURATED_VOICES = TTSService.OPENAI_VOICES.filter(v =>
   ['nova', 'shimmer', 'echo', 'onyx'].includes(v.id)
 );
@@ -47,7 +46,6 @@ export default function SettingsScreen() {
   const [subscribingPlan, setSubscribingPlan] = useState<'plus' | 'live' | null>(null);
   const [cancellingSubscription, setCancellingSubscription] = useState(false);
 
-  const [ttsProvider, setTtsProvider] = useState<'elevenlabs' | 'openai' | 'device' | 'azure'>('device');
   // Default translate-to language — Conversation Mode and Scan & Translate
   // both read settings.default_target_language as their starting target
   // (previously a hardcoded 'es' for every account, regardless of who they
@@ -78,7 +76,6 @@ export default function SettingsScreen() {
 
   React.useEffect(() => {
     if (settings) {
-      setTtsProvider(settings.tts_provider);
       setDefaultTargetLanguage(settings.default_target_language || DEFAULT_TARGET_LANGUAGE);
       setConversationModeDefault(settings.conversation_mode_default);
       setVoiceGender(settings.voice_gender || 'female');
@@ -198,13 +195,10 @@ export default function SettingsScreen() {
       ttsService.setVoiceGender(voiceGender);
       ttsService.setSelectedVoiceId(selectedVoiceId);
       await updateSettings({
-        // isUserView customers now pick from the 4-voice curated OpenAI
-        // picker above, not a provider list — pin their account to 'openai'
-        // so that choice is what actually plays, rather than silently
-        // leaving whatever provider was on the account before (which used
-        // to be the effect of omitting tts_provider here entirely). Owners
-        // keep full control via their own provider picker, unchanged.
-        tts_provider: isUserView ? 'openai' : ttsProvider,
+        // No provider picker any more — the engine follows the voice: a
+        // cloned voice only plays through ElevenLabs, everything else uses
+        // the curated OpenAI voices above.
+        tts_provider: settings?.custom_voice_id ? 'elevenlabs' : 'openai',
         default_target_language: defaultTargetLanguage,
         conversation_mode_default: conversationModeDefault,
         voice_gender: voiceGender,
@@ -275,7 +269,6 @@ export default function SettingsScreen() {
       // Save to settings and activate
       ttsService.setCustomVoiceId(voiceId);
       await updateSettings({ custom_voice_id: voiceId, tts_provider: 'elevenlabs' });
-      setTtsProvider('elevenlabs');
 
       Alert.alert('Voice Applied', 'Your voice is now active. Future translations will sound like you.');
     } catch (error) {
@@ -387,7 +380,7 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             ttsService.setCustomVoiceId(null);
-            await updateSettings({ custom_voice_id: '' });
+            await updateSettings({ custom_voice_id: '', tts_provider: 'openai' });
             Alert.alert('Success', 'Custom voice removed');
           },
         },
@@ -407,466 +400,284 @@ export default function SettingsScreen() {
     >
       <View style={styles.header}>
         <Text style={styles.title}>Settings</Text>
-        <Text style={styles.subtitle}>Configure your preferences</Text>
+        <Text style={styles.subtitle}>Your plan, voice and app preferences</Text>
       </View>
 
       <View style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <View style={styles.cardHeaderIcon}>
-                <UserIcon size={16} color={t.personB} />
-              </View>
-              <Text style={styles.sectionTitle}>Account</Text>
-            </View>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderIcon}>
+            <Zap size={16} color={t.personB} />
+          </View>
+          <Text style={styles.sectionTitle}>Your Plan</Text>
+        </View>
+        <View style={styles.planBadgeRow}>
+          <View style={styles.planBadge}>
+            <Zap size={14} color={t.personB} />
+            <Text style={styles.planBadgeText}>{PLAN_INFO[currentPlan].label}</Text>
+          </View>
+        </View>
+        <Text style={styles.sectionDescription}>{PLAN_INFO[currentPlan].description}</Text>
 
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Email</Text>
-              <Text style={styles.infoValue}>{user.email}</Text>
-            </View>
-            {/* Name/country are collected once during onboarding
-                (components/onboarding/OnboardingFlow.tsx) for account/billing
-                decisioning, not as something a customer needs to see again —
-                shown here only on the owner-facing view (isUserView === false),
-                same read-only treatment as before this was hidden from
-                customers. An existing account that onboarded before that step
-                existed simply has neither field and sees neither row. */}
-            {!isUserView && settings?.full_name ? (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Name</Text>
-                <Text style={styles.infoValue}>{settings.full_name}</Text>
-              </View>
-            ) : null}
-            {!isUserView && settings?.country ? (
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Country</Text>
-                <Text style={styles.infoValue}>{settings.country}</Text>
-              </View>
-            ) : null}
-
-            <TouchableOpacity style={[styles.secondaryButton, { marginTop: 16 }]} onPress={handleSignOut}>
-              <LogOut size={20} color={t.danger} />
-              <Text style={styles.secondaryButtonText}>Sign Out</Text>
-            </TouchableOpacity>
+        {currentPlan === 'basic' ? (
+          // Real purchase flow — Razorpay recurring subscription checkout.
+          (['plus', 'live'] as const).map((plan) => (
             <TouchableOpacity
-              style={[styles.secondaryButton, { marginTop: 12 }]}
-              disabled={deletingAccount}
-              onPress={handleDeleteAccount}>
-              {deletingAccount ? (
-                <ActivityIndicator size="small" color={t.danger} />
+              key={plan}
+              style={[styles.secondaryButton, styles.upgradeButton]}
+              disabled={subscribingPlan !== null}
+              onPress={() => handleSubscribe(plan)}>
+              {subscribingPlan === plan ? (
+                <ActivityIndicator size="small" color={t.personB} />
               ) : (
                 <>
-                  <Trash2 size={20} color={t.danger} />
-                  <Text style={styles.secondaryButtonText}>Delete Account</Text>
+                  <Zap size={18} color={t.personB} />
+                  <Text style={[styles.secondaryButtonText, { color: t.personB }]}>
+                    Upgrade to {PLAN_INFO[plan].label} — {PAID_PLAN_PRICE[plan]}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
-          </View>
-
-          <View style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <View style={styles.cardHeaderIcon}>
-                <Zap size={16} color={t.personB} />
-              </View>
-              <Text style={styles.sectionTitle}>Your Plan</Text>
-            </View>
-            <View style={styles.planBadgeRow}>
-              <View style={styles.planBadge}>
-                <Zap size={14} color={t.personB} />
-                <Text style={styles.planBadgeText}>{PLAN_INFO[currentPlan].label}</Text>
-              </View>
-            </View>
-            <Text style={styles.sectionDescription}>{PLAN_INFO[currentPlan].description}</Text>
-
-            {currentPlan === 'basic' ? (
-              // Real purchase flow — Razorpay recurring subscription checkout.
-              (['plus', 'live'] as const).map((plan) => (
-                <TouchableOpacity
-                  key={plan}
-                  style={[styles.secondaryButton, styles.upgradeButton]}
-                  disabled={subscribingPlan !== null}
-                  onPress={() => handleSubscribe(plan)}>
-                  {subscribingPlan === plan ? (
-                    <ActivityIndicator size="small" color={t.personB} />
-                  ) : (
-                    <>
-                      <Zap size={18} color={t.personB} />
-                      <Text style={[styles.secondaryButtonText, { color: t.personB }]}>
-                        Upgrade to {PLAN_INFO[plan].label} — {PAID_PLAN_PRICE[plan]}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              ))
-            ) : settings?.razorpay_subscription_id ? (
-              settings.razorpay_subscription_status === 'cancel_requested' ? (
-                <Text style={styles.sectionDescription}>
-                  Cancellation scheduled — you&apos;ll move to Basic at the end of your current billing cycle.
-                </Text>
+          ))
+        ) : settings?.razorpay_subscription_id ? (
+          settings.razorpay_subscription_status === 'cancel_requested' ? (
+            <Text style={styles.sectionDescription}>
+              Cancellation scheduled — you&apos;ll move to Basic at the end of your current billing cycle.
+            </Text>
+          ) : (
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              disabled={cancellingSubscription}
+              onPress={handleCancelSubscription}>
+              {cancellingSubscription ? (
+                <ActivityIndicator size="small" color={t.danger} />
               ) : (
-                <TouchableOpacity
-                  style={styles.secondaryButton}
-                  disabled={cancellingSubscription}
-                  onPress={handleCancelSubscription}>
-                  {cancellingSubscription ? (
-                    <ActivityIndicator size="small" color={t.danger} />
-                  ) : (
-                    <Text style={[styles.secondaryButtonText, { color: t.danger }]}>Cancel Subscription</Text>
-                  )}
-                </TouchableOpacity>
-              )
-            ) : null}
+                <Text style={[styles.secondaryButtonText, { color: t.danger }]}>Cancel Subscription</Text>
+              )}
+            </TouchableOpacity>
+          )
+        ) : null}
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderIcon}>
+            <SlidersHorizontal size={16} color={t.personB} />
           </View>
+          <Text style={styles.sectionTitle}>Preferences</Text>
+        </View>
 
-          <View style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <View style={styles.cardHeaderIcon}>
-                <SlidersHorizontal size={16} color={t.personB} />
+        <LanguagePicker
+          label="Translate into"
+          selectedLanguage={defaultTargetLanguage}
+          onSelectLanguage={setDefaultTargetLanguage}
+        />
+        <Text style={styles.voiceDesc}>
+          The language Conversation Mode and Scan &amp; Translate default to — change it here anytime.
+        </Text>
+
+        <Text style={[styles.inputLabel, { marginTop: 20 }]}>Voice</Text>
+        <View style={styles.radioGroup}>
+          {CURATED_VOICES.map(v => (
+            <TouchableOpacity
+              key={v.id}
+              style={styles.radioOption}
+              onPress={() => {
+                setSelectedVoiceId(v.id);
+                setVoiceGender(v.gender === 'male' ? 'male' : 'female');
+              }}>
+              <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
+                {selectedVoiceId === v.id && <View style={styles.radioDot} />}
               </View>
-              <Text style={styles.sectionTitle}>Preferences</Text>
-            </View>
-
-            <LanguagePicker
-              label="Translate into"
-              selectedLanguage={defaultTargetLanguage}
-              onSelectLanguage={setDefaultTargetLanguage}
-            />
-            <Text style={styles.voiceDesc}>
-              The language Conversation Mode and Scan &amp; Translate default to — change it here anytime.
-            </Text>
-
-            {!isUserView && (
-              <>
-                <Text style={styles.inputLabel}>TTS Provider</Text>
-                <View style={styles.radioGroup}>
-                  <TouchableOpacity
-                    style={styles.radioOption}
-                    onPress={() => setTtsProvider('openai')}>
-                    <View style={[styles.radio, ttsProvider === 'openai' && styles.radioSelected]}>
-                      {ttsProvider === 'openai' && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>OpenAI TTS</Text>
-                      <Text style={styles.voiceDesc}>Cloud · High quality · Requires API key</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.radioOption}
-                    onPress={() => setTtsProvider('elevenlabs')}>
-                    <View style={[styles.radio, ttsProvider === 'elevenlabs' && styles.radioSelected]}>
-                      {ttsProvider === 'elevenlabs' && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>ElevenLabs</Text>
-                      <Text style={styles.voiceDesc}>Cloud · Best for Indian & Arabic · Requires API key</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.radioOption}
-                    onPress={() => setTtsProvider('azure')}>
-                    <View style={[styles.radio, ttsProvider === 'azure' && styles.radioSelected]}>
-                      {ttsProvider === 'azure' && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>Azure Speech</Text>
-                      <Text style={styles.voiceDesc}>Cloud · Native Malayalam voices · Requires API key</Text>
-                    </View>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.radioOption}
-                    onPress={() => setTtsProvider('device')}>
-                    <View style={[styles.radio, ttsProvider === 'device' && styles.radioSelected]}>
-                      {ttsProvider === 'device' && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>Device TTS</Text>
-                      <Text style={styles.voiceDesc}>Free · Offline · Indian/Arabic auto-upgrade to ElevenLabs</Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-
-            <Text style={styles.inputLabel}>Voice</Text>
-            {isUserView ? (
-              // Customer-facing simplified picker: exactly 4 curated OpenAI
-              // voices (2 male/2 female, 1 Indian-script-tuned + 1 global
-              // each) instead of exposing the provider/per-provider voice
-              // lists below (owner-only, unchanged). Selecting one pins this
-              // account to the OpenAI engine — the only provider change made
-              // on the isUserView path — so the choice actually takes effect;
-              // the owner-only provider/voice picker in the else-branch below
-              // (and everything it drives in ttsService.ts) is untouched.
-              <View style={styles.radioGroup}>
-                {CURATED_VOICES.map(v => (
-                  <TouchableOpacity
-                    key={v.id}
-                    style={styles.radioOption}
-                    onPress={() => {
-                      setTtsProvider('openai');
-                      setSelectedVoiceId(v.id);
-                      setVoiceGender(v.gender === 'male' ? 'male' : 'female');
-                    }}>
-                    <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
-                      {selectedVoiceId === v.id && <View style={styles.radioDot} />}
-                    </View>
-                    <View>
-                      <Text style={styles.radioLabel}>{v.label}</Text>
-                      <Text style={styles.voiceDesc}>{v.desc}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+              <View>
+                <Text style={styles.radioLabel}>{v.label}</Text>
+                <Text style={styles.voiceDesc}>{v.desc}</Text>
               </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <View style={styles.switchRow}>
+          <View>
+            <Text style={styles.switchLabel}>Auto Conversation Mode</Text>
+            <Text style={styles.switchDescription}>Start in conversation mode by default</Text>
+          </View>
+          <Switch
+            value={conversationModeDefault}
+            onValueChange={setConversationModeDefault}
+            trackColor={{ false: t.cardBorderStrong, true: t.personBBorder }}
+            thumbColor={conversationModeDefault ? t.personB : t.textFaint}
+          />
+        </View>
+
+        <TouchableOpacity
+          style={styles.saveButton}
+          onPress={handleSaveSettings}>
+          <Save size={20} color={t.bg} />
+          <Text style={styles.saveButtonText}>Save Preferences</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderIcon}>
+            <Mic size={16} color={t.personB} />
+          </View>
+          <Text style={styles.sectionTitle}>Voice Cloning</Text>
+        </View>
+        <Text style={styles.sectionDescription}>
+          {currentPlan !== 'live'
+            ? 'Available on the Live plan — hear translations spoken in your own voice.'
+            : 'Record your voice so translations sound like you.'}
+        </Text>
+
+        {currentPlan !== 'live' && !settings?.custom_voice_id ? (
+          <TouchableOpacity
+            style={[styles.secondaryButton, styles.upgradeButton]}
+            disabled={subscribingPlan !== null}
+            onPress={() => handleSubscribe('live')}>
+            {subscribingPlan === 'live' ? (
+              <ActivityIndicator size="small" color={t.personB} />
             ) : (
               <>
-                {ttsProvider === 'openai' && (
-                  <View style={styles.radioGroup}>
-                    {TTSService.OPENAI_VOICES.map(v => (
-                      <TouchableOpacity
-                        key={v.id}
-                        style={styles.radioOption}
-                        onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}>
-                        <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
-                          {selectedVoiceId === v.id && <View style={styles.radioDot} />}
-                        </View>
-                        <View>
-                          <Text style={styles.radioLabel}>{v.label}</Text>
-                          <Text style={styles.voiceDesc}>{v.desc}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-                {ttsProvider === 'elevenlabs' && (
-                  <View style={styles.radioGroup}>
-                    {TTSService.ELEVENLABS_VOICES.map(v => (
-                      <TouchableOpacity
-                        key={v.id}
-                        style={styles.radioOption}
-                        onPress={() => { setSelectedVoiceId(v.id); setVoiceGender(v.gender === 'male' ? 'male' : 'female'); }}>
-                        <View style={[styles.radio, selectedVoiceId === v.id && styles.radioSelected]}>
-                          {selectedVoiceId === v.id && <View style={styles.radioDot} />}
-                        </View>
-                        <View>
-                          <Text style={styles.radioLabel}>{v.label}</Text>
-                          <Text style={styles.voiceDesc}>{v.desc}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-                {ttsProvider === 'device' && (
-                  <View style={styles.radioGroup}>
-                    <TouchableOpacity
-                      style={styles.radioOption}
-                      onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
-                      <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
-                        {voiceGender === 'female' && <View style={styles.radioDot} />}
-                      </View>
-                      <View>
-                        <Text style={styles.radioLabel}>Female Voice</Text>
-                        <Text style={styles.voiceDesc}>Higher pitch · Device TTS · OpenAI Shimmer / ElevenLabs George</Text>
-                      </View>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.radioOption}
-                      onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
-                      <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
-                        {voiceGender === 'male' && <View style={styles.radioDot} />}
-                      </View>
-                      <View>
-                        <Text style={styles.radioLabel}>Male Voice</Text>
-                        <Text style={styles.voiceDesc}>Lower pitch · Device TTS · George (ElevenLabs) for Indian/Arabic</Text>
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-                )}
-                {ttsProvider === 'azure' && (
-                  <View style={styles.radioGroup}>
-                    <TouchableOpacity
-                      style={styles.radioOption}
-                      onPress={() => { setVoiceGender('female'); setSelectedVoiceId(null); }}>
-                      <View style={[styles.radio, voiceGender === 'female' && styles.radioSelected]}>
-                        {voiceGender === 'female' && <View style={styles.radioDot} />}
-                      </View>
-                      <View>
-                        <Text style={styles.radioLabel}>Female Voice</Text>
-                        <Text style={styles.voiceDesc}>Sobhana · Native Malayalam neural voice</Text>
-                      </View>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.radioOption}
-                      onPress={() => { setVoiceGender('male'); setSelectedVoiceId(null); }}>
-                      <View style={[styles.radio, voiceGender === 'male' && styles.radioSelected]}>
-                        {voiceGender === 'male' && <View style={styles.radioDot} />}
-                      </View>
-                      <View>
-                        <Text style={styles.radioLabel}>Male Voice</Text>
-                        <Text style={styles.voiceDesc}>Midhun · Native Malayalam neural voice</Text>
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                <Zap size={18} color={t.personB} />
+                <Text style={[styles.secondaryButtonText, { color: t.personB }]}>
+                  Upgrade to {PLAN_INFO.live.label} — {PAID_PLAN_PRICE.live}
+                </Text>
               </>
             )}
-
-            <View style={styles.switchRow}>
-              <View>
-                <Text style={styles.switchLabel}>Auto Conversation Mode</Text>
-                <Text style={styles.switchDescription}>Start in conversation mode by default</Text>
-              </View>
-              <Switch
-                value={conversationModeDefault}
-                onValueChange={setConversationModeDefault}
-                trackColor={{ false: t.cardBorderStrong, true: t.personBBorder }}
-                thumbColor={conversationModeDefault ? t.personB : t.textFaint}
-              />
+          </TouchableOpacity>
+        ) : settings?.custom_voice_id ? (
+          <View>
+            <View style={[styles.voiceStatus, { backgroundColor: t.personBBg }]}>
+              <Text style={[styles.voiceStatusText, { color: t.success }]}>
+                Custom voice active ✓
+              </Text>
             </View>
-
             <TouchableOpacity
-              style={styles.saveButton}
-              onPress={handleSaveSettings}>
-              <Save size={20} color={t.bg} />
-              <Text style={styles.saveButtonText}>Save Preferences</Text>
+              style={[styles.secondaryButton, { marginTop: 12 }]}
+              onPress={handleRemoveCustomVoice}>
+              <Trash2 size={18} color={t.danger} />
+              <Text style={styles.secondaryButtonText}>
+                Reset to Default Voice
+              </Text>
             </TouchableOpacity>
           </View>
-
-          <View style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <View style={styles.cardHeaderIcon}>
-                <Mic size={16} color={t.personB} />
-              </View>
-              <Text style={styles.sectionTitle}>Voice Cloning</Text>
-            </View>
-            <Text style={styles.sectionDescription}>
-              {currentPlan !== 'live'
-                ? 'Available on the Live plan — hear translations spoken in your own voice.'
-                : isUserView
-                ? 'Record your voice to personalize translations.'
-                : 'Clone your voice so translations sound like you. Record 30-60 seconds of clear speech. Works with ElevenLabs TTS.'}
+        ) : isCloningVoice ? (
+          <View style={styles.cloningContainer}>
+            <ActivityIndicator size="large" color={t.personB} />
+            <Text style={styles.cloningText}>
+              Applying your voice...
             </Text>
-
-            {currentPlan !== 'live' && !settings?.custom_voice_id ? (
-              <TouchableOpacity
-                style={[styles.secondaryButton, styles.upgradeButton]}
-                disabled={subscribingPlan !== null}
-                onPress={() => handleSubscribe('live')}>
-                {subscribingPlan === 'live' ? (
-                  <ActivityIndicator size="small" color={t.personB} />
-                ) : (
-                  <>
-                    <Zap size={18} color={t.personB} />
-                    <Text style={[styles.secondaryButtonText, { color: t.personB }]}>
-                      Upgrade to {PLAN_INFO.live.label} — {PAID_PLAN_PRICE.live}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            ) : settings?.custom_voice_id ? (
-              <View>
-                <View style={[styles.voiceStatus, { backgroundColor: t.personBBg }]}>
-                  <Text style={[styles.voiceStatusText, { color: t.success }]}>
-                    {isUserView ? 'Custom voice active ✓' : 'Custom voice active'}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.secondaryButton, { marginTop: 12 }]}
-                  onPress={handleRemoveCustomVoice}>
-                  <Trash2 size={18} color={t.danger} />
-                  <Text style={styles.secondaryButtonText}>
-                    {isUserView ? 'Reset to Default Voice' : 'Remove Custom Voice'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ) : isCloningVoice ? (
-              <View style={styles.cloningContainer}>
-                <ActivityIndicator size="large" color={t.personB} />
-                <Text style={styles.cloningText}>
-                  {isUserView ? 'Applying your voice...' : 'Cloning your voice...'}
-                </Text>
-                <Text style={styles.cloningSubtext}>This may take 15-30 seconds</Text>
-              </View>
-            ) : isRecordingVoice ? (
-              <View>
-                <View style={[styles.voiceStatus, { backgroundColor: 'rgba(252,165,165,0.14)' }]}>
-                  <Text style={[styles.voiceStatusText, { color: t.danger }]}>
-                    {isUserView
-                      ? `Recording... ${recordingSeconds}s`
-                      : `Recording... ${recordingSeconds}s / 60s`}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.primaryButton, { backgroundColor: t.recordGradient[0], marginTop: 12 }]}
-                  onPress={handleStopVoiceRecording}>
-                  <Mic size={20} color={t.text} />
-                  <Text style={styles.primaryButtonText}>
-                    {isUserView
-                      ? 'Stop & Apply Voice'
-                      : `Stop Recording ${recordingSeconds >= 10 ? '& Clone Voice' : '(min 10s)'}`}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={[styles.primaryButton, { backgroundColor: t.personA }]}
-                onPress={handleStartVoiceRecording}>
-                <Mic size={20} color={t.text} />
-                <Text style={styles.primaryButtonText}>
-                  {isUserView ? 'Record & Apply My Voice' : 'Record My Voice'}
-                </Text>
-              </TouchableOpacity>
-            )}
+            <Text style={styles.cloningSubtext}>This may take 15-30 seconds</Text>
           </View>
-
-          <View style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <View style={styles.cardHeaderIcon}>
-                <FileText size={16} color={t.personB} />
-              </View>
-              <Text style={styles.sectionTitle}>Legal</Text>
+        ) : isRecordingVoice ? (
+          <View>
+            <View style={[styles.voiceStatus, { backgroundColor: 'rgba(252,165,165,0.14)' }]}>
+              <Text style={[styles.voiceStatusText, { color: t.danger }]}>
+                {isUserView
+                  ? `Recording... ${recordingSeconds}s`
+                  : `Recording... ${recordingSeconds}s / 60s`}
+              </Text>
             </View>
             <TouchableOpacity
-              style={[styles.secondaryButton, { borderColor: t.cardBorderStrong }]}
-              onPress={() => Linking.openURL('https://theonelingo.com/legal/policies.html#privacy')}
-              accessibilityRole="button"
-              accessibilityLabel="Open Privacy Policy">
-              <FileText size={18} color={t.textMuted} />
-              <Text style={[styles.secondaryButtonText, { color: t.textMuted }]}>Privacy Policy</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.secondaryButton, { borderColor: t.cardBorderStrong, marginTop: 10 }]}
-              onPress={() => Linking.openURL('https://theonelingo.com/legal/policies.html#terms')}
-              accessibilityRole="button"
-              accessibilityLabel="Open Terms of Service">
-              <FileText size={18} color={t.textMuted} />
-              <Text style={[styles.secondaryButtonText, { color: t.textMuted }]}>Terms of Service</Text>
+              style={[styles.primaryButton, { backgroundColor: t.recordGradient[0], marginTop: 12 }]}
+              onPress={handleStopVoiceRecording}>
+              <Mic size={20} color={t.text} />
+              <Text style={styles.primaryButtonText}>
+                {isUserView
+                  ? 'Stop & Apply Voice'
+                  : `Stop Recording ${recordingSeconds >= 10 ? '& Clone Voice' : '(min 10s)'}`}
+              </Text>
             </TouchableOpacity>
           </View>
-
-          <View style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <View style={styles.cardHeaderIcon}>
-                <Bug size={16} color={t.personB} />
-              </View>
-              <Text style={styles.sectionTitle}>Diagnostics</Text>
-            </View>
-            <Text style={styles.sectionDescription}>
-              If a translation or conversation-mode issue happens, share this log right after —
-              it captures what actually happened on this device (stage-by-stage), which is far more
-              useful than a description of the symptom.
+        ) : (
+          <TouchableOpacity
+            style={[styles.primaryButton, { backgroundColor: t.personA }]}
+            onPress={handleStartVoiceRecording}>
+            <Mic size={20} color={t.text} />
+            <Text style={styles.primaryButtonText}>
+              {isUserView ? 'Record & Apply My Voice' : 'Record My Voice'}
             </Text>
-            <TouchableOpacity
-              style={[styles.secondaryButton, { borderColor: t.cardBorderStrong }]}
-              onPress={handleShareDiagnostics}>
-              <Bug size={18} color={t.textMuted} />
-              <Text style={[styles.secondaryButtonText, { color: t.textMuted }]}>Share Diagnostics</Text>
-            </TouchableOpacity>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderIcon}>
+            <FileText size={16} color={t.personB} />
           </View>
+          <Text style={styles.sectionTitle}>Legal</Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.secondaryButton, { borderColor: t.cardBorderStrong }]}
+          onPress={() => Linking.openURL('https://theonelingo.com/legal/policies.html#privacy')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Privacy Policy">
+          <FileText size={18} color={t.textMuted} />
+          <Text style={[styles.secondaryButtonText, { color: t.textMuted }]}>Privacy Policy</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.secondaryButton, { borderColor: t.cardBorderStrong, marginTop: 10 }]}
+          onPress={() => Linking.openURL('https://theonelingo.com/legal/policies.html#terms')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Terms of Service">
+          <FileText size={18} color={t.textMuted} />
+          <Text style={[styles.secondaryButtonText, { color: t.textMuted }]}>Terms of Service</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderIcon}>
+            <Bug size={16} color={t.personB} />
+          </View>
+          <Text style={styles.sectionTitle}>Help &amp; Support</Text>
+        </View>
+        <Text style={styles.sectionDescription}>
+          Something not working? Send us a diagnostic report right after it happens so we can fix it quickly.
+        </Text>
+        <TouchableOpacity
+          style={[styles.secondaryButton, { borderColor: t.cardBorderStrong }]}
+          onPress={handleShareDiagnostics}>
+          <Bug size={18} color={t.textMuted} />
+          <Text style={[styles.secondaryButtonText, { color: t.textMuted }]}>Report a Problem</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderIcon}>
+            <UserIcon size={16} color={t.personB} />
+          </View>
+          <Text style={styles.sectionTitle}>Account</Text>
+        </View>
+
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Email</Text>
+          <Text style={styles.infoValue}>{user.email}</Text>
+        </View>
+        <TouchableOpacity style={[styles.secondaryButton, { marginTop: 16 }]} onPress={handleSignOut}>
+          <LogOut size={20} color={t.danger} />
+          <Text style={styles.secondaryButtonText}>Sign Out</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.secondaryButton, { marginTop: 12 }]}
+          disabled={deletingAccount}
+          onPress={handleDeleteAccount}>
+          {deletingAccount ? (
+            <ActivityIndicator size="small" color={t.danger} />
+          ) : (
+            <>
+              <Trash2 size={20} color={t.danger} />
+              <Text style={styles.secondaryButtonText}>Delete Account</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.footer}>
         <Text style={styles.footerText}>OneLingo</Text>
-        <Text style={styles.footerSubtext}>Powered by OpenAI & Advanced TTS</Text>
         {/* versionCode/versionName never change between builds — this is the only
             way to tell whether an installed APK is actually the latest build. */}
         <Text style={styles.footerSubtext}>

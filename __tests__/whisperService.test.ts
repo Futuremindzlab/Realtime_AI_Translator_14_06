@@ -55,4 +55,15 @@ describe('shouldAttemptOnDeviceTranscription', () => {
   it('a non-cloud-only language stays on cloud when not ready and nothing pinned', () => {
     expect(shouldAttemptOnDeviceTranscription('fr', undefined, false)).toBe(false);
   });
+
+  // The "Person A fails on the 3rd turn" bug: whisper.rn reads any file as
+  // raw WAV PCM, so Android's .m4a recordings must never go on-device.
+  it('forces cloud for a non-WAV recording (Android .m4a) even when on-device is ready', () => {
+    expect(shouldAttemptOnDeviceTranscription('en', true, true, 'file:///data/cache/Audio/recording-1.m4a')).toBe(false);
+  });
+
+  it('still allows on-device for a WAV recording (iOS)', () => {
+    expect(shouldAttemptOnDeviceTranscription('en', true, true, 'file:///var/mobile/recording-1.wav')).toBe(true);
+    expect(shouldAttemptOnDeviceTranscription('en', true, true, 'file:///var/mobile/recording-1.WAV')).toBe(true);
+  });
 });
