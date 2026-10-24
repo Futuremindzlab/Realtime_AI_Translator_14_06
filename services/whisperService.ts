@@ -1,5 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
+import { classifyWhisperHallucination, hasNoSpeechContent } from '@/lib/whisperHallucinations';
 
 const MODEL_URL =
   'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin';
@@ -31,10 +32,25 @@ export function shouldAttemptOnDeviceTranscription(
   language: string | undefined,
   useOnDevice: boolean | undefined,
   isReady: boolean,
+  // Bug fix (the "Person A fails on the 3rd turn" report): whisper.rn's
+  // file transcription only understands uncompressed WAV — on Android its
+  // AudioUtils.decodeWaveFile() skips a 44-byte header and reads every
+  // remaining byte as 16-bit PCM, no container/codec check at all. Android
+  // records .m4a (AAC), so on-device Whisper was being fed compressed bytes
+  // as if they were raw samples, i.e. pure noise, and the tiny model
+  // answered with a bracketed sound caption ("[Music]"-style) that the
+  // hallucination filter then rejected. It only ever bit Person A's second
+  // turn (turn 3): turn 1 is 'auto' and turn 2 is an Indic language, both
+  // forced to cloud, so turn 3 was the first turn routed on-device — and
+  // only once the model had finished downloading, which is why a fresh
+  // install's first conversation worked. Anything that isn't a .wav file
+  // goes straight to cloud.
+  audioUri?: string,
 ): boolean {
   const isAutoDetect = !language || language === 'auto';
   const isoCode = language?.split('-')[0]?.toLowerCase() ?? '';
-  const forceCloud = isAutoDetect || CLOUD_ONLY_LANGS.has(isoCode);
+  const isWavFile = audioUri === undefined || /\.wav$/i.test(audioUri.split('?')[0]);
+  const forceCloud = isAutoDetect || CLOUD_ONLY_LANGS.has(isoCode) || !isWavFile;
   const onDeviceAvailable = useOnDevice ?? isReady;
   return !forceCloud && onDeviceAvailable;
 }
@@ -50,6 +66,11 @@ class WhisperService {
    */
   async initialize(): Promise<boolean> {
     if (Platform.OS === 'web') return false;
+    // Android records .m4a, which whisper.rn can't decode (see
+    // shouldAttemptOnDeviceTranscription's audioUri param), so the on-device
+    // model would never be used there — don't spend 39MB of the user's data
+    // and the memory to load it.
+    if (Platform.OS === 'android') return false;
     if (this.context) return true;
     if (this.initPromise) return this.initPromise;
 
@@ -163,15 +184,22 @@ class WhisperService {
     // is already an independent one-off with no "session" to stay
     // consistent within), this still falls back to the live check.
     useOnDevice?: boolean,
-  ): Promise<{ text: string; detectedLanguage?: string }> {
+  ): Promise<{ text: string; detectedLanguage?: string; engine: 'on-device' | 'cloud' }> {
     const isAutoDetect = !language || language === 'auto';
     const isoCode = language?.split('-')[0]?.toLowerCase() ?? '';
 
-    if (shouldAttemptOnDeviceTranscription(language, useOnDevice, this.isReady())) {
+    if (shouldAttemptOnDeviceTranscription(language, useOnDevice, this.isReady(), audioUri)) {
       try {
         const result = await this.transcribe(audioUri, language);
-        if (result.text.trim()) return result;
-        console.log('[WhisperService] On-device returned empty, trying cloud...');
+        const text = result.text.trim();
+        // The tiny model is far more prone to sound-caption/loop
+        // hallucinations than cloud Whisper — treat one the same as an empty
+        // result and give cloud a chance, instead of letting it reject a
+        // turn the person actually spoke in.
+        if (text && !hasNoSpeechContent(text) && !classifyWhisperHallucination(text)) {
+          return { ...result, engine: 'on-device' };
+        }
+        console.log('[WhisperService] On-device returned empty/hallucinated text, trying cloud...');
       } catch (err) {
         console.warn('[WhisperService] On-device transcription error, falling back:', err);
       }
@@ -183,7 +211,8 @@ class WhisperService {
 
     // Cloud fallback — import lazily to avoid circular dependency
     const { openaiService } = await import('./openaiService');
-    return openaiService.transcribe(audioUri, language);
+    const cloudResult = await openaiService.transcribe(audioUri, language);
+    return { ...cloudResult, engine: 'cloud' };
   }
 }
 
