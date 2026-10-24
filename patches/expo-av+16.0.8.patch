@@ -1,0 +1,22 @@
+diff --git a/node_modules/expo-av/android/src/main/java/expo/modules/av/AVManager.java b/node_modules/expo-av/android/src/main/java/expo/modules/av/AVManager.java
+index 964af5d..395ec67 100644
+--- a/node_modules/expo-av/android/src/main/java/expo/modules/av/AVManager.java
++++ b/node_modules/expo-av/android/src/main/java/expo/modules/av/AVManager.java
+@@ -708,7 +708,16 @@ public class AVManager implements LifecycleEventListener, AudioManager.OnAudioFo
+     }
+ 
+     mAudioRecorder = new MediaRecorder();
+-    mAudioRecorder.setAudioSource(MediaRecorder.AudioSource.DEFAULT);
++    // Patched (see patches/expo-av+16.0.8.patch and services/audioService.ts):
++    // AudioSource.DEFAULT applies no noise suppression, so ambient noise
++    // reaches Whisper and can make it garble real speech. VOICE_COMMUNICATION
++    // is the source Android attaches its noise suppressor, echo canceller and
++    // AGC to. (VOICE_RECOGNITION was tried first, but Android requires all
++    // pre-processing to be OFF for that source: no noise suppression and no
++    // AGC, so it only made capture quieter -- the likely cause of the
++    // "No input from Person A" turns seen on build 60c5bc8. See
++    // source.android.com/docs/core/audio/implement-pre-processing.)
++    mAudioRecorder.setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION);
+ 
+     mAudioRecorder.setOutputFormat(androidOptions.getInt(RECORDING_OPTION_OUTPUT_FORMAT_KEY));
+     mAudioRecorder.setAudioEncoder(androidOptions.getInt(RECORDING_OPTION_AUDIO_ENCODER_KEY));

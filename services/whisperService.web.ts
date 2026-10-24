@@ -13,9 +13,10 @@ class WhisperService {
     // Unused here — isReady() is always false on web, so this always goes
     // to cloud regardless of what's passed.
     _useOnDevice?: boolean,
-  ): Promise<{ text: string; detectedLanguage?: string }> {
+  ): Promise<{ text: string; detectedLanguage?: string; engine: 'on-device' | 'cloud' }> {
     const { openaiService } = await import('./openaiService');
-    return openaiService.transcribe(audioUri, language);
+    const result = await openaiService.transcribe(audioUri, language);
+    return { ...result, engine: 'cloud' };
   }
 }
 
