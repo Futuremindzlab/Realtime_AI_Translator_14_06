@@ -797,7 +797,7 @@ export class RealtimeTranslationService {
     this.updateProgress({ stage: 'transcribing', isRealtime: true });
 
     const transcribeStartedAt = Date.now();
-    const { text: sourceText, detectedLanguage: rawDetected } = await whisperService.transcribeWithFallback(
+    const { text: sourceText, detectedLanguage: rawDetected, engine: transcribeEngine } = await whisperService.transcribeWithFallback(
       audioUri, this.currentSourceLanguage, this.useOnDeviceWhisperThisConversation
     );
     this.logDuration('transcribe', transcribeStartedAt);
@@ -806,7 +806,10 @@ export class RealtimeTranslationService {
     const detectedLanguage = this.resolveDetectedLanguage(rawDetected, actualText);
 
     console.log(`📝 Transcribed: "${actualText.substring(0, 80)}" | Detected: ${detectedLanguage}`);
-    logger.info('Transcribe stage complete', { textLength: actualText.length, detectedLanguage, platform: Platform.OS });
+    logger.info('Transcribe stage complete', {
+      textLength: actualText.length, detectedLanguage, engine: transcribeEngine,
+      sourceLanguage: this.currentSourceLanguage, platform: Platform.OS,
+    });
 
     // Skip if no valid speech. Also catches Whisper hallucinating a
     // caption-style non-speech description ("Engine sound", "[Music]", …)
