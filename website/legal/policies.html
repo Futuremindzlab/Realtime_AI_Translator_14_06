@@ -265,6 +265,7 @@
     <div class="doc-head">
       <div class="doc-eyebrow">Document 1 of 3</div>
       <h2>Privacy Policy</h2>
+      <p class="doc-meta">Last updated: <b>24 October 2026</b></p>
     </div>
 
     <section class="clause">
@@ -277,16 +278,18 @@
       <div class="fact-list">
         <div class="fact"><div class="fact-title">Account</div><div class="fact-detail">Email address, or phone number for OTP sign-in; your name and country, collected once during onboarding or from Settings — used for sign-in, account recovery, and support/billing correspondence.</div></div>
         <div class="fact"><div class="fact-title">Translation content</div><div class="fact-detail">Recorded audio and the resulting transcript/translation text — to produce the translation you asked for, and to show it in your history.</div></div>
+        <div class="fact"><div class="fact-title">Photos you scan</div><div class="fact-detail">When you use Scan &amp; Translate, the photo you take or pick is sent to our AI service to read and translate the text in it. Photos are processed to give you the result and are not kept in your history or used for anything else.</div></div>
+        <div class="fact"><div class="fact-title">Your voice sample (Live plan, optional)</div><div class="fact-detail">Only if you choose to create a personal voice: the short recording you provide is used to build a voice that speaks your translations. It is permanently deleted when you delete your account.</div></div>
         <div class="fact"><div class="fact-title">Usage &amp; preferences</div><div class="fact-detail">Chosen languages, voice settings, subscription plan — to run the app the way you configured it.</div></div>
         <div class="fact"><div class="fact-title">Payment</div><div class="fact-detail">Subscription status and plan — <strong>we never see or store your card/UPI details</strong>, our payment partner handles those directly — to grant Plus/Live access and manage billing.</div></div>
-        <div class="fact"><div class="fact-title">Diagnostics (optional)</div><div class="fact-detail">On-device app logs, only if you tap "Share Diagnostics" — to debug a problem you reported.</div></div>
+        <div class="fact"><div class="fact-title">Diagnostics</div><div class="fact-detail">Crash and error reports (what went wrong, device model and OS version, app version) — to find and fix bugs. On-device app logs are shared only if you tap "Share Diagnostics" to report a problem.</div></div>
       </div>
     </section>
 
     <section class="clause">
       <h3><span class="num">3.</span>Who we share it with</h3>
       <p>Running the app requires a small set of specialist partners — cloud hosting and authentication, the AI models that power transcription/translation/speech, and a payment processor for subscriptions. Each is bound by a data-processing agreement that lets them use your data only to provide that service to us, never for their own purposes.</p>
-      <p>We do not sell your data, and do not share it with anyone outside that narrow set of service providers.</p>
+      <p>We do not sell your data, do not use it for advertising, and do not share it with anyone outside that narrow set of service providers. All data is encrypted in transit (HTTPS).</p>
     </section>
 
     <section class="clause">
@@ -298,6 +301,13 @@
     <section class="clause">
       <h3><span class="num">5.</span>Your rights</h3>
       <p>You can view and change your preferences any time in Settings. You can delete your account and all associated data at any time, in-app, with no need to contact us. To ask a question about your data instead, contact us at Admin@futuremindzlab.com.</p>
+    </section>
+
+    <section class="clause" id="delete-account">
+      <h3><span class="num">5a.</span>How to delete your account</h3>
+      <p><strong>In the app:</strong> open The OneLingo, go to Settings → Delete Account, and confirm. Your account, translation history, audio, voice sample and login are erased immediately, and any active subscription is cancelled.</p>
+      <p><strong>Without the app:</strong> if you've uninstalled the app or can't sign in, email <a href="mailto:Admin@futuremindzlab.com?subject=Delete%20my%20OneLingo%20account">Admin@futuremindzlab.com</a> from the email address on your account (or include the phone number you signed in with) with the subject "Delete my OneLingo account". We'll verify the request and delete everything within 7 days, and confirm by reply.</p>
+      <p>Nothing is kept after deletion, except payment records we're legally required to keep for tax and accounting purposes.</p>
     </section>
 
     <section class="clause">
@@ -335,11 +345,10 @@
       <h3><span class="num">2.</span>What you're getting</h3>
       <p>The OneLingo converts spoken audio into another spoken/written language using third-party AI models (see Privacy Policy §3). Three plans are available:</p>
       <div class="fact-list">
-        <div class="fact"><div class="fact-title">Basic — Free</div><div class="fact-detail">Standard record → translate → speak pipeline.</div></div>
-        <div class="fact"><div class="fact-title">Plus — pricing coming soon</div><div class="fact-detail">Streaming translation — starts speaking before the sentence finishes generating.</div></div>
-        <div class="fact"><div class="fact-title">Live — pricing coming soon</div><div class="fact-detail">Continuous live interpretation.</div></div>
+        <div class="fact"><div class="fact-title">Basic — Free trial</div><div class="fact-detail">Standard record → translate → speak pipeline, free for 7 days from first use (up to 10 translations and 5 conversations).</div></div>
+        <div class="fact"><div class="fact-title">Plus — ₹100/month</div><div class="fact-detail">Streaming translation — starts speaking before the sentence finishes generating.</div></div>
+        <div class="fact"><div class="fact-title">Live — ₹200/month</div><div class="fact-detail">Everything in Plus, plus translations spoken in your own voice.</div></div>
       </div>
-      <p style="font-size:13.5px; color:var(--ink-muted);">Plus/Live pricing is not finalized yet — this section will be updated with exact amounts before launch.</p>
       <div class="callout"><strong>Translations are AI-generated and can be wrong.</strong> Don't rely on this app for medical, legal, safety, or other high-stakes situations.</div>
     </section>
 
@@ -390,7 +399,7 @@
 
     <section class="clause">
       <h3><span class="num">1.</span>How billing works</h3>
-      <p>Plus and Live are recurring monthly plans (exact pricing coming soon) that renew automatically every month on the date you first subscribed, until you cancel. Each charge is processed by Razorpay against the payment method you provided at signup.</p>
+      <p>Plus (₹100/month) and Live (₹200/month) are recurring monthly plans that renew automatically every month on the date you first subscribed, until you cancel. Each charge is processed by Razorpay against the payment method you provided at signup.</p>
     </section>
 
     <section class="clause">
@@ -406,7 +415,6 @@
         <li>If you're charged in error (e.g. a duplicate charge, or a charge after you'd already cancelled), contact us at Admin@futuremindzlab.com within <strong>30</strong> days and we'll investigate and refund confirmed errors in full.</li>
         <li>Refunds, where approved, are issued to the original payment method via Razorpay and can take <strong>5–7</strong> business days to appear, per your bank/UPI provider.</li>
       </ul>
-      <div class="callout"><strong>Adjust this section to match your actual policy</strong> — as built, the app only supports cancel-at-cycle-end with no automatic proration. If you want to offer a cooling-off refund window instead (common for a first-time subscriber), say so and this page — and the cancellation code — can both be updated to match.</div>
     </section>
 
     <section class="clause">

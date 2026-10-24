@@ -22,14 +22,39 @@ const cognito = new CognitoIdentityProviderClient({ region: process.env.AWS_REGI
 //      manage or cancel it from) — logged, not fatal, since Razorpay being
 //      briefly unreachable shouldn't block someone's deletion request; the
 //      settings/history wipe below still proceeds either way.
-//   2. Purge conversation history + S3 audio (reuses clearAllTranslations'
+//   2. Best-effort delete the user's cloned voice (Live plan) from the
+//      voice provider — the voice sample/model lives there, not in our own
+//      tables, so wiping settings alone would leave it behind while the
+//      Privacy Policy promises account deletion removes everything. Logged,
+//      not fatal, for the same reason as the subscription cancel above.
+//   3. Purge conversation history + S3 audio (reuses clearAllTranslations'
 //      exact logic — same query→batch-delete→S3-cleanup this app already
 //      exposes at DELETE /v1/translations). Fatal if it fails: better to
 //      abort and let the user retry than delete their Cognito login while
 //      their data silently survives.
-//   3. Delete the settings record.
-//   4. AdminDeleteUser — last.
+//   4. Delete the settings record.
+//   5. AdminDeleteUser — last.
 // ─────────────────────────────────────────────────────────
+async function deleteClonedVoice(voiceId) {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) {
+    console.error(`⚠️ Cannot delete cloned voice ${voiceId} during account deletion: voice provider key not configured (continuing)`);
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.elevenlabs.io/v1/voices/${encodeURIComponent(voiceId)}`, {
+      method: 'DELETE',
+      headers: { 'xi-api-key': apiKey },
+    });
+    // 404 means it's already gone — the outcome we want anyway.
+    if (!res.ok && res.status !== 404) {
+      console.error(`⚠️ Failed to delete cloned voice ${voiceId} during account deletion: HTTP ${res.status} (continuing)`);
+    }
+  } catch (err) {
+    console.error(`⚠️ Failed to delete cloned voice ${voiceId} during account deletion (continuing):`, err);
+  }
+}
+
 export async function deleteAccount(event) {
   try {
     const userId = getUserId(event);
@@ -54,6 +79,11 @@ export async function deleteAccount(event) {
       } catch (err) {
         console.error(`⚠️ Failed to cancel Razorpay subscription ${subscriptionId} during account deletion (continuing):`, err);
       }
+    }
+
+    const customVoiceId = existing.Item?.custom_voice_id;
+    if (customVoiceId) {
+      await deleteClonedVoice(customVoiceId);
     }
 
     const clearResult = await clearAllTranslations(event);

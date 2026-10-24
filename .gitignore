@@ -51,3 +51,6 @@ test_audio_output/
 # Claude Code session-local scratch (e.g. background-agent worktrees) —
 # never part of the project itself
 .claude/
+
+# Google Play service-account key for `eas submit` (see docs/PLAY_STORE_RELEASE.md) — never commit
+play-service-account.json
