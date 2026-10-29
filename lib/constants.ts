@@ -147,5 +147,11 @@ export function detectScriptLanguage(text: string): string | null {
   for (const [code, pattern] of Object.entries(SCRIPT_UNICODE_RANGES)) {
     if (pattern.test(text)) return code;
   }
+  // No non-Latin script matched. Plain Latin letters can't be text in any of
+  // the non-Latin-script languages above, so a declared language from that
+  // list (e.g. Whisper reporting "hi" for English audio it transcribed in
+  // Latin letters) is a mislabel — report English so the caller corrects it
+  // instead of trusting the declared label over the actual transcript.
+  if (/[a-zA-Z]/.test(text)) return 'en';
   return null;
 }
